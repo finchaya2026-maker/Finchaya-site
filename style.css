@@ -110,6 +110,7 @@ article.post blockquote {
 }
 article.post strong { font-weight: 600; }
 article.post a { color: var(--emerald); }
+article.post img { max-width: 100%; height: auto; }
 article.post figure { margin: 26px 0; }
 article.post figure img {
   display: block; width: 100%; height: auto;
