@@ -1,0 +1,130 @@
+/* ============================================================
+   FinChaya — shared site styles
+   Fonts: Fraunces (display) + IBM Plex Sans (body)
+   ============================================================ */
+:root {
+  --bg: #FAFBF7;
+  --ink: #17251E;
+  --muted: #5C6F65;
+  --line: #E2E8E0;
+  --card: #FFFFFF;
+  --emerald: #1E7A55;
+  --emerald-dark: #176547;
+  --emerald-soft: #E7F3EC;
+  --marigold: #E8A33D;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- Header / nav ---------- */
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.site-header .wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 18px; padding-bottom: 18px;
+}
+.brand {
+  font-family: 'Fraunces', serif; font-weight: 600; font-size: 22px;
+  color: var(--ink); text-decoration: none;
+}
+.brand span { color: var(--emerald); }
+.site-nav a {
+  color: var(--muted); text-decoration: none; font-size: 15px;
+  margin-left: 22px; font-weight: 500;
+}
+.site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--emerald); }
+
+/* ---------- Hero (homepage) ---------- */
+.hero { padding: 56px 0 40px; }
+.eyebrow {
+  font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--emerald); font-weight: 600; margin-bottom: 10px;
+}
+h1.display {
+  font-family: 'Fraunces', serif; font-weight: 600;
+  font-size: clamp(30px, 5.5vw, 46px); line-height: 1.12; margin-bottom: 14px;
+}
+.lede { color: var(--muted); max-width: 58ch; font-size: 17px; }
+
+/* ---------- Section headings ---------- */
+h2.section {
+  font-family: 'Fraunces', serif; font-weight: 600; font-size: 24px;
+  margin: 44px 0 18px;
+}
+
+/* ---------- Article cards (homepage list) ---------- */
+.post-list { list-style: none; }
+.post-list li { border-bottom: 1px solid var(--line); }
+.post-list a {
+  display: block; padding: 20px 0; text-decoration: none; color: inherit;
+}
+.post-list a:hover .post-title { color: var(--emerald); }
+.post-title {
+  font-family: 'Fraunces', serif; font-weight: 600; font-size: 20px;
+  margin-bottom: 4px; transition: color .15s ease;
+}
+.post-meta { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.post-excerpt { color: var(--muted); font-size: 15px; }
+
+/* ---------- Tool cards ---------- */
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.tool-card {
+  display: block; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 22px; text-decoration: none; color: inherit;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.tool-card:hover { border-color: var(--emerald); transform: translateY(-2px); }
+.tool-card h3 { font-family: 'Fraunces', serif; font-size: 18px; margin-bottom: 6px; }
+.tool-card p { font-size: 14px; color: var(--muted); }
+.tool-card .go { display: inline-block; margin-top: 12px; font-size: 14px; font-weight: 600; color: var(--emerald); }
+
+/* ---------- Article pages ---------- */
+article.post { padding: 48px 0 24px; }
+article.post h1 {
+  font-family: 'Fraunces', serif; font-weight: 600;
+  font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin-bottom: 10px;
+}
+article.post .post-meta { margin-bottom: 28px; }
+article.post h2 {
+  font-family: 'Fraunces', serif; font-weight: 600; font-size: 24px;
+  margin: 36px 0 12px;
+}
+article.post p { margin-bottom: 18px; }
+article.post ul, article.post ol { margin: 0 0 18px 24px; }
+article.post li { margin-bottom: 8px; }
+article.post blockquote {
+  border-left: 3px solid var(--marigold); padding: 4px 0 4px 18px;
+  color: var(--muted); font-style: italic; margin-bottom: 18px;
+}
+article.post strong { font-weight: 600; }
+article.post a { color: var(--emerald); }
+
+.callout {
+  background: var(--emerald-soft); border: 1px solid var(--emerald);
+  border-radius: var(--radius); padding: 18px 20px; margin: 24px 0;
+  font-size: 15px;
+}
+
+/* ---------- Footer ---------- */
+.site-footer {
+  border-top: 1px solid var(--line); margin-top: 64px;
+  padding: 28px 0 40px; font-size: 13px; color: var(--muted);
+}
+.site-footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+.site-footer a { color: var(--muted); }
+
+@media (max-width: 560px) {
+  .site-nav a { margin-left: 14px; font-size: 14px; }
+}
