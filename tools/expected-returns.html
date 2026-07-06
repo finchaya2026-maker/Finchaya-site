@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expected Returns Calculator — FinChaya</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+  :root {
+    --bg: #FAFBF7;
+    --ink: #17251E;
+    --muted: #5C6F65;
+    --line: #E2E8E0;
+    --card: #FFFFFF;
+    --emerald: #1E7A55;
+    --emerald-soft: #E7F3EC;
+    --marigold: #E8A33D;
+
+    --radius: 14px;
+  }
+  main.wrap { padding-top: 44px; padding-bottom: 24px; }
+
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--emerald); font-weight: 600; margin-bottom: 10px;
+  }
+  h1 {
+    font-family: 'Fraunces', serif; font-weight: 600;
+    font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin-bottom: 10px;
+  }
+  .lede { color: var(--muted); max-width: 56ch; margin-bottom: 32px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 28px;
+  }
+
+  .field { margin-bottom: 22px; }
+  label.field-label {
+    display: block; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.02em; margin-bottom: 8px;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .amount-box { position: relative; }
+  .amount-box .rupee {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    font-weight: 600; color: var(--muted);
+  }
+  input[type="number"], input[type="date"] {
+    width: 100%; padding: 12px 14px; font: inherit; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+    color: var(--ink);
+  }
+  .amount-box input { padding-left: 32px; }
+  input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
+
+  .radio-row { display: flex; gap: 10px; }
+  .radio-pill { flex: 1; }
+  .radio-pill input { position: absolute; opacity: 0; pointer-events: none; }
+  .radio-pill span {
+    display: block; text-align: center; padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    font-weight: 500; transition: all .15s ease; background: #fff;
+  }
+  .radio-pill input:checked + span {
+    background: var(--emerald-soft); border-color: var(--emerald);
+    color: var(--emerald); font-weight: 600;
+  }
+  .radio-pill input:focus-visible + span { outline: 2px solid var(--emerald); outline-offset: 1px; }
+
+
+
+  button.calc {
+    width: 100%; margin-top: 22px; padding: 14px;
+    font: inherit; font-size: 16px; font-weight: 600;
+    background: var(--emerald); color: #fff; border: none;
+    border-radius: 10px; cursor: pointer; transition: background .15s ease;
+  }
+  button.calc:hover { background: #176547; }
+  button.calc:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .error { color: #B4432F; font-size: 13px; margin-top: 12px; display: none; }
+
+  /* Results */
+  .results { display: none; margin-top: 28px; }
+  .results.show { display: block; animation: rise .35s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .results.show { animation: none; }
+    .split-seg { transition: none; }
+  }
+
+  .headline-nums {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px;
+  }
+  .num-card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+    background: var(--bg);
+  }
+  .num-card.total { background: var(--emerald-soft); border-color: var(--emerald); }
+  .num-card .k { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .num-card .v {
+    font-family: 'Fraunces', serif; font-size: clamp(20px, 4vw, 28px);
+    font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .num-card.total .v { color: var(--emerald); }
+  .num-card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .footnote { font-size: 12px; color: var(--muted); margin-top: 16px; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">Fin<span>Chaya</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="../index.html#articles">Articles</a>
+      <a href="../index.html#tools" aria-current="page">Tools</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <div class="eyebrow">FinChaya · Tools</div>
+  <h1>What should your money have grown to?</h1>
+  <p class="lede">Enter what you invested, how, and when — and see what it should be worth today based on FinChaya's model portfolio.</p>
+
+  <div class="card">
+    <div class="field">
+      <label class="field-label" for="amount">Investment amount</label>
+      <div class="amount-box">
+        <span class="rupee">₹</span>
+        <input type="number" id="amount" min="0" step="500" placeholder="10,000" inputmode="numeric">
+      </div>
+      <div class="hint" id="amountHint">For SIP, this is your monthly instalment.</div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Investment type</span>
+      <div class="radio-row" role="radiogroup" aria-label="Investment type">
+        <label class="radio-pill"><input type="radio" name="itype" value="sip" checked><span>SIP (monthly)</span></label>
+        <label class="radio-pill"><input type="radio" name="itype" value="lumpsum"><span>Lumpsum</span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="startDate">Date of investment</label>
+      <input type="date" id="startDate">
+      <div class="hint">SIP is assumed to run from this date to today, on the same day each month.</div>
+    </div>
+
+    <button class="calc" id="calcBtn">Calculate expected value</button>
+    <div class="error" id="errorMsg"></div>
+
+    <div class="results" id="results">
+      <div class="headline-nums">
+        <div class="num-card">
+          <div class="k">Total invested</div>
+          <div class="v" id="outInvested">—</div>
+          <div class="sub" id="outDuration"></div>
+        </div>
+        <div class="num-card total">
+          <div class="k">Expected value today</div>
+          <div class="v" id="outValue">—</div>
+          <div class="sub" id="outGain"></div>
+        </div>
+        <div class="num-card">
+          <div class="k">CAGR (annualised)</div>
+          <div class="v" id="outCagr">—</div>
+          <div class="sub" id="outCagrNote"></div>
+        </div>
+      </div>
+
+      <p class="footnote">Based on FinChaya's model portfolio assumptions. This is an estimate of expected growth, not actual market returns, and not investment advice.</p>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>© 2026 FinChaya · finchaya.com</div>
+    <div>Educational content only — not investment advice. · <a href="../about.html">About & disclaimer</a></div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Internal model portfolio — not shown to the user
+  const BUCKETS = [
+    { name: 'Large cap', weight: 0.20, rate: 0.12 },
+    { name: 'Midcap',    weight: 0.50, rate: 0.15 },
+    { name: 'Smallcap',  weight: 0.20, rate: 0.17 },
+    { name: 'Debt',      weight: 0.10, rate: 0.07 }
+  ];
+
+  const inr = new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0
+  });
+
+  const $ = (id) => document.getElementById(id);
+
+  // Default the date picker to 5 years ago, capped at today
+  (function initDate() {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 5);
+    $('startDate').value = d.toISOString().slice(0, 10);
+    $('startDate').max = new Date().toISOString().slice(0, 10);
+  })();
+
+  // Hint text follows the investment type
+  document.querySelectorAll('input[name="itype"]').forEach(r => {
+    r.addEventListener('change', () => {
+      $('amountHint').textContent = r.value === 'sip' && r.checked
+        ? 'For SIP, this is your monthly instalment.'
+        : 'One-time amount invested on the chosen date.';
+    });
+  });
+
+  function monthsBetween(start, end) {
+    let m = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    if (end.getDate() < start.getDate()) m -= 1;
+    return Math.max(m, 0);
+  }
+
+  function sipFutureValue(monthly, annualRate, installments) {
+    if (installments <= 0) return 0;
+    const i = Math.pow(1 + annualRate, 1 / 12) - 1;
+    if (i === 0) return monthly * installments;
+    // Annuity due: each instalment invested at the start of its month
+    return monthly * ((Math.pow(1 + i, installments) - 1) / i) * (1 + i);
+  }
+
+  function lumpsumFutureValue(principal, annualRate, years) {
+    return principal * Math.pow(1 + annualRate, years);
+  }
+
+  $('calcBtn').addEventListener('click', () => {
+    const errEl = $('errorMsg');
+    errEl.style.display = 'none';
+
+    const amount = parseFloat($('amount').value);
+    const type = document.querySelector('input[name="itype"]:checked').value;
+    const startVal = $('startDate').value;
+
+    if (!amount || amount <= 0) return showError('Please enter an investment amount.');
+    if (!startVal) return showError('Please pick your date of investment.');
+
+    const start = new Date(startVal + 'T00:00:00');
+    const now = new Date();
+    if (start >= now) return showError('The investment date should be in the past.');
+
+    const years = (now - start) / (365.25 * 24 * 3600 * 1000);
+    // Instalments: one on the start date, then every month up to today
+    const installments = monthsBetween(start, now) + 1;
+
+    let totalInvested = 0, totalValue = 0;
+    BUCKETS.forEach(b => {
+      const share = amount * b.weight;
+      if (type === 'sip') {
+        totalInvested += share * installments;
+        totalValue += sipFutureValue(share, b.rate, installments);
+      } else {
+        totalInvested += share;
+        totalValue += lumpsumFutureValue(share, b.rate, years);
+      }
+    });
+
+    // CAGR: direct formula for lumpsum; for SIP, solve for the single
+    // annual rate that grows the instalments to the final value (XIRR-style)
+    let cagr;
+    if (type === 'lumpsum') {
+      cagr = Math.pow(totalValue / totalInvested, 1 / years) - 1;
+    } else {
+      const monthly = amount;
+      let lo = -0.99, hi = 5;
+      for (let k = 0; k < 100; k++) {
+        const mid = (lo + hi) / 2;
+        if (sipFutureValue(monthly, mid, installments) < totalValue) lo = mid;
+        else hi = mid;
+      }
+      cagr = (lo + hi) / 2;
+    }
+
+    // Render
+    $('outInvested').textContent = inr.format(totalInvested);
+    $('outValue').textContent = inr.format(totalValue);
+
+    const gain = totalValue - totalInvested;
+    const gainPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0;
+    $('outGain').textContent = '+' + inr.format(gain) + ' (' + gainPct.toFixed(1) + '% absolute)';
+
+    const yrs = Math.floor(years);
+    const mos = Math.round((years - yrs) * 12);
+    $('outDuration').textContent = type === 'sip'
+      ? installments + ' instalments over ' + yrs + 'y ' + mos + 'm'
+      : 'Held for ' + yrs + 'y ' + mos + 'm';
+
+    $('outCagr').textContent = (cagr * 100).toFixed(2) + '%';
+    $('outCagrNote').textContent = type === 'sip' ? 'XIRR method' : 'Point-to-point';
+
+    $('results').classList.add('show');
+  });
+
+  function showError(msg) {
+    const errEl = $('errorMsg');
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+    $('results').classList.remove('show');
+  }
+})();
+</script>
+</body>
+</html>
