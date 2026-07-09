@@ -126,6 +126,35 @@ article.post figcaption {
   font-size: 15px;
 }
 
+/* ---------- Promo tile (Check your loan details) ---------- */
+.promo-tile {
+  width: 230px; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px; text-align: center;
+}
+.promo-tile .promo-label {
+  display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px;
+}
+.promo-tile .promo-title {
+  display: block; font-family: 'Fraunces', serif; font-weight: 600;
+  font-size: 15px; color: var(--ink); margin-bottom: 8px;
+}
+.promo-tile a { text-decoration: none; }
+.promo-tile img {
+  width: 100%; height: auto; display: block; border-radius: 8px;
+  transition: transform .15s ease;
+}
+.promo-tile a:hover img { transform: scale(1.02); }
+@media (min-width: 1280px) {
+  .promo-tile {
+    position: fixed; top: 110px;
+    left: calc(50% + 400px); /* just right of the 760px content column */
+  }
+}
+@media (max-width: 1279px) {
+  .promo-tile { margin: 40px auto 0; max-width: 280px; }
+}
+
 /* ---------- Footer ---------- */
 .site-footer {
   border-top: 1px solid var(--line); margin-top: 64px;
