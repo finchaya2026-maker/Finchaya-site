@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Portfolio SIP Calculator — FinChaya</title>
+<meta name="description" content="Enter your SIP amount, start date, and age — see what an age-based model portfolio would have returned, computed from actual benchmark index values.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+  main.wrap { padding-top: 44px; padding-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
+  .field { margin-bottom: 22px; }
+  label.field-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .amount-box { position: relative; }
+  .amount-box .rupee { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-weight: 600; color: var(--muted); }
+  input[type="number"], input[type="date"] {
+    width: 100%; padding: 12px 14px; font: inherit; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  }
+  .amount-box input { padding-left: 32px; }
+  input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
+  button.calc {
+    width: 100%; margin-top: 6px; padding: 14px; font: inherit; font-size: 16px; font-weight: 600;
+    background: var(--emerald); color: #fff; border: none; border-radius: 10px; cursor: pointer;
+  }
+  button.calc:hover { background: var(--emerald-dark); }
+  .error { color: #B4432F; font-size: 13px; margin-top: 12px; display: none; }
+  .results { display: none; margin-top: 28px; }
+  .results.show { display: block; animation: rise .35s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .results.show { animation: none; } }
+  .headline-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .num-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--bg); }
+  .num-card.total { background: var(--emerald-soft); border-color: var(--emerald); }
+  .num-card .k { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .num-card .v { font-family: 'Fraunces', serif; font-size: clamp(20px,4vw,28px); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .num-card.total .v { color: var(--emerald); }
+  .num-card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .footnote { font-size: 12px; color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">Fin<span>Chaya</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="../index.html#articles">Articles</a>
+      <a href="../index.html#tools" aria-current="page">Tools</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="eyebrow">FinChaya · Tools</div>
+  <h1 class="display" style="font-size:clamp(28px,5vw,40px)">What would a model portfolio have returned?</h1>
+  <p class="lede" style="margin-bottom:32px">Enter your monthly SIP, when you started, and your age. We compute what an age-based model portfolio would be worth today — using actual benchmark index values, not assumptions.</p>
+
+  <div class="card">
+    <div class="field">
+      <label class="field-label" for="amount">Monthly SIP amount</label>
+      <div class="amount-box">
+        <span class="rupee">₹</span>
+        <input type="number" id="amount" min="0" step="500" placeholder="10,000" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="startDate">SIP start date</label>
+      <input type="date" id="startDate">
+      <div class="hint">Instalments run monthly from this date, valued at each month's benchmark closing level.</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="age">Your current age</label>
+      <input type="number" id="age" min="18" max="100" step="1" placeholder="e.g. 34" inputmode="numeric">
+      <div class="hint">The model portfolio adapts as you age — the mix an instalment used depends on how old you were that month.</div>
+    </div>
+
+    <button class="calc" id="calcBtn">Calculate</button>
+    <div class="error" id="errorMsg"></div>
+
+    <div class="results" id="results">
+      <div class="headline-nums">
+        <div class="num-card">
+          <div class="k">Total invested</div>
+          <div class="v" id="outInvested">—</div>
+          <div class="sub" id="outDuration"></div>
+        </div>
+        <div class="num-card total">
+          <div class="k">Value today</div>
+          <div class="v" id="outValue">—</div>
+          <div class="sub" id="outGain"></div>
+        </div>
+        <div class="num-card">
+          <div class="k">XIRR (annualised)</div>
+          <div class="v" id="outXirr">—</div>
+          <div class="sub">Actual benchmark returns</div>
+        </div>
+      </div>
+      <p class="footnote" id="asOfNote"></p>
+      <p class="footnote">The split across market segments follows an assumed age-based model portfolio. This is an assumption of how a model portfolio could be assigned — it is not a recommendation. Computed from published benchmark index (TRI) values; index returns exclude fund costs. Past performance does not guarantee future returns. Not investment advice.</p>
+    </div>
+  </div>
+</main>
+
+<aside class="promo-tile">
+  <span class="promo-label">Sponsored</span>
+  <span class="promo-title">Check your loan details</span>
+  <a href="https://frm.finfinity.co.in/?utm_campaign=334112" target="_blank" rel="noopener sponsored">
+    <img src="../images/check-loan-details.webp" alt="Do you have a home loan? A 1% interest rate reduction can save ₹75,000+ every year — check your loan details." loading="lazy">
+  </a>
+</aside>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>© 2026 FinChaya · finchaya.com</div>
+    <div>Educational content only — not investment advice. · <a href="../about.html">About & disclaimer</a></div>
+  </div>
+</footer>
+
+<script src="index-data.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+
+  /* Age-based model portfolio (internal — not shown to users).
+     Band by age at the time of each instalment:
+       age <= 35        : 20% large, 50% mid, 30% small
+       age 36..50       : 30% large, 50% mid, 20% small
+       age 51+          : 60% large, 30% mid, 10% small
+     (Under 21 uses the youngest band.) */
+  function weights(age) {
+    if (age <= 35) return { largecap: 0.20, midcap: 0.50, smallcap: 0.30 };
+    if (age <= 50) return { largecap: 0.30, midcap: 0.50, smallcap: 0.20 };
+    return { largecap: 0.60, midcap: 0.30, smallcap: 0.10 };
+  }
+  var BUCKETS = ['largecap', 'midcap', 'smallcap'];
+
+  (function initDate() {
+    var d = new Date(); d.setFullYear(d.getFullYear() - 10);
+    $('startDate').value = d.toISOString().slice(0, 10);
+    $('startDate').max = new Date().toISOString().slice(0, 10);
+  })();
+
+  function monthKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  function keyToDate(k) { // last day of that month, for valuation
+    var p = k.split('-');
+    return new Date(+p[0], +p[1], 0);
+  }
+  function fullYearsBetween(a, b) {
+    var y = b.getFullYear() - a.getFullYear();
+    if (b.getMonth() < a.getMonth() || (b.getMonth() === a.getMonth() && b.getDate() < a.getDate())) y--;
+    return y;
+  }
+
+  // XIRR: solve r where sum(cf * (1+r)^years_i) = finalValue
+  function xirr(flows, finalValue, finalDate) {
+    function fv(r) {
+      var s = 0;
+      for (var i = 0; i < flows.length; i++) {
+        s += flows[i].amount * Math.pow(1 + r, (finalDate - flows[i].date) / (365.25 * 86400000));
+      }
+      return s;
+    }
+    var lo = -0.99, hi = 10;
+    if (fv(hi) < finalValue) return null;
+    for (var k = 0; k < 200; k++) {
+      var mid = (lo + hi) / 2;
+      if (fv(mid) < finalValue) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  function showError(msg) {
+    $('errorMsg').textContent = msg; $('errorMsg').style.display = 'block';
+    $('results').classList.remove('show');
+  }
+
+  $('calcBtn').addEventListener('click', function () {
+    $('errorMsg').style.display = 'none';
+
+    // data availability
+    var haveData = BUCKETS.every(function (b) {
+      return INDEX_DATA[b] && Object.keys(INDEX_DATA[b].values).length > 0;
+    });
+    if (!haveData) return showError('Benchmark data is not loaded yet. (Site owner: generate tools/index-data.js with the data builder.)');
+
+    var amount = parseFloat($('amount').value);
+    var startVal = $('startDate').value;
+    var age = parseInt($('age').value, 10);
+    if (!amount || amount <= 0) return showError('Please enter your monthly SIP amount.');
+    if (!startVal) return showError('Please pick your SIP start date.');
+    if (!age || age < 18 || age > 100) return showError('Please enter your current age (18–100).');
+
+    var start = new Date(startVal + 'T00:00:00');
+    var today = new Date();
+    if (start >= today) return showError('The SIP start date should be in the past.');
+
+    // approximate birth date from current age
+    var birth = new Date(today.getFullYear() - age, today.getMonth(), today.getDate());
+    var ageAtStart = fullYearsBetween(birth, start);
+    if (ageAtStart < 0) return showError('These inputs imply the SIP started before you were born — please check the age or the start date.');
+    if (ageAtStart < 18) return showError('At that start date you would have been ' + ageAtStart + ' — SIPs require the investor to be at least 18. Please check the inputs.');
+
+    // months common to all three indices
+    var common = Object.keys(INDEX_DATA.largecap.values).filter(function (k) {
+      return INDEX_DATA.midcap.values[k] !== undefined && INDEX_DATA.smallcap.values[k] !== undefined;
+    }).sort();
+    if (!common.length) return showError('Benchmark data is incomplete — the three indices have no overlapping months.');
+    var firstKey = common[0], lastKey = common[common.length - 1];
+    var lastVals = {};
+    BUCKETS.forEach(function (b) { lastVals[b] = INDEX_DATA[b].values[lastKey]; });
+    var valuationDate = keyToDate(lastKey);
+
+    if (monthKey(start) > lastKey) return showError('The start date is beyond the available benchmark data (up to ' + lastKey + ').');
+
+    // walk instalments monthly
+    var units = { largecap: 0, midcap: 0, smallcap: 0 };
+    var invested = 0, flows = [], skippedEarly = 0, count = 0;
+    var d = new Date(start.getFullYear(), start.getMonth(), Math.min(start.getDate(), 28));
+    while (monthKey(d) <= lastKey) {
+      var mk = monthKey(d);
+      if (mk < firstKey) { skippedEarly++; }
+      else {
+        var w = weights(fullYearsBetween(birth, d));
+        BUCKETS.forEach(function (b) {
+          units[b] += (amount * w[b]) / INDEX_DATA[b].values[mk];
+        });
+        invested += amount;
+        flows.push({ date: d.getTime(), amount: amount });
+        count++;
+      }
+      d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    }
+    if (count === 0) return showError('No instalments fall within the available benchmark data (' + firstKey + ' to ' + lastKey + ').');
+
+    var value = 0;
+    BUCKETS.forEach(function (b) { value += units[b] * lastVals[b]; });
+    var gain = value - invested;
+    var rate = xirr(flows, value, valuationDate.getTime());
+
+    var years = (valuationDate - start) / (365.25 * 86400000);
+    var yrs = Math.max(0, Math.floor(years)), mos = Math.max(0, Math.round((years - yrs) * 12));
+
+    $('outInvested').textContent = inr.format(invested);
+    $('outValue').textContent = inr.format(value);
+    $('outGain').textContent = (gain >= 0 ? '+' : '') + inr.format(gain) + ' (' + (invested > 0 ? (gain / invested * 100).toFixed(1) : '0') + '% absolute)';
+    $('outDuration').textContent = count + ' instalments over ' + yrs + 'y ' + mos + 'm';
+    $('outXirr').textContent = rate === null ? '—' : (rate * 100).toFixed(2) + '%';
+
+    var asOf = 'Valued at benchmark levels of ' + keyToDate(lastKey).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) + '.';
+    if (skippedEarly > 0) asOf += ' ' + skippedEarly + ' early instalment(s) fell before the data begins (' + firstKey + ') and were excluded.';
+    if (typeof INDEX_DATA.priceIndex !== 'undefined' && INDEX_DATA.priceIndex) {
+      asOf += ' These are price-index values; actual returns including reinvested dividends would be somewhat higher (typically ~1–1.5% per year).';
+    }
+    if (INDEX_DATA.updated) asOf += ' Data last updated ' + INDEX_DATA.updated + '.';
+    $('asOfNote').textContent = asOf;
+
+    $('results').classList.add('show');
+  });
+})();
+</script>
+</body>
+</html>
