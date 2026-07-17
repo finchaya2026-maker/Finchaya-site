@@ -16,10 +16,12 @@
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .amount-box { position: relative; }
   .amount-box .rupee { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-weight: 600; color: var(--muted); }
-  input[type="number"], input[type="date"] {
+  input[type="number"], input[type="date"], select {
     width: 100%; padding: 12px 14px; font: inherit; font-size: 16px;
     border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
   }
+  .date-selects { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+  .date-selects select { cursor: pointer; }
   .amount-box input { padding-left: 32px; }
   input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
   button.calc {
@@ -94,9 +96,12 @@
     </div>
 
     <div class="field">
-      <label class="field-label" for="startDate">SIP start date</label>
-      <input type="date" id="startDate">
-      <div class="hint">Instalments run monthly from this date, valued at each month's benchmark closing level.</div>
+      <label class="field-label" for="startMonth">SIP start month</label>
+      <div class="date-selects">
+        <select id="startMonth" aria-label="Start month"></select>
+        <select id="startYear" aria-label="Start year"></select>
+      </div>
+      <div class="hint">Instalments run monthly from this month, valued at each month's benchmark closing level.</div>
     </div>
 
     <div class="field">
@@ -192,10 +197,26 @@
   }
   var BUCKETS = ['largecap', 'midcap', 'smallcap'];
 
-  (function initDate() {
-    var d = new Date(); d.setFullYear(d.getFullYear() - 10);
-    $('startDate').value = d.toISOString().slice(0, 10);
-    $('startDate').max = new Date().toISOString().slice(0, 10);
+  (function initDateSelects() {
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var mSel = $('startMonth'), ySel = $('startYear');
+    monthNames.forEach(function (nm, i) {
+      var o = document.createElement('option'); o.value = i; o.textContent = nm; mSel.appendChild(o);
+    });
+    // year range bounded by the data we actually have
+    var years = [];
+    ['largecap', 'midcap', 'smallcap'].forEach(function (b) {
+      if (INDEX_DATA[b] && INDEX_DATA[b].values) years = years.concat(Object.keys(INDEX_DATA[b].values).map(function (k) { return +k.split('-')[0]; }));
+    });
+    var now = new Date();
+    var minYear = years.length ? Math.min.apply(null, years) : now.getFullYear() - 15;
+    var maxYear = now.getFullYear();
+    for (var y = maxYear; y >= minYear; y--) {
+      var o = document.createElement('option'); o.value = y; o.textContent = y; ySel.appendChild(o);
+    }
+    // sensible default: 5 years ago
+    ySel.value = Math.max(minYear, maxYear - 5);
+    mSel.value = now.getMonth();
   })();
 
   function monthKey(d) {
@@ -244,13 +265,14 @@
     if (!haveData) return showError('Benchmark data is not loaded yet. (Site owner: generate tools/index-data.js with the data builder.)');
 
     var amount = parseFloat($('amount').value);
-    var startVal = $('startDate').value;
+    var startMonth = parseInt($('startMonth').value, 10);
+    var startYear = parseInt($('startYear').value, 10);
     var age = parseInt($('age').value, 10);
     if (!amount || amount <= 0) return showError('Please enter your monthly SIP amount.');
-    if (!startVal) return showError('Please pick your SIP start date.');
+    if (isNaN(startMonth) || isNaN(startYear)) return showError('Please pick your SIP start month and year.');
     if (!age || age < 18 || age > 100) return showError('Please enter your current age (18–100).');
 
-    var start = new Date(startVal + 'T00:00:00');
+    var start = new Date(startYear, startMonth, 1);
     var today = new Date();
     if (start >= today) return showError('The SIP start date should be in the past.');
 
@@ -275,7 +297,7 @@
     // walk instalments monthly
     var units = { largecap: 0, midcap: 0, smallcap: 0 };
     var invested = 0, flows = [], skippedEarly = 0, count = 0;
-    var d = new Date(start.getFullYear(), start.getMonth(), Math.min(start.getDate(), 28));
+    var d = new Date(start.getFullYear(), start.getMonth(), 1);
     while (monthKey(d) <= lastKey) {
       var mk = monthKey(d);
       if (mk < firstKey) { skippedEarly++; }
