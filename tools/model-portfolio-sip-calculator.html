@@ -40,6 +40,29 @@
   .num-card.total .v { color: var(--emerald); }
   .num-card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .footnote { font-size: 12px; color: var(--muted); margin-top: 14px; }
+  /* Connect / lead-capture box */
+  .connect { display: none; margin-top: 26px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+  .connect.show { display: block; }
+  .connect.alert { background: #FDF3EC; border-color: var(--marigold); }
+  .connect-head { font-family: 'Fraunces', serif; font-weight: 600; font-size: 19px; margin-bottom: 6px; }
+  .connect-sub { font-size: 14px; color: var(--muted); margin-bottom: 16px; }
+  .compare-row { margin-bottom: 16px; }
+  .pct-box { position: relative; max-width: 200px; }
+  .pct-box .pct { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-weight: 600; color: var(--muted); }
+  .pct-box input { padding-right: 30px; }
+  .compare-note { font-size: 13px; margin-top: 8px; font-weight: 500; }
+  .compare-note.below { color: #B4432F; }
+  .compare-note.above { color: var(--emerald); }
+  .connect-fields { display: grid; gap: 10px; margin-bottom: 14px; }
+  .connect-fields input, .connect-fields textarea {
+    width: 100%; padding: 11px 13px; font: inherit; font-size: 15px;
+    border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); resize: vertical;
+  }
+  .connect-fields input:focus-visible, .connect-fields textarea:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
+  .connect-btn { margin-top: 0; }
+  .connect-status { font-size: 14px; margin-top: 12px; font-weight: 500; display: none; }
+  .connect-status.ok { color: var(--emerald); display: block; }
+  .connect-status.err { color: #B4432F; display: block; }
 </style>
 </head>
 <body>
@@ -104,7 +127,33 @@
         </div>
       </div>
       <p class="footnote" id="asOfNote"></p>
-      <p class="footnote">The split across market segments follows an assumed age-based model portfolio. This is an assumption of how a model portfolio could be assigned — it is not a recommendation. Computed from published benchmark index (TRI) values; index returns exclude fund costs. Past performance does not guarantee future returns. Not investment advice.</p>
+      <p class="footnote">The split across market segments follows an assumed age-based model portfolio. This is an assumption of how a model portfolio could be assigned — it is not a recommendation. Computed from published benchmark index values. Past performance does not guarantee future returns. Not investment advice.</p>
+    </div>
+
+    <div class="connect" id="connect">
+      <div class="connect-head" id="connectHead">Want help putting a plan like this to work?</div>
+      <p class="connect-sub" id="connectSub">Share your details and the FinChaya team will reach out. No spam — just a conversation when it suits you.</p>
+
+      <div class="compare-row">
+        <label class="field-label" for="actualReturn">Your actual annual return so far <small>(optional — to compare with the model)</small></label>
+        <div class="pct-box">
+          <input type="number" id="actualReturn" step="0.1" placeholder="e.g. 9.5" inputmode="decimal">
+          <span class="pct">%</span>
+        </div>
+        <div class="compare-note" id="compareNote"></div>
+      </div>
+
+      <div class="connect-fields">
+        <input type="text" id="cName" placeholder="Your name (optional)">
+        <input type="tel" id="cPhone" placeholder="Phone number *" inputmode="tel">
+        <input type="email" id="cEmail" placeholder="Email address *">
+        <textarea id="cMessage" placeholder="Anything you'd like us to know? (optional)" rows="2"></textarea>
+        <!-- honeypot: hidden from humans, catches bots -->
+        <input type="checkbox" id="cBot" tabindex="-1" autocomplete="off" style="display:none" aria-hidden="true">
+      </div>
+      <button class="calc connect-btn" id="connectBtn">Request a call back</button>
+      <div class="connect-status" id="connectStatus"></div>
+      <p class="footnote">By submitting, you agree to be contacted by FinChaya about your enquiry. Your details are used only to respond to you.</p>
     </div>
   </div>
 </main>
@@ -266,6 +315,101 @@
     $('asOfNote').textContent = asOf;
 
     $('results').classList.add('show');
+
+    // reveal + prime the connect box
+    modelXirr = rate;
+    lastContext = { invested: invested, value: value, xirr: rate, count: count };
+    $('connect').classList.add('show');
+    updateCompare();
+  });
+
+  /* ---------- Connect / lead capture ---------- */
+  // ▼▼ SITE OWNER: paste your Web3Forms access key here (get it free at web3forms.com, register with finchaya2026@gmail.com) ▼▼
+  var WEB3FORMS_KEY = 'f759a318-cd3f-44be-a36a-df15d8c2186c';
+  // ▲▲
+
+  var modelXirr = null;
+  var lastContext = null;
+
+  function updateCompare() {
+    var note = $('compareNote'), box = $('connect'), head = $('connectHead'), sub = $('connectSub');
+    var actual = parseFloat($('actualReturn').value);
+    var model = modelXirr === null ? null : modelXirr * 100;
+    if (!isFinite(actual) || model === null) {
+      note.textContent = ''; note.className = 'compare-note';
+      box.classList.remove('alert');
+      head.textContent = 'Want help putting a plan like this to work?';
+      sub.textContent = 'Share your details and the FinChaya team will reach out. No spam — just a conversation when it suits you.';
+      return;
+    }
+    var gap = model - actual;
+    if (gap > 0.1) {
+      note.textContent = 'That\u2019s ' + gap.toFixed(1) + '% a year below what this model portfolio would have delivered (' + model.toFixed(2) + '%). Over a long SIP, that gap compounds into a big difference.';
+      note.className = 'compare-note below';
+      box.classList.add('alert');
+      head.textContent = 'Your returns are trailing this model — we can help.';
+      sub.textContent = 'Leave your details and the FinChaya team will reach out to talk through how to close that gap.';
+    } else {
+      note.textContent = 'Nicely done — that\u2019s in line with (or ahead of) this model portfolio\u2019s ' + model.toFixed(2) + '%.';
+      note.className = 'compare-note above';
+      box.classList.remove('alert');
+      head.textContent = 'Want a second pair of eyes on your plan?';
+      sub.textContent = 'Share your details and the FinChaya team will be happy to help you keep it on track.';
+    }
+  }
+  $('actualReturn').addEventListener('input', updateCompare);
+
+  function cStatus(msg, ok) {
+    var el = $('connectStatus');
+    el.textContent = msg;
+    el.className = 'connect-status ' + (ok ? 'ok' : 'err');
+  }
+
+  $('connectBtn').addEventListener('click', function () {
+    if ($('cBot').checked) return; // bot trap
+    var phone = $('cPhone').value.trim();
+    var email = $('cEmail').value.trim();
+    if (!phone && !email) return cStatus('Please share a phone number or email so we can reach you.', false);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return cStatus('That email address doesn\u2019t look right — please check it.', false);
+    if (phone && phone.replace(/\D/g, '').length < 10) return cStatus('Please enter a valid phone number.', false);
+
+    if (WEB3FORMS_KEY === 'YOUR-WEB3FORMS-ACCESS-KEY') {
+      return cStatus('Form isn\u2019t connected yet. (Site owner: add the Web3Forms access key.)', false);
+    }
+
+    var btn = $('connectBtn');
+    btn.disabled = true; cStatus('Sending…', true);
+
+    var actual = parseFloat($('actualReturn').value);
+    var payload = {
+      access_key: WEB3FORMS_KEY,
+      subject: 'New FinChaya calculator enquiry',
+      from_name: 'FinChaya Calculator',
+      name: $('cName').value.trim() || '(not given)',
+      phone: phone || '(not given)',
+      email: email || '(not given)',
+      message: $('cMessage').value.trim() || '(none)',
+      model_xirr: lastContext ? (lastContext.xirr * 100).toFixed(2) + '%' : '(n/a)',
+      their_actual_return: isFinite(actual) ? actual + '%' : '(not given)',
+      total_invested: lastContext ? '₹' + Math.round(lastContext.invested).toLocaleString('en-IN') : '(n/a)',
+      value_today: lastContext ? '₹' + Math.round(lastContext.value).toLocaleString('en-IN') : '(n/a)',
+      botcheck: ''
+    };
+
+    fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.success) {
+        cStatus('Thank you — your request has reached the FinChaya team. We\u2019ll be in touch soon.', true);
+        ['cName', 'cPhone', 'cEmail', 'cMessage'].forEach(function (id) { $(id).value = ''; });
+      } else {
+        cStatus('Something went wrong sending your request. Please try again in a moment.', false);
+      }
+    }).catch(function () {
+      cStatus('Couldn\u2019t send right now — please check your connection and try again.', false);
+    }).finally(function () { btn.disabled = false; });
   });
 })();
 </script>
