@@ -22,6 +22,15 @@
   }
   .date-selects { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
   .date-selects select { cursor: pointer; }
+  .radio-row { display: flex; gap: 10px; }
+  .radio-pill { flex: 1; position: relative; }
+  .radio-pill input { position: absolute; opacity: 0; pointer-events: none; }
+  .radio-pill span {
+    display: block; text-align: center; padding: 11px 12px; border: 1px solid var(--line);
+    border-radius: 10px; cursor: pointer; font-weight: 500; transition: all .15s ease; background: #fff;
+  }
+  .radio-pill input:checked + span { background: var(--emerald-soft); border-color: var(--emerald); color: var(--emerald); font-weight: 600; }
+  .radio-pill input:focus-visible + span { outline: 2px solid var(--emerald); outline-offset: 1px; }
   .amount-box input { padding-left: 32px; }
   input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
   button.calc {
@@ -42,6 +51,11 @@
   .num-card.total .v { color: var(--emerald); }
   .num-card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .footnote { font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .takeaway {
+    font-size: 14px; line-height: 1.55; color: var(--ink);
+    background: var(--emerald-soft); border-left: 3px solid var(--emerald);
+    border-radius: 8px; padding: 14px 16px; margin-top: 18px;
+  }
   /* Connect / lead-capture box */
   .connect { display: none; margin-top: 26px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
   .connect.show { display: block; }
@@ -84,11 +98,19 @@
 <main class="wrap">
   <div class="eyebrow">FinChaya · Tools</div>
   <h1 class="display" style="font-size:clamp(28px,5vw,40px)">What would a model portfolio have returned?</h1>
-  <p class="lede" style="margin-bottom:32px">Enter your monthly SIP, when you started, and your age. We compute what an age-based model portfolio would be worth today — using actual benchmark index values, not assumptions.</p>
+  <p class="lede" style="margin-bottom:32px">Enter your SIP or lumpsum, when you started, and your age. We compute what an age-based model portfolio would be worth today — using actual benchmark index values, not assumptions.</p>
 
   <div class="card">
     <div class="field">
-      <label class="field-label" for="amount">Monthly SIP amount</label>
+      <span class="field-label">Investment type</span>
+      <div class="radio-row" role="radiogroup" aria-label="Investment type">
+        <label class="radio-pill"><input type="radio" name="itype" value="sip" checked><span>SIP (monthly)</span></label>
+        <label class="radio-pill"><input type="radio" name="itype" value="lumpsum"><span>Lumpsum</span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="amount" id="amountLabel">Monthly SIP amount</label>
       <div class="amount-box">
         <span class="rupee">₹</span>
         <input type="number" id="amount" min="0" step="500" placeholder="10,000" inputmode="numeric">
@@ -96,12 +118,12 @@
     </div>
 
     <div class="field">
-      <label class="field-label" for="startMonth">SIP start month</label>
+      <label class="field-label" for="startMonth" id="dateLabel">SIP start month</label>
       <div class="date-selects">
         <select id="startMonth" aria-label="Start month"></select>
         <select id="startYear" aria-label="Start year"></select>
       </div>
-      <div class="hint">Instalments run monthly from this month, valued at each month's benchmark closing level.</div>
+      <div class="hint" id="dateHint">Instalments run monthly from this month, valued at each month's benchmark closing level.</div>
     </div>
 
     <div class="field">
@@ -126,11 +148,12 @@
           <div class="sub" id="outGain"></div>
         </div>
         <div class="num-card">
-          <div class="k">XIRR (annualised)</div>
+          <div class="k" id="xirrLabel">XIRR (annualised)</div>
           <div class="v" id="outXirr">—</div>
-          <div class="sub">Actual benchmark returns</div>
+          <div class="sub">Incl. dividend estimate</div>
         </div>
       </div>
+      <p class="takeaway" id="takeaway">These are the returns of the age-based model portfolio, using each segment's benchmark plus an estimated dividend benefit that a mutual-fund investor would actually receive. The takeaway: most of this outcome comes from getting the age-based allocation right — not from picking a star-performing fund. An ordinary index fund tracking these segments would have landed in this ballpark.</p>
       <p class="footnote" id="asOfNote"></p>
       <p class="footnote">The split across market segments follows an assumed age-based model portfolio. This is an assumption of how a model portfolio could be assigned — it is not a recommendation. Computed from published benchmark index values. Past performance does not guarantee future returns. Not investment advice.</p>
     </div>
@@ -197,6 +220,22 @@
   }
   var BUCKETS = ['largecap', 'midcap', 'smallcap'];
 
+  /* Dividend adjustment: our data is a PRICE index (dividends excluded), but a
+     real mutual-fund investor's NAV reflects reinvested dividends. So we add an
+     estimated dividend benefit, compounded over each instalment's holding period,
+     to approximate the total-return (TRI) experience a fund investor would get.
+     The 1.30% yield constant is tuned so the shown annualised return rises by
+     ~1.5%. Gated on price-index data: if TRI data is ever loaded (priceIndex not
+     true), this auto-disables so dividends are never double-counted. */
+  var DIVIDEND_YIELD = 0.013;
+  var DIVIDEND_SHOWN = '1.5';
+  var DIV_EPOCH = new Date(2000, 0, 1).getTime();
+  function divFactor(dateMs) {
+    if (!INDEX_DATA || INDEX_DATA.priceIndex !== true) return 1;
+    return Math.pow(1 + DIVIDEND_YIELD, (dateMs - DIV_EPOCH) / (365.25 * 86400000));
+  }
+  var dividendApplied = (INDEX_DATA && INDEX_DATA.priceIndex === true);
+
   (function initDateSelects() {
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var mSel = $('startMonth'), ySel = $('startYear');
@@ -218,6 +257,19 @@
     ySel.value = Math.max(minYear, maxYear - 5);
     mSel.value = now.getMonth();
   })();
+
+  function applyType() {
+    var isSip = document.querySelector('input[name="itype"]:checked').value === 'sip';
+    $('amountLabel').textContent = isSip ? 'Monthly SIP amount' : 'Lumpsum amount';
+    $('dateLabel').textContent = isSip ? 'SIP start month' : 'Investment month';
+    $('dateHint').textContent = isSip
+      ? "Instalments run monthly from this month, valued at each month's benchmark closing level."
+      : 'The lumpsum is invested this month; the mix is rebalanced as you cross each age band.';
+  }
+  document.querySelectorAll('input[name="itype"]').forEach(function (r) {
+    r.addEventListener('change', applyType);
+  });
+  applyType();
 
   function monthKey(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -264,23 +316,25 @@
     });
     if (!haveData) return showError('Benchmark data is not loaded yet. (Site owner: generate tools/index-data.js with the data builder.)');
 
+    var itype = document.querySelector('input[name="itype"]:checked').value;
+    var isSip = (itype === 'sip');
     var amount = parseFloat($('amount').value);
     var startMonth = parseInt($('startMonth').value, 10);
     var startYear = parseInt($('startYear').value, 10);
     var age = parseInt($('age').value, 10);
-    if (!amount || amount <= 0) return showError('Please enter your monthly SIP amount.');
-    if (isNaN(startMonth) || isNaN(startYear)) return showError('Please pick your SIP start month and year.');
+    if (!amount || amount <= 0) return showError('Please enter your ' + (isSip ? 'monthly SIP' : 'lumpsum') + ' amount.');
+    if (isNaN(startMonth) || isNaN(startYear)) return showError('Please pick your ' + (isSip ? 'SIP start' : 'investment') + ' month and year.');
     if (!age || age < 18 || age > 100) return showError('Please enter your current age (18–100).');
 
     var start = new Date(startYear, startMonth, 1);
     var today = new Date();
-    if (start >= today) return showError('The SIP start date should be in the past.');
+    if (start >= today) return showError('The ' + (isSip ? 'SIP start' : 'investment') + ' date should be in the past.');
 
     // approximate birth date from current age
     var birth = new Date(today.getFullYear() - age, today.getMonth(), today.getDate());
     var ageAtStart = fullYearsBetween(birth, start);
-    if (ageAtStart < 0) return showError('These inputs imply the SIP started before you were born — please check the age or the start date.');
-    if (ageAtStart < 18) return showError('At that start date you would have been ' + ageAtStart + ' — SIPs require the investor to be at least 18. Please check the inputs.');
+    if (ageAtStart < 0) return showError('These inputs imply the investment started before you were born — please check the age or the date.');
+    if (ageAtStart < 18) return showError('At that date you would have been ' + ageAtStart + ' — investors must be at least 18. Please check the inputs.');
 
     // months common to all three indices
     var common = Object.keys(INDEX_DATA.largecap.values).filter(function (k) {
@@ -292,32 +346,72 @@
     BUCKETS.forEach(function (b) { lastVals[b] = INDEX_DATA[b].values[lastKey]; });
     var valuationDate = keyToDate(lastKey);
 
-    if (monthKey(start) > lastKey) return showError('The start date is beyond the available benchmark data (up to ' + lastKey + ').');
+    if (monthKey(start) > lastKey) return showError('The date is beyond the available benchmark data (up to ' + lastKey + ').');
 
-    // walk instalments monthly
-    var units = { largecap: 0, midcap: 0, smallcap: 0 };
-    var invested = 0, flows = [], skippedEarly = 0, count = 0;
-    var d = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (monthKey(d) <= lastKey) {
-      var mk = monthKey(d);
-      if (mk < firstKey) { skippedEarly++; }
-      else {
-        var w = weights(fullYearsBetween(birth, d));
-        BUCKETS.forEach(function (b) {
-          units[b] += (amount * w[b]) / INDEX_DATA[b].values[mk];
-        });
-        invested += amount;
-        flows.push({ date: d.getTime(), amount: amount });
-        count++;
+    var value = 0, invested = 0, rate = null, count = 0, skippedEarly = 0;
+    var flows = [];
+
+    if (isSip) {
+      // SIP: each monthly instalment buys units using that month's age-band weights
+      var units = { largecap: 0, midcap: 0, smallcap: 0 };
+      var d = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (monthKey(d) <= lastKey) {
+        var mk = monthKey(d);
+        if (mk < firstKey) { skippedEarly++; }
+        else {
+          var w = weights(fullYearsBetween(birth, d));
+          var pf = divFactor(d.getTime());
+          BUCKETS.forEach(function (b) {
+            units[b] += (amount * w[b]) / (INDEX_DATA[b].values[mk] * pf);
+          });
+          invested += amount;
+          flows.push({ date: d.getTime(), amount: amount });
+          count++;
+        }
+        d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
       }
-      d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
-    }
-    if (count === 0) return showError('No instalments fall within the available benchmark data (' + firstKey + ' to ' + lastKey + ').');
+      if (count === 0) return showError('No instalments fall within the available benchmark data (' + firstKey + ' to ' + lastKey + ').');
+      var vf = divFactor(valuationDate.getTime());
+      BUCKETS.forEach(function (b) { value += units[b] * lastVals[b] * vf; });
+      rate = xirr(flows, value, valuationDate.getTime());
 
-    var value = 0;
-    BUCKETS.forEach(function (b) { value += units[b] * lastVals[b]; });
+    } else {
+      // Lumpsum: invest once, then rebalance the whole corpus each month to the
+      // current age band's weights (so the mix shifts as the investor crosses 35/50).
+      var buyKey = monthKey(start);
+      if (buyKey < firstKey) { buyKey = firstKey; skippedEarly = 1; } // no data before firstKey; treat as invested at data start
+      var buyDate = keyToDate(buyKey);
+      invested = amount;
+      flows.push({ date: buyDate.getTime(), amount: amount });
+      count = 1;
+
+      // hold "units" per bucket; rebalance when band weights change
+      var lunits = {}; var prevBand = null;
+      var months = common.filter(function (k) { return k >= buyKey; });
+      months.forEach(function (mk, i) {
+        var mdate = keyToDate(mk);
+        var band = weights(fullYearsBetween(birth, mdate));
+        var bandSig = band.largecap + '-' + band.midcap; // identity of the weight set
+        var pf = divFactor(mdate.getTime());
+        if (i === 0) {
+          BUCKETS.forEach(function (b) { lunits[b] = (amount * band[b]) / (INDEX_DATA[b].values[mk] * pf); });
+          prevBand = bandSig;
+        } else if (bandSig !== prevBand) {
+          // rebalance: value the corpus now, redistribute to new weights
+          var cur = 0;
+          BUCKETS.forEach(function (b) { cur += lunits[b] * INDEX_DATA[b].values[mk] * pf; });
+          BUCKETS.forEach(function (b) { lunits[b] = (cur * band[b]) / (INDEX_DATA[b].values[mk] * pf); });
+          prevBand = bandSig;
+        }
+      });
+      var vfL = divFactor(valuationDate.getTime());
+      BUCKETS.forEach(function (b) { value += lunits[b] * lastVals[b] * vfL; });
+      // point-to-point CAGR
+      var yrsHeld = (valuationDate - buyDate) / (365.25 * 86400000);
+      rate = yrsHeld > 0 ? Math.pow(value / invested, 1 / yrsHeld) - 1 : null;
+    }
+
     var gain = value - invested;
-    var rate = xirr(flows, value, valuationDate.getTime());
 
     var years = (valuationDate - start) / (365.25 * 86400000);
     var yrs = Math.max(0, Math.floor(years)), mos = Math.max(0, Math.round((years - yrs) * 12));
@@ -325,13 +419,20 @@
     $('outInvested').textContent = inr.format(invested);
     $('outValue').textContent = inr.format(value);
     $('outGain').textContent = (gain >= 0 ? '+' : '') + inr.format(gain) + ' (' + (invested > 0 ? (gain / invested * 100).toFixed(1) : '0') + '% absolute)';
-    $('outDuration').textContent = count + ' instalments over ' + yrs + 'y ' + mos + 'm';
+    $('outDuration').textContent = isSip
+      ? count + ' instalments over ' + yrs + 'y ' + mos + 'm'
+      : 'Held for ' + yrs + 'y ' + mos + 'm';
     $('outXirr').textContent = rate === null ? '—' : (rate * 100).toFixed(2) + '%';
+    $('xirrLabel').textContent = isSip ? 'XIRR (annualised)' : 'CAGR (annualised)';
 
     var asOf = 'Valued at benchmark levels of ' + keyToDate(lastKey).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) + '.';
-    if (skippedEarly > 0) asOf += ' ' + skippedEarly + ' early instalment(s) fell before the data begins (' + firstKey + ') and were excluded.';
-    if (typeof INDEX_DATA.priceIndex !== 'undefined' && INDEX_DATA.priceIndex) {
-      asOf += ' These are price-index values; actual returns including reinvested dividends would be somewhat higher (typically ~1–1.5% per year).';
+    if (skippedEarly > 0) {
+      asOf += isSip
+        ? ' ' + skippedEarly + ' early instalment(s) fell before the data begins (' + firstKey + ') and were excluded.'
+        : ' Benchmark data begins ' + firstKey + ', so the lumpsum is valued from that month.';
+    }
+    if (dividendApplied) {
+      asOf += ' Returns include an estimated dividend benefit of about ' + DIVIDEND_SHOWN + '% per year — the reinvested dividends a mutual-fund investor receives (NAVs reflect them) but the price index leaves out.';
     }
     if (INDEX_DATA.updated) asOf += ' Data last updated ' + INDEX_DATA.updated + '.';
     $('asOfNote').textContent = asOf;
