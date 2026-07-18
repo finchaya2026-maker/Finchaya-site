@@ -31,6 +31,13 @@
   }
   .radio-pill input:checked + span { background: var(--emerald-soft); border-color: var(--emerald); color: var(--emerald); font-weight: 600; }
   .radio-pill input:focus-visible + span { outline: 2px solid var(--emerald); outline-offset: 1px; }
+  .stepup-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .stepup-toggle input { width: 16px; height: 16px; accent-color: var(--emerald); }
+  .stepup-body { display: none; margin-top: 14px; padding: 14px; border: 1px dashed var(--line); border-radius: 10px; }
+  .stepup-body.show { display: block; }
+  .pct-box2 { position: relative; }
+  .pct-box2 input { padding-right: 92px; }
+  .pct-box2 .suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
   .amount-box input { padding-left: 32px; }
   input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; border-color: var(--emerald); }
   button.calc {
@@ -56,6 +63,13 @@
     background: var(--emerald-soft); border-left: 3px solid var(--emerald);
     border-radius: 8px; padding: 14px 16px; margin-top: 18px;
   }
+  .diag-note {
+    font-size: 14px; line-height: 1.55; color: var(--ink);
+    background: #FDF3EC; border-left: 3px solid var(--marigold);
+    border-radius: 8px; padding: 14px 16px; margin-top: 14px;
+  }
+  .diag-note ol { margin: 8px 0 8px 20px; }
+  .diag-note li { margin-bottom: 4px; }
   /* Connect / lead-capture box */
   .connect { display: none; margin-top: 26px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
   .connect.show { display: block; }
@@ -117,6 +131,33 @@
       </div>
     </div>
 
+    <div class="field" id="stepupField">
+      <label class="stepup-toggle">
+        <input type="checkbox" id="stepupOn">
+        <span>Step up my SIP over time (optional)</span>
+      </label>
+      <div class="stepup-body" id="stepupBody">
+        <div class="radio-row" role="radiogroup" aria-label="Step-up type" style="margin-bottom:10px">
+          <label class="radio-pill"><input type="radio" name="steptype" value="percent" checked><span>By percentage</span></label>
+          <label class="radio-pill"><input type="radio" name="steptype" value="fixed"><span>By fixed amount</span></label>
+        </div>
+        <div class="stepup-input" id="stepPercentWrap">
+          <div class="pct-box2">
+            <input type="number" id="stepPercent" min="0" step="1" placeholder="10" inputmode="numeric">
+            <span class="suffix">% each year</span>
+          </div>
+        </div>
+        <div class="stepup-input" id="stepFixedWrap" style="display:none">
+          <div class="amount-box">
+            <span class="rupee">₹</span>
+            <input type="number" id="stepFixed" min="0" step="500" placeholder="1,000" inputmode="numeric">
+          </div>
+          <div class="hint">Added to your monthly instalment on each anniversary.</div>
+        </div>
+        <div class="hint" id="stepHint">Your SIP rises on every yearly anniversary of the start date.</div>
+      </div>
+    </div>
+
     <div class="field">
       <label class="field-label" for="startMonth" id="dateLabel">SIP start month</label>
       <div class="date-selects">
@@ -155,6 +196,14 @@
       </div>
       <p class="takeaway" id="takeaway">These are the returns of the age-based model portfolio, using each segment's benchmark plus an estimated dividend benefit that a mutual-fund investor would actually receive. The takeaway: most of this outcome comes from getting the age-based allocation right — not from picking a star-performing fund. An ordinary index fund tracking these segments would have landed in this ballpark.</p>
       <p class="footnote" id="asOfNote"></p>
+      <div class="diag-note">
+        <strong>If your own returns are below this,</strong> it usually points to one of two things:
+        <ol>
+          <li>your <strong>allocation across categories</strong> (large / mid / small-cap) needs improvement, or</li>
+          <li>your <strong>choice of funds</strong> within those categories needs improvement.</li>
+        </ol>
+        Either way, it's worth a closer look — the "Connect with us" option below is a good place to start.
+      </div>
       <p class="footnote">The split across market segments follows an assumed age-based model portfolio. This is an assumption of how a model portfolio could be assigned — it is not a recommendation. Computed from published benchmark index values. Past performance does not guarantee future returns. Not investment advice.</p>
     </div>
 
@@ -265,11 +314,24 @@
     $('dateHint').textContent = isSip
       ? "Instalments run monthly from this month, valued at each month's benchmark closing level."
       : 'The lumpsum is invested this month; the mix is rebalanced as you cross each age band.';
+    $('stepupField').style.display = isSip ? '' : 'none';  // step-up only applies to SIP
   }
   document.querySelectorAll('input[name="itype"]').forEach(function (r) {
     r.addEventListener('change', applyType);
   });
   applyType();
+
+  // step-up show/hide + percent-vs-fixed
+  $('stepupOn').addEventListener('change', function () {
+    $('stepupBody').classList.toggle('show', this.checked);
+  });
+  document.querySelectorAll('input[name="steptype"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      var pct = document.querySelector('input[name="steptype"]:checked').value === 'percent';
+      $('stepPercentWrap').style.display = pct ? '' : 'none';
+      $('stepFixedWrap').style.display = pct ? 'none' : '';
+    });
+  });
 
   function monthKey(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -326,6 +388,14 @@
     if (isNaN(startMonth) || isNaN(startYear)) return showError('Please pick your ' + (isSip ? 'SIP start' : 'investment') + ' month and year.');
     if (!age || age < 18 || age > 100) return showError('Please enter your current age (18–100).');
 
+    // step-up (SIP only)
+    var stepOn = isSip && $('stepupOn').checked;
+    var stepType = document.querySelector('input[name="steptype"]:checked').value;
+    var stepPercent = parseFloat($('stepPercent').value);
+    var stepFixed = parseFloat($('stepFixed').value);
+    if (stepOn && stepType === 'percent' && (!isFinite(stepPercent) || stepPercent < 0)) return showError('Please enter a valid step-up percentage (or turn step-up off).');
+    if (stepOn && stepType === 'fixed' && (!isFinite(stepFixed) || stepFixed < 0)) return showError('Please enter a valid step-up amount (or turn step-up off).');
+
     var start = new Date(startYear, startMonth, 1);
     var today = new Date();
     if (start >= today) return showError('The ' + (isSip ? 'SIP start' : 'investment') + ' date should be in the past.');
@@ -359,13 +429,21 @@
         var mk = monthKey(d);
         if (mk < firstKey) { skippedEarly++; }
         else {
+          // step-up: how many completed years since the start date
+          var yearsElapsed = fullYearsBetween(start, d);
+          var thisAmount = amount;
+          if (stepOn && yearsElapsed > 0) {
+            thisAmount = stepType === 'percent'
+              ? amount * Math.pow(1 + stepPercent / 100, yearsElapsed)
+              : amount + stepFixed * yearsElapsed;
+          }
           var w = weights(fullYearsBetween(birth, d));
           var pf = divFactor(d.getTime());
           BUCKETS.forEach(function (b) {
-            units[b] += (amount * w[b]) / (INDEX_DATA[b].values[mk] * pf);
+            units[b] += (thisAmount * w[b]) / (INDEX_DATA[b].values[mk] * pf);
           });
-          invested += amount;
-          flows.push({ date: d.getTime(), amount: amount });
+          invested += thisAmount;
+          flows.push({ date: d.getTime(), amount: thisAmount });
           count++;
         }
         d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
@@ -420,7 +498,7 @@
     $('outValue').textContent = inr.format(value);
     $('outGain').textContent = (gain >= 0 ? '+' : '') + inr.format(gain) + ' (' + (invested > 0 ? (gain / invested * 100).toFixed(1) : '0') + '% absolute)';
     $('outDuration').textContent = isSip
-      ? count + ' instalments over ' + yrs + 'y ' + mos + 'm'
+      ? count + ' instalments over ' + yrs + 'y ' + mos + 'm' + (stepOn ? ' · stepped up' : '')
       : 'Held for ' + yrs + 'y ' + mos + 'm';
     $('outXirr').textContent = rate === null ? '—' : (rate * 100).toFixed(2) + '%';
     $('xirrLabel').textContent = isSip ? 'XIRR (annualised)' : 'CAGR (annualised)';
