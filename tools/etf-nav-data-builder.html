@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF NAV Data Builder — FinChaya (owner tool)</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family: system-ui, sans-serif; background:#FAFBF7; color:#17251E; padding:32px 16px; line-height:1.5; }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  p.note { color:#5C6F65; font-size:14px; margin-bottom:18px; }
+  .src { background:#E7F3EC; border:1px solid #1E7A55; border-radius:10px; padding:12px 14px; font-size:13px; margin-bottom:20px; }
+  .src code { background:#fff; padding:1px 5px; border-radius:4px; }
+  label { display:block; font-weight:600; font-size:14px; margin:16px 0 6px; }
+  textarea { width:100%; min-height:180px; padding:10px 12px; font-family:ui-monospace,monospace; font-size:12px; border:1px solid #E2E8E0; border-radius:10px; }
+  .stat { font-size:13px; color:#1E7A55; margin-top:6px; min-height:18px; }
+  .stat.err { color:#B4432F; }
+  button { margin-top:20px; padding:13px 22px; font:inherit; font-weight:600; background:#1E7A55; color:#fff; border:none; border-radius:10px; cursor:pointer; }
+  button:hover { background:#176547; }
+  .summary { margin-top:16px; font-size:14px; background:#fff; border:1px solid #E2E8E0; border-radius:10px; padding:14px; display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ETF NAV Data Builder</h1>
+  <p class="note">Owner tool — keep local. Generates <b>etf-nav-data.js</b> for the Nifty ETF calculator, using the NAV history of India's oldest Nifty ETF, <b>Nifty BeES</b> (Nippon India ETF Nifty 50 BeES, launched Dec 2001).</p>
+  <div class="src">
+    <b>How to get the data (free):</b><br>
+    1. Find the scheme code: open <code>https://api.mfapi.in/mf/search?q=nifty%20bees</code> in your browser and note the <code>schemeCode</code> for "Nippon India ETF Nifty 50 BeES" (often <code>101206</code>).<br>
+    2. Open <code>https://api.mfapi.in/mf/&lt;schemeCode&gt;</code> — you'll see JSON with a <code>data</code> array of <code>{date, nav}</code>.<br>
+    3. Copy that whole JSON (or just the data array) and paste it below. The tool also accepts CSV rows like <code>dd-mm-yyyy,nav</code>.
+  </div>
+
+  <label for="in">Paste NAV data (JSON from mfapi.in, or CSV rows)</label>
+  <textarea id="in" placeholder='Paste the mfapi.in JSON here, e.g. {"meta":{...},"data":[{"date":"17-07-2026","nav":"275.45"},{"date":"16-07-2026","nav":"274.90"}, ...]}'></textarea>
+  <div class="stat" id="stat"></div>
+
+  <button id="go">Generate etf-nav-data.js</button>
+  <div class="summary" id="summary"></div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  function parseDMY(s) {
+    var m = s.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (m) return { y: +m[3], mo: +m[2] - 1, d: +m[1] };
+    m = s.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return { y: +m[1], mo: +m[2] - 1, d: +m[3] };
+    return null;
+  }
+
+  // returns { values: {YYYY-MM: nav}, rows }
+  function parseInput(text) {
+    var pairs = [];
+    text = text.trim();
+    // try JSON first
+    try {
+      var j = JSON.parse(text);
+      var arr = Array.isArray(j) ? j : (j.data || []);
+      arr.forEach(function (row) {
+        if (row && row.date && row.nav !== undefined) pairs.push([row.date, parseFloat(row.nav)]);
+      });
+    } catch (e) { /* not JSON, fall through */ }
+
+    if (pairs.length === 0) {
+      // CSV / line mode
+      text.split(/\n/).forEach(function (line) {
+        var cells = line.split(/[,\t;]/).map(function (c) { return c.trim().replace(/"/g, ''); });
+        var date = null, nav = null;
+        cells.forEach(function (c) {
+          var d = parseDMY(c);
+          if (d && !date) { date = c; return; }
+          var v = parseFloat(c.replace(/,/g, ''));
+          if (isFinite(v)) nav = v;
+        });
+        if (date && nav) pairs.push([date, nav]);
+      });
+    }
+
+    var byMonth = {}, rows = 0;
+    pairs.forEach(function (p) {
+      var d = parseDMY(p[0]); var nav = p[1];
+      if (!d || !isFinite(nav) || nav <= 0) return;
+      var key = d.y + '-' + String(d.mo + 1).padStart(2, '0');
+      if (!byMonth[key] || d.d >= byMonth[key].day) byMonth[key] = { day: d.d, nav: nav };
+      rows++;
+    });
+    var out = {};
+    Object.keys(byMonth).sort().forEach(function (k) { out[k] = Math.round(byMonth[k].nav * 100) / 100; });
+    return { values: out, rows: rows };
+  }
+
+  function refresh() {
+    var r = parseInput($('in').value);
+    var keys = Object.keys(r.values);
+    var el = $('stat');
+    if (!keys.length) { el.textContent = $('in').value.trim() ? 'Could not recognise any date+NAV rows yet.' : ''; el.className = 'stat err'; return; }
+    el.className = 'stat';
+    el.textContent = r.rows + ' rows parsed → ' + keys.length + ' months, ' + keys[0] + ' to ' + keys[keys.length - 1] + ' (latest NAV ' + r.values[keys[keys.length - 1]] + ')';
+  }
+  $('in').addEventListener('input', refresh);
+
+  $('go').addEventListener('click', function () {
+    var r = parseInput($('in').value);
+    var keys = Object.keys(r.values);
+    if (!keys.length) { alert('No valid NAV data found. Paste the mfapi.in JSON or dd-mm-yyyy,nav rows.'); return; }
+    var today = new Date().toISOString().slice(0, 10);
+    var js = '/* Generated by etf-nav-data-builder on ' + today + ' */\n' +
+      'var ETF_NAV = {\n' +
+      '  updated: "' + today + '",\n' +
+      '  name: "Nippon India ETF Nifty 50 BeES",\n' +
+      '  inception: "' + keys[0] + '",\n' +
+      '  values: ' + JSON.stringify(r.values) + '\n' +
+      '};\n';
+    var blob = new Blob([js], { type: 'text/javascript' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'etf-nav-data.js';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    var s = $('summary');
+    s.style.display = 'block';
+    s.innerHTML = '<b>etf-nav-data.js downloaded.</b> Upload it into the <b>tools</b> folder on GitHub (replace the old one). ' +
+      'Coverage: <b>' + keys[0] + ' to ' + keys[keys.length - 1] + '</b> (' + keys.length + ' months).';
+  });
+})();
+</script>
+</body>
+</html>
