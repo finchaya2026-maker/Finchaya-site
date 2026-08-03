@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Understanding CAS : A new closing method for Indian Stocks — FinChaya</title>
+<meta name="description" content="Starting August 3 2026, there is a big change that has happened in the way how Indian stocks are closing. Understanding CAS is a step forward towards understating this new system">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">Fin<span>Chaya</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="../index.html#articles">Articles</a>
+      <a href="../index.html#tools">Tools</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <article class="post">
+    <h1>Understanding CAS : A new closing method for Indian Stocks</h1>
+    <div class="post-meta">3 August 2026 · 5 min read</div>
+
+    <p># Closing Auction Session (CAS): How India's Stock Market Closing Just Changed</p>
+
+    <p>Starting <strong>3 August 2026</strong>, the way stock exchanges in India calculate a stock's official closing price has fundamentally changed. SEBI's new <strong>Closing Auction Session (CAS)</strong> framework is now live on NSE, BSE and MSEI, and if you trade, invest, or simply track the markets, it's worth understanding what changed and why.</p>
+
+    <h2>The Old System: VWAP of the Last 30 Minutes</h2>
+
+    <p>For years, the official closing price of a stock was calculated as the <strong>Volume Weighted Average Price (VWAP)</strong> of every trade executed between 3:00 PM and 3:30 PM. It was simple and transparent — but it had a well-known weakness.</p>
+
+    <p>Because the closing price was just a running average, a single large order placed in the final minutes — especially in a stock with relatively thin trading volumes — could disproportionately pull the average in one direction. This created a window for what market participants called "closing price gaming": a well-timed, well-sized order that skewed the reference price used for everything from index calculations to F&amp;O settlements and margin computations, often without moving the market at any other point in the day.</p>
+
+    <h2>The New System: A Structured Call Auction</h2>
+
+    <p>CAS replaces that averaging mechanism with a <strong>call auction</strong> — a market design where buy and sell orders are collected over a window, then matched all at once at a single equilibrium price, rather than being executed continuously as they arrive.</p>
+
+    <p>Here is how the new closing sequence works for eligible stocks:</p>
+
+    <ul>
+      <li><strong>3:00 PM – 3:15 PM:</strong> Regular continuous trading proceeds as usual, while the exchange separately computes the VWAP for this 15-minute window (this becomes the reference/base price for the auction).</li>
+      <li><strong>3:15 PM:</strong> Continuous trading stops for CAS-eligible stocks. Any pending stop-loss orders on these stocks are automatically cancelled.</li>
+      <li><strong>3:15 PM – 3:20 PM:</strong> Order entry window opens. Investors can place fresh limit or market orders.</li>
+      <li><strong>3:20 PM – 3:30 PM:</strong> Order collection continues; orders can be modified or cancelled up to a point (market orders cannot be cancelled after 3:25 PM).</li>
+      <li><strong>3:30 PM – 3:35 PM:</strong> All collected orders are matched in a single batch at one equilibrium price — the price that clears the maximum quantity of shares. This becomes the <strong>official closing price</strong> for the day.</li>
+      <li><strong>3:35 PM – 3:50 PM:</strong> Buffer/transition phase as the exchange prepares for the post-close session.</li>
+      <li><strong>3:50 PM – 4:00 PM:</strong> Post-close session, where trading resumes exclusively at the newly discovered CAS closing price.</li>
+    </ul>
+
+    <p>One detail trips up a lot of first-time participants: <strong>every matched trade in the auction happens at the single equilibrium price, not at your individual limit price.</strong> If you placed a buy limit order at ₹1,010 and the auction settles at ₹1,005, your order executes at ₹1,005. Your limit price only determines whether you're included in the match — it doesn't get you a custom price.</p>
+
+    <h2>Who Does This Apply To?</h2>
+
+    <p>In this first phase, CAS applies only to <strong>Category I stocks — those with active Futures &amp; Options (F&amp;O) contracts</strong> on NSE and/or BSE. That covers all Nifty 50 and Bank Nifty constituents and other major F&amp;O names, roughly 200+ stocks to start.</p>
+
+    <p><strong>Category II stocks</strong> — those without F&amp;O contracts — are unaffected for now. They continue with the familiar 3:00 PM–3:30 PM continuous trading and VWAP-based closing price, exactly as before.</p>
+
+    <p>Note also that each exchange publishes its own eligibility list, and the two aren't always identical — for instance, some stocks may be included on NSE's list but excluded from BSE's, or vice versa. It's worth checking the specific exchange's published list rather than assuming uniformity.</p>
+
+    <h2>Why It Matters for Derivatives Too</h2>
+
+    <p>Because index and stock closing prices feed directly into F&amp;O settlement, SEBI has synchronized the derivatives timeline with CAS:</p>
+
+    <ul>
+      <li><strong>Stock futures price bands</strong> reset to a static ±3% at 3:15 PM, based on the 3:00–3:15 PM VWAP, keeping cash and derivatives markets tightly aligned during the transition.</li>
+      <li><strong>F&amp;O trading</strong> (stock futures, stock options, index futures, index options) continues until <strong>3:40 PM</strong> — ten minutes past the cash auction's completion — so that derivatives traders can see the final cash closing price before their own session ends.</li>
+    </ul>
+
+    <h2>What Doesn't Change</h2>
+
+    <p>For long-term investors, the practical impact is minimal:</p>
+
+    <ul>
+      <li><strong>Mutual fund NAVs, SIPs, and ETF holdings</strong> are unaffected by CAS — fund houses continue computing NAVs based on the official closing prices as before, just derived through the new mechanism.</li>
+      <li><strong>Delivery-based equity holdings</strong> are not disrupted; you can still buy and hold as usual.</li>
+      <li><strong>Market opening time</strong> remains unchanged at 9:15 AM.</li>
+      <li><strong>Commodity and currency segments</strong> are untouched by this change.</li>
+    </ul>
+
+    <p>The main groups who need to adjust their habits are <strong>intraday traders and active F&amp;O participants</strong>. Equity intraday (MIS) positions on CAS-eligible stocks are now auto-squared-off earlier in the day (check your broker's updated auto square-off timings), and stop-loss orders no longer carry into the closing window automatically.</p>
+
+    <h2>The Bigger Picture</h2>
+
+    <p>SEBI's rationale, echoed across exchange circulars and broker commentary, centers on a few core goals:</p>
+
+    <ol>
+      <li><strong>Reducing closing-price manipulation</strong> by removing the single point of leverage a large last-minute order used to have.</li>
+      <li><strong>Improving price discovery</strong> by aggregating liquidity into one transparent matching event instead of scattering it across continuous trades.</li>
+      <li><strong>Aligning cash and derivatives markets</strong> more closely at the moment of settlement.</li>
+      <li><strong>Bringing India's closing mechanism in line with global practice</strong> — closing auctions are already standard on major exchanges like the NYSE, LSE, and NSE's own opening auction session.</li>
+    </ol>
+
+    <p>The rollout itself is phased: F&amp;O stocks first (from 3 August 2026), with further changes to the pre-open auction session expected later in the year, and non-F&amp;O stocks continuing on the existing VWAP process until further notice.</p>
+
+    <h2>In Summary</h2>
+
+    <p>CAS is a structural upgrade to how India's markets discover a stock's closing price — moving from a 30-minute rolling average to a 20-minute structured auction for the country's most liquid, F&amp;O-eligible stocks. For most retail investors following a disciplined SIP or long-term equity approach, this change is largely invisible in day-to-day terms. For active and intraday traders, it introduces new auction mechanics — indicative pricing, equilibrium-price execution, and revised order-cancellation windows — that are worth understanding before the next expiry day rolls around.</p>
+
+    <p>---</p>
+
+    <p><em>This article is for informational purposes only and does not constitute investment advice. Please consult your financial advisor before making investment decisions.</em></p>
+
+    <p><em>Mutual Fund investments are subject to market risks. Read all scheme-related documents carefully. This post is for educational purposes only and does not constitute investment advice.</em></p>
+  </article>
+</main>
+
+<aside class="promo-tile">
+  <span class="promo-label">Sponsored</span>
+  <span class="promo-title">Check your loan details</span>
+  <a href="https://frm.finfinity.co.in/?utm_campaign=334112" target="_blank" rel="noopener sponsored">
+    <img src="../images/check-loan-details.webp" alt="Do you have a home loan? A 1% interest rate reduction can save ₹75,000+ every year — check your loan details." loading="lazy">
+  </a>
+</aside>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>© 2026 FinChaya · finchaya.com</div>
+    <div>Educational content only — not investment advice. · <a href="../about.html">About &amp; disclaimer</a></div>
+  </div>
+</footer>
+
+</body>
+</html>
