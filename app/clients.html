@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients — FinChaya</title>
+<style>
+  :root{
+    --ground:#efece3; --card:#ffffff;
+    --ink:#123027; --ink-soft:#5b6b63; --rule:#ddd8cc;
+    --bench:#e0a33c; --up:#1d6b4f; --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:16px/1.55 var(--font)}
+  .wrap{max-width:960px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+    text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:62ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    padding:26px 28px;margin-bottom:22px}
+  h2{font-size:21px;font-weight:600;margin:0 0 4px}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 18px}
+  .foot{color:var(--ink-soft);font-size:13px;margin:14px 0 0;line-height:1.55}
+  .sub{font-size:12.5px;color:var(--ink-soft)}
+  .muted{color:var(--ink-soft)}
+
+  label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;margin-bottom:5px}
+  input,select,textarea,button{font:inherit}
+  input[type=text],input[type=number],input[type=date],select,textarea{
+    width:100%;padding:10px 11px;border:1px solid var(--rule);border-radius:3px;
+    background:#fdfcfa;color:var(--ink)}
+  textarea{resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--bench);
+    outline-offset:1px}
+  .grid{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  .grid .full{grid-column:1/-1}
+  @media (max-width:640px){.grid{grid-template-columns:1fr}}
+
+  .go{background:var(--ink);color:#f6f3ea;border:none;padding:11px 22px;
+    border-radius:3px;cursor:pointer}
+  .ghost{background:none;border:1px solid var(--rule);color:var(--ink);
+    padding:10px 18px;border-radius:3px;cursor:pointer}
+  .ghost:hover{border-color:var(--bench)}
+  .link{background:none;border:none;color:var(--down);cursor:pointer;
+    padding:2px 4px;font-size:14px}
+  .back{background:none;border:none;color:var(--ink-soft);cursor:pointer;
+    padding:0;font-size:14px;margin:0 0 14px}
+  .back:hover{color:var(--bench)}
+
+  .clients{display:flex;flex-direction:column;gap:10px}
+  .crow{display:flex;justify-content:space-between;align-items:center;gap:14px;
+    width:100%;padding:15px 18px;background:#fbfaf6;border:1px solid var(--rule);
+    border-radius:4px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+  .crow:hover{border-color:var(--bench);background:#fdfbf5}
+  .crow b{font-size:17px;font-weight:600;display:block}
+  .pill{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:2px;
+    background:#f0ece2;color:var(--ink-soft);margin-left:6px}
+  .err{background:#fbf0ec;border:1px solid #e6c8bd;color:var(--down);
+    padding:12px 14px;border-radius:3px;margin-bottom:16px}
+  .warn{background:#fdf7ea;border:1px solid #e8d6ab;padding:12px 14px;
+    border-radius:3px;margin-top:12px;font-size:14px}
+  .empty{color:var(--ink-soft);padding:8px 0}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Distributor</p>
+  <h1>Your clients</h1>
+  <p class="lede">The people you advise, and the portfolios you keep for each
+     of them. Everything here is visible only to you.</p>
+  <div id="app"><p class="empty">Loading&hellip;</p></div>
+</div>
+
+<script>
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rupee = n => "\u20b9" + Math.round(n).toLocaleString("en-IN");
+const app = () => document.getElementById("app");
+let PURPOSES = [];
+
+async function api(path, opts) {
+  const r = await fetch("/api/distributor" + path, Object.assign(
+    {headers: {"Content-Type": "application/json"}}, opts || {}));
+  if (r.status === 401) throw {signin: true};
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch {}
+  if (!r.ok) {
+    let detail = body && body.detail;
+    if (Array.isArray(detail)) detail = detail.map(d => d.msg || "").join("; ");
+    throw {message: detail ? `${detail} (${r.status})`
+                           : `The server returned ${r.status}.`};
+  }
+  return body;
+}
+
+function fail(e) {
+  if (e && e.signin) {
+    app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
+      <p class="note">Client records are held against your account.
+         Sign in on the main page, then come back here.</p>
+      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
+         and sign in</a></p></div>`;
+    return;
+  }
+  const box = document.createElement("div");
+  box.className = "err";
+  box.textContent = (e && e.message) || "Could not reach the server.";
+  app().prepend(box);
+}
+
+window.addEventListener("hashchange", route);
+route();
+
+function route() {
+  const m = location.hash.match(/^#\/c\/(\d+)/);
+  if (m) openClient(Number(m[1])); else showList();
+}
+
+/* ---- list ------------------------------------------------------ */
+async function showList() {
+  let clients;
+  try {
+    if (!PURPOSES.length) PURPOSES = await api("/purposes");
+    clients = await api("/clients");
+  } catch (e) { return fail(e); }
+
+  let html = `<div class="panel">
+    <h2>Clients</h2>
+    <p class="note">${clients.length
+      ? `${clients.length} client${clients.length === 1 ? "" : "s"}.`
+      : "None yet."} Open one to see their portfolios.</p>`;
+
+  html += clients.length
+    ? `<div class="clients">` + clients.map(c => `
+        <button class="crow" data-open="${c.client_id}">
+          <span><b>${esc(c.name)}</b>
+            <span class="sub">${c.age ? c.age + " years old" : "age not given"}${
+              c.purpose ? " \u00b7 " + esc(c.purpose) : ""}
+              ${c.portfolios
+                ? `<span class="pill">${c.portfolios} portfolio${
+                    c.portfolios === 1 ? "" : "s"}</span>` : ""}
+              ${c.consent_on ? "" : `<span class="pill">no consent recorded</span>`}
+            </span></span>
+          <span class="sub">Open &rarr;</span>
+        </button>`).join("") + `</div>`
+    : `<p class="empty">No clients yet.</p>`;
+
+  html += `<p style="margin:20px 0 0"><button class="go" id="new">Add a client</button>
+    <button class="ghost" id="prof" style="margin-left:8px">Your ARN and details</button>
+    </p></div><div id="form"></div>`;
+
+  app().innerHTML = html;
+  app().querySelectorAll("[data-open]").forEach(b =>
+    b.addEventListener("click", () => location.hash = "#/c/" + b.dataset.open));
+  document.getElementById("new").addEventListener("click", () => clientForm(null));
+  document.getElementById("prof").addEventListener("click", profileForm);
+}
+
+/* ---- the distributor's own details ------------------------------ */
+async function profileForm() {
+  let p;
+  try { p = await api("/profile"); } catch (e) { return fail(e); }
+  document.getElementById("form").innerHTML = `<div class="panel">
+    <h2>Your details</h2>
+    <p class="note">These appear on reports you produce. Held against your
+       account, so they follow you to another machine.</p>
+    <div class="grid">
+      <div><label>Your name</label>
+        <input type="text" id="p_name" value="${esc(p.display_name || "")}"></div>
+      <div><label>ARN</label>
+        <input type="text" id="p_arn" value="${esc(p.arn || "")}"
+               placeholder="ARN-000000"></div>
+      <div class="full"><label>Phone or email shown on reports</label>
+        <input type="text" id="p_contact" value="${esc(p.contact || "")}"></div>
+    </div>
+    <p class="foot">The ARN is stored as a label for reports. Nothing here
+       checks it, and nothing here grants any permission.</p>
+    <p style="margin:16px 0 0"><button class="go" id="psave">Save</button>
+      <button class="ghost" id="pcancel" style="margin-left:8px">Cancel</button></p>
+    </div>`;
+  document.getElementById("pcancel").addEventListener("click",
+    () => { document.getElementById("form").innerHTML = ""; });
+  document.getElementById("psave").addEventListener("click", async () => {
+    try {
+      await api("/profile", {method: "PUT", body: JSON.stringify({
+        display_name: document.getElementById("p_name").value.trim() || null,
+        arn: document.getElementById("p_arn").value.trim() || null,
+        contact: document.getElementById("p_contact").value.trim() || null})});
+      document.getElementById("form").innerHTML =
+        `<div class="panel"><p class="note" style="margin:0">Saved.</p></div>`;
+    } catch (e) { fail(e); }
+  });
+}
+
+/* ---- add / edit a client ---------------------------------------- */
+function clientForm(c) {
+  const today = new Date().toISOString().slice(0, 10);
+  const box = document.getElementById("form") || app();
+  box.innerHTML = `<div class="panel">
+    <h2>${c ? "Edit " + esc(c.name) : "Add a client"}</h2>
+    <div class="grid">
+      <div><label>Name</label>
+        <input type="text" id="c_name" value="${esc(c ? c.name : "")}"
+               placeholder="Full name"></div>
+      <div><label>Year of birth</label>
+        <input type="number" id="c_year" min="1900" max="${new Date().getFullYear()}"
+               step="1" value="${c && c.birth_year ? c.birth_year : ""}"
+               placeholder="1985">
+        <span class="sub">The age is worked out from this, so it stays right.</span>
+      </div>
+      <div><label>Purpose of investment</label>
+        <select id="c_purpose">
+          <option value="">Not set</option>
+          ${PURPOSES.map(p => `<option${c && c.purpose === p ? " selected" : ""}>${
+            esc(p)}</option>`).join("")}
+        </select></div>
+      <div><label>Consent recorded on</label>
+        <input type="date" id="c_consent"
+               value="${c && c.consent_on ? c.consent_on : ""}">
+        <span class="sub">When they agreed to you holding these details.</span>
+      </div>
+      <div class="full"><label>The goal, in their words</label>
+        <textarea id="c_goal" rows="3"
+          placeholder="e.g. Daughter's college fees in 2034, about ₹40 lakh">${
+          esc(c ? (c.goal_note || "") : "")}</textarea></div>
+    </div>
+    <p class="foot">Only what you will actually use. These are details about
+       someone who is not a user of this site, so the less held the better.</p>
+    <p style="margin:16px 0 0">
+      <button class="go" id="csave">${c ? "Save changes" : "Add client"}</button>
+      <button class="ghost" id="ccancel" style="margin-left:8px">Cancel</button></p>
+    <div id="cerr"></div>
+  </div>`;
+
+  document.getElementById("ccancel").addEventListener("click",
+    () => c ? openClient(c.client_id) : showList());
+
+  document.getElementById("csave").addEventListener("click", async () => {
+    const year = Number(document.getElementById("c_year").value);
+    const body = {
+      name: document.getElementById("c_name").value.trim(),
+      birth_year: Number.isFinite(year) && year > 0 ? year : null,
+      purpose: document.getElementById("c_purpose").value || null,
+      goal_note: document.getElementById("c_goal").value.trim() || null,
+      consent_on: document.getElementById("c_consent").value || null,
+    };
+    if (!body.name) {
+      document.getElementById("cerr").innerHTML =
+        `<div class="err">The client needs a name.</div>`;
+      return;
+    }
+    try {
+      const saved = c
+        ? await api(`/clients/${c.client_id}`, {method: "PUT", body: JSON.stringify(body)})
+        : await api("/clients", {method: "POST", body: JSON.stringify(body)});
+      // A repeated name is flagged, not blocked -- two clients really can
+      // share a name, and refusing would be wrong.
+      if (saved.duplicate_name) {
+        alert("You already have another client with that name. Both have been kept.");
+      }
+      location.hash = "#/c/" + saved.client_id;
+      openClient(saved.client_id);
+    } catch (e) {
+      document.getElementById("cerr").innerHTML =
+        `<div class="err">${esc(e.message || "Could not save.")}</div>`;
+    }
+  });
+}
+
+/* ---- one client -------------------------------------------------- */
+async function openClient(id) {
+  let c;
+  try {
+    if (!PURPOSES.length) PURPOSES = await api("/purposes");
+    c = await api("/clients/" + id);
+  } catch (e) { return fail(e); }
+
+  let html = `<button class="back" id="back">&larr; All clients</button>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">${esc(c.name)}</h2>
+        <span class="row">
+          <button class="ghost" id="edit">Edit</button>
+          <button class="link" id="del">Delete</button>
+        </span>
+      </div>
+      <p class="note" style="margin-top:8px">
+        ${c.age ? c.age + " years old" : "Age not given"}${
+        c.purpose ? " \u00b7 " + esc(c.purpose) : ""}${
+        c.consent_on ? " \u00b7 consent recorded " + esc(c.consent_on) : ""}</p>
+      ${c.goal_note ? `<p style="margin:0 0 4px">${esc(c.goal_note)}</p>` : ""}
+      ${c.consent_on ? "" : `<div class="warn">No consent date recorded. These
+        are another person&rsquo;s details &mdash; worth noting when they
+        agreed to you holding them.</div>`}
+    </div>
+
+    <div class="panel">
+      <h2>Portfolios</h2>`;
+
+  if (c.portfolio_list.length) {
+    html += `<div class="clients">` + c.portfolio_list.map(p => `
+      <a class="crow" href="/portfolios#/p/${p.portfolio_id}"
+         style="text-decoration:none">
+        <span><b>${esc(p.name)}</b>
+          <span class="sub">${p.fund_count} fund${p.fund_count === 1 ? "" : "s"}${
+            p.target_amount ? ` \u00b7 target ${rupee(p.target_amount)} by ${
+              esc(p.target_date)}` : " \u00b7 no target set"}</span></span>
+        <span class="sub">Open &rarr;</span></a>`).join("") + `</div>`;
+  } else {
+    html += `<p class="empty">No portfolios for this client yet.</p>`;
+  }
+
+  // Creating comes first because it is what you do the first time you
+  // open a client, and attaching is the rarer case -- a portfolio that
+  // already existed before the client record did.
+  html += `<div class="row" style="margin-top:18px">
+      <input type="text" id="newpf" maxlength="120"
+             placeholder="Name a new portfolio, e.g. Retirement">
+      <button class="go" id="newpfgo">Create</button>
+    </div>
+    <p style="margin:14px 0 0">
+      <a class="go" style="text-decoration:none"
+         href="/plan?client=${c.client_id}">Plan this with FinChaya &rarr;</a>
+      <span class="sub" style="margin-left:10px">goal, funds and amounts,
+        then saved under ${esc(c.name)}</span></p>
+
+    <div class="row" style="margin-top:14px">
+      <select id="attach"><option value="">&hellip;or attach an existing portfolio</option></select>
+      <button class="ghost" id="attachgo">Attach</button>
+    </div>
+    <p class="foot">A portfolio attached to a client is an ordinary portfolio
+       with their name on it &mdash; the same look-through, tracking and PDF.
+       Creating one opens it so you can add funds straight away.</p>
+    </div><div id="form"></div>`;
+
+  app().innerHTML = html;
+
+  document.getElementById("back").addEventListener("click",
+    () => { location.hash = ""; showList(); });
+  document.getElementById("edit").addEventListener("click", () => clientForm(c));
+
+  document.getElementById("del").addEventListener("click", async () => {
+    const n = c.portfolio_list.length;
+    // Says what will go BEFORE asking, not after.
+    if (!confirm(`Delete ${c.name}?\n\nThis removes the client and ${
+      n ? `their ${n} portfolio${n === 1 ? "" : "s"}, including holdings and targets`
+        : "everything filed under them"}. It cannot be undone.`)) return;
+    try {
+      await api(`/clients/${c.client_id}`, {method: "DELETE"});
+      location.hash = ""; showList();
+    } catch (e) { fail(e); }
+  });
+
+  // Unattached portfolios only -- offering one that already belongs to
+  // another client would silently move it.
+  try {
+    const mine = await (await fetch("/api/portfolio/saved")).json();
+    const sel = document.getElementById("attach");
+    mine.filter(p => !p.client_id).forEach(p => {
+      const o = document.createElement("option");
+      o.value = p.portfolio_id;
+      o.textContent = `${p.name} (${p.fund_count} funds)`;
+      sel.appendChild(o);
+    });
+  } catch {}
+
+  // Create a portfolio already belonging to this client.
+  //
+  // Goes straight to the saved-portfolio endpoint rather than through
+  // create-then-attach: CreatePortfolio has carried client_id since the
+  // distributor tables were written ("distributor tier fills this"), and
+  // two calls would leave an orphaned portfolio behind if the second one
+  // failed.
+  const mkPortfolio = async () => {
+    const box = document.getElementById("newpf");
+    const name = box.value.trim();
+    if (!name) { box.focus(); return; }
+    const btn = document.getElementById("newpfgo");
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/portfolio/saved", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name: name, client_id: c.client_id})});
+      const t = await r.text();
+      let b = null;
+      try { b = t ? JSON.parse(t) : null; } catch {}
+      if (r.status === 401) throw {signin: true};
+      if (!r.ok) {
+        let d = b && b.detail;
+        if (Array.isArray(d)) d = d.map(x => x.msg || "").join("; ");
+        throw {message: d ? `${d} (${r.status})`
+                          : `The server returned ${r.status}.`};
+      }
+      // Straight into it: a new portfolio with no funds is not finished
+      // work, and coming back to this page would hide that.
+      location.href = "/portfolios#/p/" + b.portfolio_id;
+    } catch (e) { btn.disabled = false; fail(e); }
+  };
+  document.getElementById("newpfgo").addEventListener("click", mkPortfolio);
+  document.getElementById("newpf").addEventListener("keydown",
+    e => { if (e.key === "Enter") mkPortfolio(); });
+
+  document.getElementById("attachgo").addEventListener("click", async () => {
+    const pid = Number(document.getElementById("attach").value);
+    if (!pid) return;
+    try {
+      await api(`/clients/${c.client_id}/portfolios`,
+                {method: "POST", body: JSON.stringify({portfolio_id: pid})});
+      openClient(c.client_id);
+    } catch (e) { fail(e); }
+  });
+}
+</script>
+</body>
+</html>

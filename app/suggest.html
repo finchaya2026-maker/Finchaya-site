@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suggest funds — FinChaya</title>
+<style>
+  :root{
+    --ground:#efece3; --card:#ffffff;
+    --ink:#123027; --ink-soft:#5b6b63; --rule:#ddd8cc;
+    --bench:#e0a33c; --up:#1d6b4f; --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:16px/1.55 var(--font)}
+  .wrap{max-width:1080px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+    text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:64ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    padding:24px 26px;margin-bottom:20px}
+  h2{font-size:21px;font-weight:600;margin:0 0 4px}
+  h3{font-size:17px;font-weight:600;margin:0}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 16px}
+  .foot{color:var(--ink-soft);font-size:13px;margin:12px 0 0;line-height:1.55}
+  .sub{font-size:12.5px;color:var(--ink-soft)}
+  .num{font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--ink-soft)}
+
+  label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;margin-bottom:5px}
+  input,select,button{font:inherit}
+  input[type=number],select{width:100%;padding:9px 10px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--bench);outline-offset:1px}
+  .pick{display:grid;gap:14px;grid-template-columns:repeat(4,1fr)}
+  @media (max-width:800px){.pick{grid-template-columns:1fr 1fr}}
+  @media (max-width:520px){.pick{grid-template-columns:1fr}}
+  .chk{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px}
+  .chk input{width:auto}
+  .chk label{text-transform:none;letter-spacing:0;font-weight:400;
+    color:var(--ink);margin:0;font-size:14px}
+
+  .go{background:var(--ink);color:#f6f3ea;border:none;padding:12px 24px;
+    border-radius:3px;cursor:pointer}
+  .go:disabled{opacity:.45;cursor:default}
+
+  /* Target vs achieved, as one bar each. The comparison is the point of
+     the page, so it sits above everything. */
+  .bar{display:flex;height:20px;border-radius:2px;overflow:hidden;
+    background:#efeadf}
+  .bar i{display:block;height:100%;position:relative}
+  .bar em{position:absolute;inset:0;display:flex;align-items:center;
+    justify-content:center;font-style:normal;font-size:11px;color:#fff;
+    font-weight:600}
+  .barlab{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);margin:12px 0 4px}
+  .keys{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;margin-top:8px}
+  .keys span{display:flex;align-items:center;gap:5px}
+  .dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+  .setcard{border:1px solid var(--rule);border-radius:3px;padding:18px 20px;
+    margin-bottom:16px;background:#fbfaf6}
+  .setcard.best{border-color:var(--up);background:#f5f9f5}
+  .sethead{display:flex;justify-content:space-between;align-items:baseline;
+    gap:14px;flex-wrap:wrap;margin-bottom:4px}
+  .stats{display:flex;gap:22px;flex-wrap:wrap;margin:10px 0 14px}
+  .stat b{display:block;font-size:19px;font-variant-numeric:tabular-nums;
+    line-height:1.2}
+  .stat span{display:block;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--ink-soft);margin-top:2px}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px}
+  th{font-size:11px;letter-spacing:.05em;color:var(--ink-soft);font-weight:600;
+    text-align:right;padding:0 8px 7px;border-bottom:1px solid var(--rule);
+    white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;padding-left:0}
+  td{padding:11px 8px;border-bottom:1px solid #efe9dd;text-align:right;
+    font-size:14.5px;vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  .scroller{overflow-x:auto}
+  table{min-width:720px}
+
+  /* The four components, as one small bar each. Four numbers in a row is
+     a wall; four bars is a shape you can read across funds. */
+  .parts{display:flex;gap:3px;justify-content:flex-end}
+  .part{width:26px}
+  .part i{display:block;height:5px;background:#d8d2c4;border-radius:1px;
+    margin-bottom:2px}
+  .part i b{display:block;height:100%;background:var(--ink);border-radius:1px}
+  .part span{font-size:9px;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--ink-soft);display:block;text-align:center}
+
+  .flag{background:#fdf7ea;border:1px solid #e8d6ab;padding:10px 13px;
+    border-radius:3px;margin-top:12px;font-size:13.5px}
+  .err{background:#fbf0ec;border:1px solid #e6c8bd;color:var(--down);
+    padding:12px 14px;border-radius:3px;margin-bottom:16px}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Distributor</p>
+  <h1>Suggest funds</h1>
+  <p class="lede">Sets of funds whose combined holdings land on the target
+     allocation. Three sets, with what each gives up &mdash; not one answer.
+     Nothing here is a recommendation until you make it one.</p>
+
+  <div class="panel">
+    <h2>The goal</h2>
+    <p class="note">The allocation comes from your rules, with any market
+       view applied.</p>
+    <div class="pick">
+      <div><label>Purpose</label><select id="purpose">
+        <option value="appreciation">Capital appreciation</option>
+        <option value="preservation">Capital preservation</option>
+        <option value="income">Regular income</option>
+      </select></div>
+      <div><label>Years to the goal</label>
+        <input type="number" id="years" value="20" min="0.5" max="60" step="0.5"></div>
+      <div><label>Risk appetite</label><select id="risk">
+        <option>conservative</option><option selected>moderate</option>
+        <option>aggressive</option>
+      </select></div>
+      <div><label>Monthly SIP (₹)</label>
+        <input type="number" id="sip" value="25000" min="500" step="500"></div>
+    </div>
+
+    <h2 style="margin-top:24px">How to judge a fund</h2>
+    <p class="note">Each is ranked against funds doing the same job, then
+       blended. Set a weight to zero to ignore it.</p>
+    <div class="pick">
+      <div><label>Return over</label><select id="period">
+        <option>1Y</option><option selected>3Y</option><option>5Y</option>
+      </select></div>
+      <div><label>Return weight</label>
+        <input type="number" id="w_con" value="0.30" min="0" max="1" step="0.05"></div>
+      <div><label>Beat benchmark weight</label>
+        <input type="number" id="w_ben" value="0.25" min="0" max="1" step="0.05"></div>
+      <div><label>Beat category weight</label>
+        <input type="number" id="w_cat" value="0.25" min="0" max="1" step="0.05"></div>
+      <div><label>Rising weight</label>
+        <input type="number" id="w_ris" value="0.20" min="0" max="1" step="0.05"></div>
+      <div><label>Minimum windows</label>
+        <input type="number" id="minw" value="24" min="0" max="100" step="4">
+        <span class="sub">0 admits funds with no record</span></div>
+    </div>
+    <div class="chk">
+      <input type="checkbox" id="risingfloor" checked>
+      <label for="risingfloor">Only funds whose holdings are trending up more
+        than the average fund in their category</label>
+    </div>
+    <div class="chk">
+      <input type="checkbox" id="thematic">
+      <label for="thematic">Allow sectoral, thematic and ELSS funds</label>
+    </div>
+
+    <p style="margin:20px 0 0"><button class="go" id="run">Find fund sets</button></p>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rupee = n => "\u20b9" + Math.round(n).toLocaleString("en-IN");
+const out = () => document.getElementById("out");
+
+const COLOUR = {large:"#1d6b4f", mid:"#e0a33c", small:"#b4472f",
+                debt:"#5b6b63", gold:"#c9a227", international:"#7a8b9c"};
+const ORDER = ["large","mid","small","international","gold","debt"];
+
+document.getElementById("run").addEventListener("click", run);
+
+// SCORES SWITCHED OFF (server: MF_SCORES_ENABLED unset). The "rising"
+// reading is read off the stock scores, so its weight box and its floor
+// checkbox are removed from the form. The server ignores them anyway; this
+// just stops the page offering a control that does nothing.
+fetch("/api/auth/me", {credentials: "include"})
+  .then(r => r.json())
+  .then(a => {
+    if (a.scores_enabled !== false) return;
+    document.getElementById("w_ris").parentElement.hidden = true;
+    const f = document.getElementById("risingfloor");
+    f.checked = false;
+    f.closest(".chk").hidden = true;
+  })
+  .catch(() => { /* leave the form as it is */ });
+
+async function run() {
+  const btn = document.getElementById("run");
+  const n = id => Number(document.getElementById(id).value);
+  const v = id => document.getElementById(id).value;
+  btn.disabled = true;
+  out().innerHTML = `<p class="sub">Searching&hellip;</p>`;
+
+  const body = {
+    purpose: v("purpose"), years: n("years"), risk: v("risk"),
+    sip_amount: n("sip"), return_period: v("period"),
+    min_windows: n("minw"),
+    allow_thematic: document.getElementById("thematic").checked,
+    require_rising_above_category: document.getElementById("risingfloor").checked,
+    weights: {consistency: n("w_con"), benchmark: n("w_ben"),
+              category: n("w_cat"), rising: n("w_ris")},
+  };
+
+  let d;
+  try {
+    const r = await fetch("/api/selector/suggest", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)});
+    const text = await r.text();
+    d = text ? JSON.parse(text) : null;
+    if (!r.ok) throw new Error((d && d.detail) || ("server returned " + r.status));
+  } catch (e) {
+    out().innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    btn.disabled = false;
+    return;
+  }
+  draw(d);
+  btn.disabled = false;
+}
+
+function bar(mix, total) {
+  const t = total || Object.values(mix).reduce((a, b) => a + b, 0) || 100;
+  return ORDER.filter(b => (mix[b] || 0) > 0).map(b =>
+    `<i style="width:${100 * mix[b] / t}%;background:${COLOUR[b]}">${
+      mix[b] >= 8 ? `<em>${Math.round(mix[b])}</em>` : ""}</i>`).join("");
+}
+
+function draw(d) {
+  const off = d.scores_enabled === false;     // no rising reading to show
+  const target = {};
+  Object.entries(d.target).forEach(([k, s]) => { if (s.target > 0) target[k] = s.target; });
+
+  let html = `<div class="panel">
+    <h2>What we are aiming at</h2>
+    <p class="note">${esc(d.target_label || "")}${
+      d.view ? `Market view <b>${esc(d.view.label)}</b> is in force.` : ""}
+      Judged on ${esc(d.period_judged)} returns${
+      d.floors && d.floors.rising ? "" : ""}.</p>
+    <p class="barlab">Target</p>
+    <div class="bar">${bar(target)}</div>
+    <div class="keys">${ORDER.filter(b => target[b]).map(b =>
+      `<span><i class="dot" style="background:${COLOUR[b]}"></i>${esc(b)}
+       ${target[b]}%</span>`).join("")}</div>
+    <p class="foot">${d.considered} funds have a portfolio we can read;
+       ${d.shortlisted} passed every gate; ${d.sets_scored} combinations were
+       scored.${d.dropped_by_floors && d.dropped_by_floors.below_category_rising
+         ? ` ${d.dropped_by_floors.below_category_rising} were set aside for
+             trending below their category average.` : ""}</p>
+  </div>`;
+
+  d.sets.forEach((s, i) => {
+    html += `<div class="setcard ${i === 0 ? "best" : ""}">
+      <div class="sethead">
+        <h3>Option ${i + 1}${i === 0 ? " &mdash; closest fit" : ""}</h3>
+        <span class="sub">${s.funds.length} funds &middot; ${
+          rupee(d.sip_amount)} a month</span>
+      </div>
+
+      <div class="stats">
+        <span class="stat"><b class="${s.gap <= 5 ? "up" : "down"}">${s.gap}</b>
+          <span>points off target</span></span>
+        <span class="stat"><b class="${s.worst_overlap <= 20 ? "" : "down"}">${
+          s.worst_overlap}%</b><span>most two funds share</span></span>
+        <span class="stat"><b>${s.top10_pct}%</b><span>in ten companies</span></span>
+        <span class="stat"><b>${s.amc_count}</b><span>fund houses</span></span>
+      </div>
+
+      <p class="barlab">What this set actually holds</p>
+      <div class="bar">${bar(s.exposure)}</div>
+
+      <div class="scroller"><table><thead><tr>
+        <th>Fund</th><th>Share</th><th>Monthly</th>
+        <th>${esc(d.period_judged)} return</th>
+        <th>Beat index</th><th>Beat peers</th>${off ? "" : "<th>Rising</th>"}
+        <th>How it ranks</th>
+      </tr></thead><tbody>`;
+
+    s.funds.forEach(f => {
+      const p = f.score_parts || {};
+      const risingCmp = f.category_rising_pct != null && f.rising_pct != null
+        ? f.rising_pct - f.category_rising_pct : null;
+      html += `<tr>
+        <td><b>${esc(f.scheme_name)}</b>
+          <span class="sub" style="display:block">${esc(f.amc_name || "")}
+            &middot; ${esc(f.category || "")}</span>
+          ${f.drifted ? `<span class="sub down">${esc(f.mandate_note || "")}</span>` : ""}</td>
+        <td class="num"><b>${f.weight_pct}%</b></td>
+        <td class="num">${rupee(f.monthly)}</td>
+        <td class="num">${f.cagr != null ? f.cagr.toFixed(1) + "%" : "&mdash;"}</td>
+        <td class="num">${f.beat_bench_1y3y != null
+          ? f.beat_bench_1y3y + "%" : "&mdash;"}
+          <span class="sub" style="display:block">of windows</span></td>
+        <td class="num">${f.beat_category_1y3y != null
+          ? f.beat_category_1y3y + "%" : "&mdash;"}
+          <span class="sub" style="display:block">of windows</span></td>
+        ${off ? "" : `<td class="num">${f.rising_pct != null ? f.rising_pct + "%" : "&mdash;"}
+          ${risingCmp != null ? `<span class="sub ${risingCmp >= 0 ? "up" : "down"}"
+            style="display:block">${risingCmp >= 0 ? "+" : ""}${
+            risingCmp.toFixed(0)} vs peers</span>` : ""}</td>`}
+        <td><div class="parts">${
+          ["consistency","benchmark","category"].concat(off ? [] : ["rising"]).map(k =>
+            `<span class="part" title="${k}: ${p[k] ?? 0} of 100">
+               <i><b style="width:${p[k] ?? 0}%"></b></i>
+               <span>${k.slice(0,3)}</span></span>`).join("")}</div></td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+
+    // What each option gives up, said plainly rather than left in the numbers.
+    const notes = [];
+    if (s.worst_overlap > 25) notes.push(`two of these funds hold
+      ${s.worst_overlap}% of the same companies, so they do less for
+      diversification than four names suggest`);
+    if (s.top10_pct > 35) notes.push(`${s.top10_pct}% of the money ends up in
+      ten companies`);
+    if (s.funds.some(f => f.drifted)) notes.push(`one fund is not holding what
+      its category name promises`);
+    if (s.gap > 8) notes.push(`this misses the target by ${s.gap} points, which
+      the fund universe may simply not allow`);
+    if (notes.length) {
+      html += `<div class="flag"><b>Worth knowing:</b> ${notes.join("; ")}.</div>`;
+    }
+    html += `</div>`;
+  });
+
+  html += `<p class="foot" style="max-width:70ch">Past returns and beat rates
+     describe what has already happened.${off ? "" : ` The rising share reads how
+     the shares these funds currently hold have been trading; it forecasts
+     nothing.`} This
+     is a shortlist to review, not advice, and no fund here is recommended.</p>`;
+
+  out().innerHTML = html;
+}
+</script>
+</body>
+</html>

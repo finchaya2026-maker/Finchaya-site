@@ -1,0 +1,2951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio Analysis by FinChaya</title>
+<style>
+  :root{
+    --ground:#efece3;      /* page */
+    --card:#ffffff;
+    --ink:#123027;         /* dark green, the fund page's text colour */
+    --ink-soft:#5b6b63;
+    --rule:#ddd8cc;
+    --bench:#e0a33c;       /* the orange used for the benchmark bar */
+    --median:#a9a396;      /* the grey median bar */
+    --up:#1d6b4f;
+    --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font:16px/1.55 var(--font);
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+           text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:62ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);
+         border-radius:3px;padding:26px 28px;margin-bottom:22px}
+  h2{font-size:21px;font-weight:600;margin:0 0 4px}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 16px}
+  .foot{color:var(--ink-soft);font-size:13px;margin:14px 0 0}
+
+  /* builder */
+  .search{position:relative}
+  input,button{font:inherit}
+  input[type=text],input[type=number]{
+    padding:9px 11px;border:1px solid var(--rule);border-radius:3px;
+    background:#fdfcfa;color:var(--ink);width:100%}
+  input:focus{outline:2px solid var(--bench);outline-offset:1px}
+  .results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);
+    background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    max-height:290px;overflow:auto;box-shadow:0 8px 20px rgba(18,48,39,.10)}
+  .results div{padding:9px 12px;cursor:pointer;font-size:15px}
+  .results div:hover,.results div[aria-selected=true]{background:#f4f1e8}
+  .results small{color:var(--ink-soft);display:block;font-size:12.5px}
+
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{font-size:12px;letter-spacing:.05em;color:var(--ink-soft);
+     font-weight:600;text-align:right;padding:0 0 7px;border-bottom:1px solid var(--rule)}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:9px 0;border-bottom:1px solid #f0ece2;text-align:right;font-size:15px}
+  tbody tr:last-child td{border-bottom:none}
+  .num{font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .muted{color:var(--ink-soft)}
+  .sub{font-size:12.5px;color:var(--ink-soft)}
+
+  .go{background:var(--ink);color:#f6f3ea;border:none;padding:11px 22px;
+      border-radius:3px;cursor:pointer}
+  .go:disabled{opacity:.45;cursor:default}
+  .link{background:none;border:none;color:var(--down);cursor:pointer;
+        padding:2px 4px;font-size:14px}
+
+  /* Dark bar, not a row of grey links. It was legible but invisible --
+     something you find only after scrolling past what it was meant to save
+     you from. On the site's cream ground the dark green reads as a piece of
+     furniture rather than text. */
+  .secnav{position:sticky;top:0;z-index:15;display:flex;align-items:center;
+    gap:8px;background:var(--ink);border-radius:4px;
+    margin:0 0 22px;padding:8px 10px;
+    box-shadow:0 2px 10px rgba(18,48,39,.18)}
+  /* The links scroll; the action does not. Putting them in one flex row
+     meant the button was the first thing pushed off a narrow screen --
+     the control hardest to reach was the one people needed. */
+  .navscroll{display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+    flex:1 1 auto;min-width:0}
+  .navlabel{font-size:12px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--bench);align-self:center;padding:0 12px 0 6px;font-weight:600}
+  .secnav a.here{background:rgba(255,255,255,.16);color:#fff}
+  .secnav a{font-size:15px;font-weight:600;color:#e6e1d4;text-decoration:none;
+    padding:8px 15px;border-radius:3px;white-space:nowrap;
+    transition:background .12s,color .12s}
+  .secnav a:hover,.secnav a:focus-visible{background:rgba(255,255,255,.13);
+    color:#fff;outline:none}
+  /* Amber on the dark strip. The previous version was a cream outline on a
+     cream page directly above this bar -- the one element with real
+     contrast -- so the eye went to the bar and skipped the button entirely.
+     This is the only warm-coloured control on the page, which is what makes
+     it findable without a label pointing at it. */
+  .pdfbtn{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
+    background:var(--bench);color:#22201a;border:none;font:inherit;
+    font-size:14.5px;font-weight:700;padding:8px 15px;border-radius:3px;
+    cursor:pointer;white-space:nowrap;letter-spacing:.01em;
+    box-shadow:0 1px 0 rgba(0,0,0,.18)}
+  .pdfbtn:hover,.pdfbtn:focus-visible{background:#f0b757;outline:none}
+  .pdfbtn:active{transform:translateY(1px)}
+  .pdfbtn svg{width:15px;height:15px;flex:none}
+
+  @media (max-width:640px){
+    /* One scrollable row beats two wrapped ones on a phone: the strip is
+       sticky, so every extra row it wraps to is a row of content lost. */
+    .navscroll{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none}
+    .navscroll::-webkit-scrollbar{display:none}
+    .secnav a{font-size:14px;padding:7px 12px}
+    .pdfbtn{font-size:13.5px;padding:8px 11px}
+    .pdfbtn .long{display:none}
+  }
+  /* Scroll a little short of the target so the sticky strip does not sit
+     on top of the heading it just jumped to. */
+  .panel[id]{scroll-margin-top:70px}
+  .figure{display:block;text-decoration:none;color:inherit;border-radius:3px;
+    padding:6px 10px 6px 0}
+  a.figure{padding:6px 10px;margin-left:-10px}
+  a.figure:hover{background:rgba(224,163,60,.10)}
+  a.figure:hover b{color:var(--bench)}
+  /* OPTION 1: the finding, as a sentence, before any number. Serif and
+     large so it reads as the answer and the table reads as the evidence. */
+  .lead{font-family:var(--font);
+    font-size:22px;line-height:1.4;margin:0 0 12px;max-width:40ch}
+  /* OPTION 2: rupees out of a hundred. People who find percentages hard
+     handle rupees fine -- it is a thing they have held. */
+  .r100 .row{display:flex;align-items:center;gap:12px;margin:0 0 7px}
+  .r100 .amt{font-size:19px;font-weight:600;width:52px;text-align:right;
+    font-variant-numeric:tabular-nums}
+  .r100 .track{flex:1;height:22px;background:#efeadf;border-radius:3px}
+  .r100 .track i{display:block;height:100%;border-radius:3px}
+  .r100 .lbl{font-size:14px;color:var(--ink-soft);width:150px}
+  /* OPTION 3: one dot per rupee in every hundred. Shows proportion as
+     area, instead of asking someone to picture what 39% looks like. */
+  .dots{display:grid;grid-template-columns:repeat(20,1fr);gap:4px;
+    max-width:420px;margin:0 0 12px}
+  .dots span{aspect-ratio:1;border-radius:2px}
+  .dotkey{display:flex;flex-wrap:wrap;gap:18px;font-size:14px}
+  .dotkey b{font-weight:600}
+  /* Per-fund cards rather than table rows: a thick labelled bar reads at a
+     glance, where three number columns need reading. */
+  .tfunds{display:flex;flex-direction:column;gap:16px;margin:4px 0 4px}
+  .tfund{padding:14px 16px;background:#fbfaf6;border:1px solid var(--rule);
+    border-radius:4px}
+  .tfname{font-size:17px;font-weight:600;margin:0 0 10px}
+  .tbar.big{height:30px;border-radius:3px}
+  .tbar.big i{display:flex;align-items:center;justify-content:center}
+  .tbar.big i em{font-style:normal;font-size:13px;font-weight:600;
+    color:#fff;font-variant-numeric:tabular-nums}
+  .tkeys{display:flex;flex-wrap:wrap;gap:22px;margin:11px 0 0;font-size:14px}
+  .tkeys b{font-size:17px;margin-right:3px}
+  .tkeys .sub{display:block;font-size:12px}
+  /* OPTION 4: rupee gaps, not percentage gaps. */
+  .gap-money{font-variant-numeric:tabular-nums;font-weight:600}
+  .headfig{margin:2px 0 14px;display:flex;align-items:baseline;gap:11px}
+  .headfig b{font-size:38px;font-weight:600;line-height:1;letter-spacing:-.02em}
+  .headfig span{color:var(--ink-soft);font-size:14px;max-width:44ch}
+  .figures{display:flex;flex-wrap:wrap;gap:34px;margin:2px 0 4px}
+  .figure b{display:block;font-size:27px;font-weight:600;line-height:1.15}
+  .figure span{font-size:13px;color:var(--ink-soft)}
+
+  .bar{height:9px;background:#efeadf;border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--ink)}
+  .barwrap{display:flex;align-items:center;gap:11px;justify-content:flex-end}
+  .barwrap .bar{flex:1;max-width:210px;min-width:60px}
+  /* Explicit widths: without them a right-aligned number butts straight
+     against the next cell and "20" + "25.1%" reads as "2025.1%". */
+  .w-count{width:110px} .w-bar{width:290px} .w-money{width:130px}
+
+  /* Trend split: green up, red down, neutral sideways. Colour is backed by
+     the number beside it, never carrying the meaning on its own. */
+  .tup{color:var(--up);font-weight:600}
+  .tdn{color:var(--down);font-weight:600}
+  .tsw{opacity:.7;font-weight:600}
+  .tbar{display:flex;height:8px;border-radius:2px;overflow:hidden;
+        background:#efeadf;min-width:120px}
+  .tbar i{display:block;height:100%}
+  .pill{display:inline-block;font-size:12px;padding:1px 7px;border-radius:2px;
+        background:#f0ece2;color:var(--ink-soft);margin-left:6px}
+  .err{background:#fbf0ec;border:1px solid #e6c8bd;color:var(--down);
+       padding:12px 14px;border-radius:3px;margin-bottom:16px}
+  .empty{color:var(--ink-soft);padding:8px 0}
+  @media (max-width:640px){
+    .wrap{padding:24px 14px 70px} h1{font-size:27px}
+    .panel{padding:20px 16px} td,th{font-size:14px}
+  }
+
+  /* ---- Save as PDF ------------------------------------------------
+     The browser renders this report correctly already and can write it
+     to a file. A PDF library on the droplet would be a second renderer
+     to keep in step with this one, and the two would drift. */
+  /* Summary. Numbered, generously spaced, each row carrying a short label
+     so the six can be scanned without being read in full. */
+  /* Six cells in a 2x3 grid.
+     One border per edge rather than a border on every cell: the right edge
+     is dropped on the second column and the bottom on the last row, so the
+     rules meet as single hairlines instead of doubling up. */
+  /* The figure is the largest thing in the tile and the words are the
+     smallest, which is the rule for the whole report: the data is the
+     design. auto-fit rather than a fixed two columns, because the tiles
+     are short enough now to take three or four across a desktop and one
+     on a phone without any of them becoming a 20-character column. */
+  /* Hairlines drawn as BORDERS ON THE TILES, not as a 1px grid gap over
+     a grey background. The gap trick is neater until the last row is
+     short, and then the leftover cells paint as a solid grey slab --
+     which is exactly what a responsive auto-fit grid guarantees at some
+     width. Borders only ever draw where a tile actually is. */
+  /* Three across, fixed -- not auto-fit. auto-fit chose five columns on
+     a wide screen, which left the sixth tile alone on a row of its own
+     and squeezed every caption to four lines. Three gives two even rows
+     of three and enough width that most captions fit on two. */
+  /* NAMED sumgrid/sumtile, NOT tiles/tile. finchaya.css already owns
+     .tiles and .tile for the dashboard figure rows on other pages, and
+     it is linked AFTER this style block -- so the shared names silently
+     won and this grid rendered with the other component's layout. A
+     page-specific component gets a page-specific name. */
+  .sumgrid{display:grid;background:var(--card);
+    grid-template-columns:repeat(3,1fr);
+    border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+  @media (max-width:800px){ .sumgrid{grid-template-columns:1fr 1fr} }
+  @media (max-width:470px){ .sumgrid{grid-template-columns:1fr} }
+  .sumtile{display:flex;flex-direction:column;padding:16px 18px 17px;
+    border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);
+    background:var(--card);text-decoration:none;color:inherit}
+  .sumtile:hover{background:#fdfaf2}
+  .sumk{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600}
+  .sumn{font-size:29px;line-height:1.15;font-weight:600;margin:7px 0 5px;
+    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .sumc{font-size:12.5px;line-height:1.45;color:var(--ink-soft)}
+  .sumc b{color:var(--ink);font-weight:600}
+  /* Colour only where the direction is a fact rather than a judgement:
+     beating a benchmark in every window is one, and 38% overlap is not. */
+  .sumtile.up .sumn{color:#1d6b4f}
+  .sumtile.down .sumn{color:#b4472f}
+
+  /* ---- the face on each tile ---------------------------------------
+     A figure is not a finding. "89%" tells a reader nothing until they
+     know whether 89% is the good end or the bad end, and on this panel
+     the answer changes direction from tile to tile: high overlap is
+     poor, high "beat benchmark" is good, and high "biggest band" is
+     neither. Six numbers each pointing a different way is why a summary
+     gets skipped.
+
+     THE THIRD FACE IS THE IMPORTANT ONE. Two faces would force every
+     figure into good or bad, and some of these genuinely are not either
+     -- 80% in large caps is right for one goal and wrong for another,
+     and a tool with no idea what somebody's goal is has no business
+     calling it. The unsure face says so out loud rather than guessing,
+     and every face carries a title attribute giving its reason, so the
+     judgement can be checked rather than taken on trust.
+
+     Drawn as SVG rather than set as emoji: emoji render as a different
+     picture on every operating system -- some of them cartoon faces in
+     full colour -- and at 22px that is a toy on a page of financial
+     figures. These inherit currentColor and sit in the palette. */
+  .sumtop{display:flex;align-items:center;justify-content:space-between;
+    gap:10px}
+  .sumface{flex:none;width:22px;height:22px;display:block}
+  .sumface.good{color:#1d6b4f}
+  .sumface.poor{color:#b4472f}
+  .sumface.unsure{color:#b08324}
+  @media print{
+    /* The stroke survives greyscale; the colour does not. */
+    .sumface{width:16px;height:16px}
+  }
+
+  .imp{margin:14px 0 4px;border:1px solid var(--rule);border-radius:3px;
+    padding:12px 14px;background:#fbfaf6}
+  .imp summary{cursor:pointer;font-size:15px}
+  .imp summary:hover{color:var(--bench)}
+  .imp textarea{width:100%;padding:10px 11px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+  .imp textarea:focus{outline:2px solid var(--bench);outline-offset:1px}
+  .ghostlbl{background:none;border:1px solid var(--rule);color:var(--ink);
+    padding:10px 16px;border-radius:3px;cursor:pointer;font-size:15px}
+  .ghostlbl:hover{border-color:var(--bench)}
+  .prev{margin-top:16px}
+  .prev table{width:100%;border-collapse:collapse}
+  .prev th{font-size:12px;letter-spacing:.05em;color:var(--ink-soft);
+    text-align:left;padding:0 8px 6px;border-bottom:1px solid var(--rule)}
+  .prev td{padding:8px;border-bottom:1px solid #f0ece2;font-size:14px;
+    vertical-align:top}
+  .prev select,.prev input{padding:5px 7px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink);font:inherit;
+    font-size:13.5px;max-width:100%}
+  .prev input[type=number]{width:110px}
+  .badbox{background:#fbf0ec;border:1px solid #e6c8bd;border-radius:3px;
+    padding:10px 12px;margin-top:12px;font-size:14px}
+  .badbox b{color:var(--down)}
+
+  .printonly{display:none}
+  .whogrid{display:grid;gap:12px;grid-template-columns:repeat(3,1fr)}
+  .whogrid label{font-size:12px;letter-spacing:.05em;color:var(--ink-soft);
+    text-transform:uppercase;font-weight:600;display:block}
+  .whogrid input{margin-top:5px;text-transform:none;letter-spacing:normal;
+    font-weight:400;font-size:15px}
+  @media (max-width:640px){.whogrid{grid-template-columns:1fr}}
+
+  @page{margin:14mm 12mm 15mm}
+
+  @media print{
+    /* Chrome drops background colours by default, which turned the dot
+       grid and every trend bar into blank rectangles. This forces them,
+       so the reader does not have to know about a checkbox. */
+    *{-webkit-print-color-adjust:exact !important;
+      print-color-adjust:exact !important}
+    body{background:#fff;font-size:10.5pt}
+    .wrap{max-width:none;padding:0}
+
+    /* Everything that is the WEBSITE rather than the report.
+       Previously this hid .panel:first-of-type -- then Report details
+       became the first panel and the fund-entry form printed instead,
+       Remove buttons and all. Naming each one by id cannot drift like
+       that when another panel is added. */
+    #pagehead,#whofor,#entry{display:none !important}
+
+    /* The overlap table on paper.
+       "See which" opens a panel, which is meaningless printed -- and the
+       column it sat in squeezed the two fund names so hard that every
+       name wrapped to one word per line. Dropping the button gives the
+       names their width back. */
+    .w-see{display:none !important}
+    #sec-overlap td:first-child,
+    #sec-overlap td:nth-child(2){min-width:34mm}
+
+    /* A row split across a page break separates a fund from its figure.
+       Cards and table rows stay whole; a heading never ends a page. */
+    tr,.retcard,.tcard,.ovpic{break-inside:avoid;page-break-inside:avoid}
+    h2,h3{break-after:avoid;page-break-after:avoid}
+
+    /* The cover. Borrowed shape: subject, then the title at a size that
+       makes the document announce itself, then who made it and when.
+       A report that lands in an inbox has about two seconds to say what
+       it is before it is filed or ignored. */
+    .cover{padding:24mm 0 20mm;border-bottom:2px solid var(--ink);
+      margin-bottom:16mm;page-break-after:always}
+    .coverfor{font-size:16pt;color:var(--ink-soft);margin:0 0 6px}
+    .covertitle{font-size:40pt;line-height:1.02;letter-spacing:-.02em;
+      margin:0;font-weight:600}
+    .coverbrand{font-size:20pt;color:var(--bench);margin:2px 0 26px;
+      font-weight:600}
+    .covermeta{font-size:10.5pt;color:var(--ink-soft);margin:0 0 3px}
+
+    /* Repeated at the top of every printed page. Chrome renders a fixed
+       element once per page; the top padding on .out keeps the first
+       page clear of it. */
+    /* PRINTS ONCE, under the cover -- deliberately not per page.
+       position:fixed puts an element at the top of each page's CONTENT
+       box, not in the page margin, so it printed straight through
+       whatever section began that page. Padding reserves space on page
+       one only. A header that genuinely repeats needs the whole report
+       inside a table with this in a <thead>, which is the one construct
+       browsers repeat across pages -- a real change, not a CSS tweak,
+       and not worth restructuring a working report for a strip of
+       small text. */
+    .runhead{position:static;display:flex;
+      justify-content:space-between;gap:12px;font-size:7.5pt;
+      letter-spacing:.06em;text-transform:uppercase;color:#7d8b84;
+      border-bottom:1px solid var(--rule);padding-bottom:3px;
+      margin:0 0 9mm}
+    .runhead .brandmark{color:var(--bench);font-weight:700;letter-spacing:.08em}
+
+    /* Thirty rows of positions is a reference table, not a client
+       report. Ten on paper, all of them on screen. */
+    #sec-stocks tbody tr:nth-child(n+11){display:none}
+    .trimnote{display:block !important}
+    .panel{border:none;padding:0 0 18px;margin:0 0 14px;
+      break-inside:auto;page-break-inside:auto}
+    /* The input form, the section jump bar and every control are screen
+       furniture. On paper they are dead ink, and a nav of anchors is
+       actively confusing in a file nobody can click. */
+    .secnav,.search,.results,#run,#none,
+    .panel:first-of-type{display:none !important}
+    .printonly{display:block}
+    /* Two classes, so this beats .printonly{display:block} above -- that
+       rule was overriding the flex layout (same specificity, declared
+       later), which collapsed the three parts into one run of text and
+       left FINCHAYA sitting against the client's name. */
+    .printonly.runhead{display:flex}
+    .runhead span:nth-child(2){text-align:center}
+    .runhead .brandmark{text-align:right}
+    h2{page-break-after:avoid}
+    .lead,.row,tr{page-break-inside:avoid}
+    #sec-summary{page-break-after:always}
+    /* Fixed three across on paper rather than auto-fit. There is no
+       viewport to fit to, and letting it choose put four on one sheet
+       and two on the next. */
+    .sumgrid{display:grid;grid-template-columns:1fr 1fr 1fr}
+    .sumtile{page-break-inside:avoid;padding:12px 14px}
+    .sumn{font-size:19pt;margin:5px 0 4px}
+    .sumc{font-size:8.5pt}
+    .sumk{font-size:7.5pt}
+    thead{display:table-header-group}
+    a{color:inherit;text-decoration:none}
+    .pfoot{border-top:1px solid var(--ink);margin-top:22px;padding-top:12px;
+      font-size:8.5pt;line-height:1.5;color:#4a5a53;page-break-inside:avoid}
+    .confid{font-size:8pt;letter-spacing:.06em;text-transform:uppercase;
+      color:#8b968f;margin-top:10px}
+    h2{font-size:15pt;margin-top:0}
+  }
+
+  /* Three figures, each with its own shape. Shape is the primary channel
+     and colour the second -- they read in greyscale and for a reader who
+     cannot separate green from red. */
+  .trendcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px;margin:18px 0 20px}
+  .tcard{border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:2px;background:#fdfcfa}
+  .tcard .ticon{width:46px;height:38px;display:block;margin-bottom:6px}
+  .tcard b{font-size:28px;font-weight:600;line-height:1.1;
+    font-variant-numeric:tabular-nums}
+  .tcard span{font-size:13px;color:var(--ink-soft)}
+  .tcard.up{color:#1d6b4f} .tcard.up b{color:#1d6b4f}
+  .tcard.dn{color:#b4472f} .tcard.dn b{color:#b4472f}
+  .tcard.sw{color:#8d8676} .tcard.sw b{color:var(--ink)}
+  .tcard.na{color:#b6b0a2} .tcard.na b{color:var(--ink-soft)}
+
+  /* The overlap picture. Circles that meet in a middle carrying the real
+     number; the pair table below holds the exact figures. */
+  .ovpic{margin:16px 0 18px}
+  .ovwrap{position:relative;max-width:420px;margin:0 auto}
+  .ovsvg{width:100%;height:auto;display:block;overflow:visible}
+  .ovbig{font-size:38px;font-weight:700;fill:var(--ink);
+    font-variant-numeric:tabular-nums}
+  .ovsmall{font-size:11.5px;fill:var(--ink-soft)}
+  .ovlegend{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 16px;
+    margin:14px 0 8px}
+  .ovleg{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+  .ovleg i{width:10px;height:10px;border-radius:2px;flex:none}
+  @media (max-width:560px){ .ovwrap{max-width:300px} }
+
+  /* Diverging bars: a centre line, ahead to the right, behind to the
+     left. The figure is printed on every row, so colour is never the
+     only thing saying which way it went -- which is what a table of
+     "Beat"/"Behind" got right and a bare bar chart would lose. */
+  .retgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
+    gap:18px;margin-top:18px}
+  .retcard{border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+    background:#fdfcfa}
+  .retcard h3{font-size:15px;font-weight:600;margin:0 0 10px}
+  .rettwo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .retlab{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);margin:0 0 6px}
+  .divrow{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .divp{font-size:11.5px;color:var(--ink-soft);width:20px;flex:none}
+  .divtrack{position:relative;flex:1;height:13px;background:#f0ece2;
+    border-radius:2px;min-width:40px}
+  .divzero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;
+    background:var(--rule)}
+  .divtrack b{position:absolute;top:0;bottom:0;border-radius:2px}
+  .divtrack b.pos{background:#1d6b4f} .divtrack b.neg{background:#b4472f}
+  .divv{font-size:12px;width:40px;text-align:right;flex:none;
+    font-variant-numeric:tabular-nums}
+  .divv.pos{color:#1d6b4f} .divv.neg{color:#b4472f}
+  .nobar{margin:4px 0 0}
+  @media (max-width:520px){ .rettwo{grid-template-columns:1fr} }
+
+  /* What the fund did with this person's money, above the bars about
+     the fund itself. Tinted and ruled off, because the two halves of
+     the card answer different questions and running them together
+     reads as one list of eight numbers. */
+  .fmoney{background:#f7f9ff;border-left:3px solid #1d4ed8;
+    border-radius:0 5px 5px 0;padding:10px 12px 8px;margin:0 0 14px}
+  .fmoney .retlab{margin:0 0 7px}
+  .ftab{width:100%;border-collapse:collapse;font-size:13px}
+  .ftab th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;padding:0 0 4px;border:0}
+  .ftab td{padding:3px 0;border:0}
+  .ftab td.num{text-align:right;font-variant-numeric:tabular-nums;
+    padding-left:10px}
+  .ftab tr.mine td{font-weight:650}
+  /* A data problem, not a finding. Amber, not red: nothing has gone
+     wrong with the money, something has gone wrong with what was typed,
+     and the two should not look alike. */
+  .datawarn{border:1px solid #e8a33d;background:#fdf6e8;border-radius:6px;
+    padding:12px 14px;margin:0 0 16px}
+  .datawarn b{font-size:14px}
+  .datawarn p{margin:6px 0 0;font-size:13px;line-height:1.5}
+  .datawarn .sub{font-size:12px;color:var(--ink-soft)}
+  @media print{ .datawarn{background:#fdf6e8;print-color-adjust:exact;
+    -webkit-print-color-adjust:exact;break-inside:avoid} }
+
+  .fmoney .sub{margin:7px 0 0;font-size:12px}
+  .fmoney .sub.up{color:#1d6b4f} .fmoney .sub.down{color:#b4472f}
+  /* Not red. Nothing is wrong with the fund -- it is measured on a
+     different basis from its neighbours, which the reader needs to
+     know and should not be alarmed by. */
+  .fmoney .sub.warn{color:#8a6114}
+  @media print{ .fmoney{background:#f7f9ff;print-color-adjust:exact;
+    -webkit-print-color-adjust:exact} }
+
+  /* ---- the portfolio against its own index ------------------------
+     Three columns of one bar each, per window. Height is the only
+     encoding that matters and the figure sits on top of every bar, so
+     the chart is readable without the colours. The three colours are
+     the page's existing roles: the blue already means "yours" in the
+     overlap circles, sand means the comparison, grey the middle. */
+  .vsgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:18px;margin-top:18px}
+  .vscard{border:1px solid var(--rule);border-radius:6px;padding:14px 16px 12px;
+    background:#fdfcfa}
+  .vsbars{display:flex;align-items:flex-end;gap:14px;margin:16px 0 12px}
+  .vsbar{flex:1;text-align:center}
+  .vstrack{height:96px;display:flex;align-items:flex-end;justify-content:center}
+  .vsbar b{display:block;width:100%;max-width:52px;border-radius:3px 3px 0 0}
+  .vsbar b.mine{background:#1d4ed8}
+  .vsbar b.bench{background:#e8a33d}
+  .vsbar b.cat{background:#b8b2a4}
+  .vsv{display:block;font-size:15px;font-weight:650;
+    font-variant-numeric:tabular-nums;margin-bottom:4px}
+  .vsk{display:block;font-size:11px;line-height:1.3;color:var(--ink-soft);
+    margin-top:6px}
+  /* The conditional sits ABOVE the figure, in the reading order, at a
+     smaller size but in full contrast -- not greyed to a footnote,
+     because it is load-bearing rather than decorative. */
+  .vsline{margin:0;border-top:1px solid var(--rule);padding-top:9px}
+  .vsif{display:block;font-size:11.5px;line-height:1.45;font-weight:400;
+    color:var(--ink);margin-bottom:3px}
+  .vsline b{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums}
+  .vsvs{font-size:12.5px}
+  .vsline.pos b,.vsline.pos .vsvs{color:#1d6b4f}
+  .vsline.neg b,.vsline.neg .vsvs{color:#b4472f}
+  .vsline .sub{font-weight:400;color:var(--ink-soft)}
+  .vscard .sub{font-size:11.5px}
+  @media print{ .vscard{break-inside:avoid;page-break-inside:avoid} }
+
+  /* The measured block, set apart from the what-if cards below it.
+     A left rule and a tinted ground rather than a heavier border: it
+     needs to read as the primary answer without turning into a callout
+     box that gets skipped as decoration. */
+  .actual{border-left:3px solid #1d4ed8;background:#f7f9ff;
+    padding:14px 16px 4px;border-radius:0 6px 6px 0;margin:16px 0 22px}
+  .acthead{margin:0 0 4px;font-size:14px;font-weight:650}
+  .acthead span{display:block;font-size:11.5px;font-weight:400;
+    color:var(--ink-soft);margin-top:2px}
+  .actual .vsgrid{margin-top:12px}
+  .actual .vscard{background:var(--card)}
+  .vscard.wide{max-width:420px}
+  .note.secondary{margin-top:4px}
+  @media print{ .actual{background:#f7f9ff;print-color-adjust:exact;
+    -webkit-print-color-adjust:exact;break-inside:avoid} }
+
+  /* "Since when" entry, opened one row at a time under the fund. */
+  .since{margin-left:9px;font-size:12px}
+  .sincerow td{background:#faf8f2;padding:12px 14px 10px}
+  .sincebox{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
+  .sincebox label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;
+    color:var(--ink-soft)}
+  .sincebox input,.sincebox select{font:inherit;font-size:14px;padding:6px 8px;
+    border:1px solid var(--rule);border-radius:4px;background:var(--card);
+    min-width:150px}
+  .sincenote{margin:9px 0 0;font-size:11.5px;line-height:1.45;
+    color:var(--ink-soft);max-width:62ch}
+
+  /* ---- the size bands, as one stacked bar -------------------------
+     The ramp is sequential on purpose: large is the darkest, small the
+     palest, so the bar reads as a scale rather than as three unrelated
+     colours that have to be matched against a key first. The key is
+     still there, and every band's figure is repeated in it, because a
+     narrow band cannot carry a label inside the bar. */
+  .segnote{margin-top:18px}
+  .segbar{display:flex;height:38px;border-radius:5px;overflow:hidden;
+    margin:10px 0 9px;background:#f0ece2}
+  .segbar i{display:flex;align-items:center;justify-content:center;
+    min-width:3px;transition:none}
+  .segbar i em{font-style:normal;font-size:13.5px;font-weight:650;color:#fff;
+    font-variant-numeric:tabular-nums}
+  .segbar i.ink em{color:#2b2b2b}
+  .segkey{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:12.5px;
+    color:var(--ink-soft)}
+  .segkey span{display:inline-flex;align-items:center;gap:6px}
+  .segkey i{width:11px;height:11px;border-radius:2px;flex:none}
+  .segkey b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* ---- the size ring ----------------------------------------------
+     The legend stacks UNDER the headline rather than beside the ring, so
+     each entry gets a full line. Wrapped beside a 140px circle they broke
+     mid-phrase -- "not" on one line and "classified" on the next. */
+  .capwrap{display:flex;align-items:center;gap:26px;flex-wrap:wrap;
+    margin:12px 0 9px}
+  .capring{flex:none;width:140px;height:140px;display:block}
+  .capside{flex:1;min-width:210px}
+  .capbig{margin-bottom:11px;line-height:1.35}
+  .capbig b{font-size:27px;font-weight:600;line-height:1.1;display:block;
+    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .capbig span{font-size:13px;color:var(--ink-soft)}
+  .capbig span b{display:inline;font-size:inherit;color:var(--ink);
+    font-weight:600;letter-spacing:0}
+  .capside .segkey{flex-direction:column;gap:5px}
+  /* A slice is a hit target as well as a picture. The whole ring lifts
+     slightly rather than the one segment moving, because a segment that
+     grows on hover changes the thing the reader is trying to measure. */
+  .capseg{transition:opacity .12s}
+  .capring:hover .capseg{opacity:.55}
+  .capring .capseg:hover{opacity:1}
+  @media (max-width:520px){
+    .capwrap{gap:16px}
+    .capring{width:116px;height:116px}
+  }
+  @media print{ .segbar,.segkey,.capwrap{break-inside:avoid;page-break-inside:avoid}
+    .segbar i{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+    .capring{print-color-adjust:exact;-webkit-print-color-adjust:exact} }
+
+  /* ---- alerts ------------------------------------------------------
+     Switches that record a request. Nothing sends anything yet, and the
+     panel says so at the top in the same weight as everything else --
+     not in grey six-point type at the bottom. A control labelled "alert
+     me" that quietly does nothing converts somebody's attention into a
+     false sense of being watched over, which is worse than no control. */
+  .alerthead{display:flex;align-items:baseline;justify-content:space-between;
+    gap:var(--s2);flex-wrap:wrap}
+  .agrp{margin-top:var(--s3)}
+  .agrp > h3{margin:0 0 2px;font-size:13px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);font-weight:650}
+  .arule{display:flex;gap:12px;align-items:flex-start;padding:14px 0;
+    border-bottom:1px solid var(--line)}
+  .arule:last-child{border-bottom:none}
+  .arule input[type=checkbox]{width:auto;flex:none;margin-top:3px}
+  .arule .abody{flex:1;min-width:0}
+  .arule b{font-size:15px;display:block;line-height:1.4}
+  .arule .awhat{margin:3px 0 0;font-size:14px;line-height:1.55;
+    color:var(--ink-2);max-width:70ch}
+  .arule .awhy{margin:5px 0 0;font-size:13.5px;line-height:1.55;
+    color:var(--muted);max-width:70ch}
+  .athresh{display:flex;align-items:center;gap:8px;margin-top:8px;
+    font-size:13.5px;color:var(--muted)}
+  .athresh input[type=number]{width:78px;padding:5px 8px;font-size:14px;
+    text-align:center}
+  .atag{display:inline-block;font-size:11.5px;font-weight:650;
+    letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;
+    border-radius:999px;margin-left:8px;vertical-align:2px}
+  .atag.accruing{background:var(--note-wash);color:#8a5a12;
+    border:1px solid #f0dcb4}
+  .atag.missing{background:var(--neg-wash);color:#a83232;
+    border:1px solid #f2c9c9}
+  .anote{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--muted);
+    max-width:70ch;padding-left:11px;border-left:2px solid var(--line-firm)}
+  .achans{display:flex;gap:18px;flex-wrap:wrap;margin-top:var(--s2)}
+  .achan{display:flex;gap:8px;align-items:center;font-size:14.5px}
+  .achan input{width:auto}
+  .asave{display:flex;align-items:center;gap:14px;margin-top:var(--s3);
+    flex-wrap:wrap}
+  .asaved{font-size:14px;color:var(--brand);font-weight:600}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+
+</head>
+<body>
+<div class="wrap">
+
+  <div id="pagehead">
+  <p class="eyebrow">Look-through</p>
+  <h1>Portfolio Analysis by FinChaya</h1>
+  <p class="lede">Fourteen fund names can be four hundred companies, or the
+     same forty bought four times. Add what you hold and see the stocks
+     underneath, where they repeat, and what each fund is contributing.</p>
+  <p class="lede" style="margin-top:-18px">Or
+     <a href="/portfolios" style="color:var(--bench)">save a portfolio</a>
+     and come back to it later.</p>
+  </div>
+
+  <!-- Distributor-only. A retail investor shown a "Prepared for / ARN"
+       block is being told the product is for somebody else -- the same
+       reasoning that keeps Clients out of the header menu. Hidden by
+       default and revealed once the server says who is looking, so it
+       never flashes on screen for the wrong reader. -->
+  <div class="panel" id="whofor" hidden>
+    <h2>Report details</h2>
+    <p class="note">Used on the PDF only. Leave these blank and the report
+       simply carries no name.</p>
+    <div class="whogrid">
+      <label>Prepared for
+        <input type="text" id="preparedfor" placeholder="Client name"
+               autocomplete="off"></label>
+      <label>Prepared by
+        <input type="text" id="preparedby" placeholder="Your name"
+               autocomplete="off"></label>
+      <label>ARN / contact
+        <input type="text" id="preparedcontact"
+               placeholder="ARN-000000 \u00b7 phone or email"
+               autocomplete="off"></label>
+    </div>
+  </div>
+
+  <div class="panel" id="entry">
+    <h2>Your funds</h2>
+    <p class="note">Search by fund name, then enter what that holding is
+       worth <b>today</b> &mdash; not the amount you invested.</p>
+
+    <div class="search">
+      <input type="text" id="q" placeholder="Start typing a fund name"
+             autocomplete="off" aria-label="Search for a fund">
+      <div class="results" id="results" hidden></div>
+    </div>
+
+    <table id="picked"><tbody></tbody></table>
+    <details class="imp">
+      <summary>Or paste a list / upload a CSV</summary>
+      <p class="note" style="margin:10px 0">One fund per line: the name,
+         then a comma, then the amount. A header row is ignored.</p>
+      <textarea id="paste" rows="5" spellcheck="false"
+        placeholder="Tata Small Cap Fund, 60000&#10;Parag Parikh Flexi Cap Fund, 1,25,000&#10;HDFC Mid Cap Opportunities, 40000"></textarea>
+      <div class="row" style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="go" id="impgo">Check these</button>
+        <label class="ghostlbl">Choose a CSV file
+          <input type="file" id="impfile" accept=".csv,.txt,text/csv,text/plain" hidden></label>
+        <span class="sub" id="impfilename"></span>
+      </div>
+      <div id="imppreview"></div>
+    </details>
+
+    <p class="empty" id="none">No funds added yet.</p>
+
+    <p style="margin:18px 0 0">
+      <button class="go" id="run" disabled>Look through these funds</button>
+    </p>
+  </div>
+
+  <div id="out"></div>
+
+  <!-- Only ever filled for a SAVED portfolio: alerts are attached to
+       something that persists, and a one-off look-through has nothing to
+       attach them to. -->
+  <div id="alertpanel"></div>
+</div>
+
+<script>
+const rupee = n => "\u20b9" + Math.round(n).toLocaleString("en-IN");
+const pct   = n => (n == null ? "\u2014" : n.toFixed(1) + "%");
+const signed = n => n == null ? "\u2014" : (n > 0 ? "+" : "") + n.toFixed(2);
+// Percentages restated as rupees out of a hundred. Whole rupees on purpose:
+// "20 of every 100" is graspable in a way "20.63%" is not, and the extra
+// precision is doing no work.
+const rupee100 = p => "\u20b9" + Math.round(p ?? 0);
+const esc = s => (s ?? "").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let picked = [];   // {code, name, amount}
+
+/* ---- fund picker ---------------------------------------------- */
+const q = document.getElementById("q");
+const results = document.getElementById("results");
+let timer;
+
+q.addEventListener("input", () => {
+  clearTimeout(timer);
+  const term = q.value.trim();
+  if (term.length < 2) { results.hidden = true; return; }
+  timer = setTimeout(async () => {
+    try {
+      const r = await fetch("/api/portfolio/search?q=" + encodeURIComponent(term));
+      if (!r.ok) {
+        // Say what happened. Hiding the dropdown on an error looks exactly
+        // like "no matches", which sends you hunting for a better search
+        // term when the search itself is down.
+        results.innerHTML = `<div class="muted">Search returned an error `
+          + `(${r.status}). If you just deployed, the API may need a restart.</div>`;
+        results.hidden = false;
+        return;
+      }
+      const rows = await r.json();
+      if (!rows.length) {
+        results.innerHTML = '<div class="muted">No fund by that name has a '
+          + 'portfolio we hold yet.</div>';
+      } else {
+        results.innerHTML = rows.map(f =>
+          `<div data-code="${f.scheme_code}" data-name="${esc(f.scheme_name)}">
+             ${esc(f.scheme_name)}
+             <small>${esc(f.amc_name || "")}${f.category ? " \u00b7 "
+               + esc(f.category) : ""}</small>
+           </div>`).join("");
+      }
+      results.hidden = false;
+    } catch (err) {
+      results.innerHTML = '<div class="muted">Could not reach the search. '
+        + 'Check your connection and try again.</div>';
+      results.hidden = false;
+    }
+  }, 180);
+});
+
+results.addEventListener("click", e => {
+  const row = e.target.closest("div[data-code]");
+  if (!row) return;
+  if (!picked.some(p => p.code === row.dataset.code)) {
+    picked.push({code: row.dataset.code, name: row.dataset.name, amount: 100000});
+    draw();
+  }
+  q.value = ""; results.hidden = true; q.focus();
+});
+
+document.addEventListener("click", e => {
+  if (!e.target.closest(".search")) results.hidden = true;
+});
+
+function draw() {
+  const body = document.querySelector("#picked tbody");
+  document.getElementById("none").hidden = picked.length > 0;
+  // The "since when" fields are BEHIND A TOGGLE, one row at a time.
+  //
+  // They are optional and most people will not have the dates to hand,
+  // so three more boxes on every row would slow down the thing this
+  // screen exists to be -- fast. Shown only for the row somebody chose
+  // to open, and the link says what filling them in buys.
+  body.innerHTML = picked.map((p, i) => `
+    <tr>
+      <td>${esc(p.name)}
+        <button class="link since" data-since="${i}">${p.open
+          ? "hide" : p.invested_on ? "since " + esc(p.invested_on)
+          : "add when you invested"}</button></td>
+      <td style="width:150px">
+        <input type="number" class="num" value="${p.amount}" min="1" step="1000"
+               data-i="${i}" aria-label="What ${esc(p.name)} is worth today">
+      </td>
+      <td style="width:40px">
+        <button class="link" data-remove="${i}" aria-label="Remove">Remove</button>
+      </td>
+    </tr>
+    ${p.open ? `<tr class="sincerow"><td colspan="3">
+      <div class="sincebox">
+        <label>Invested since
+          <input type="date" data-sd="${i}" max="${TODAY_ISO}"
+                 value="${p.invested_on || ""}"></label>
+        <label>How
+          <select data-sm="${i}">
+            <option value="">&mdash;</option>
+            <option value="lumpsum"${p.invest_mode === "lumpsum"
+              ? " selected" : ""}>One lump sum</option>
+            <option value="sip"${p.invest_mode === "sip"
+              ? " selected" : ""}>Monthly SIP</option>
+          </select></label>
+        <label>${p.invest_mode === "sip" ? "Each month" : "Amount put in"}
+          <input type="number" data-sa="${i}" min="1" step="500"
+                 value="${p.invest_amount || ""}"></label>
+      </div>
+      <p class="sincenote">All three, or none. With them the report shows what
+         this actually earned; without them it compares the fund against its
+         index over fixed windows instead.</p>
+    </td></tr>` : ""}`).join("");
+  document.getElementById("run").disabled = picked.length === 0;
+}
+
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+document.querySelector("#picked").addEventListener("input", e => {
+  const t = e.target, ds = t.dataset;
+  if (ds.i !== undefined) picked[ds.i].amount = Number(t.value) || 0;
+  else if (ds.sd !== undefined) picked[ds.sd].invested_on = t.value || null;
+  else if (ds.sa !== undefined)
+    picked[ds.sa].invest_amount = Number(t.value) || null;
+});
+document.querySelector("#picked").addEventListener("change", e => {
+  const ds = e.target.dataset;
+  // Redrawn because the amount label reads "Each month" for a SIP and
+  // "Amount put in" for a lump sum -- the same box means two different
+  // things and has to say which.
+  if (ds.sm !== undefined) {
+    picked[ds.sm].invest_mode = e.target.value || null;
+    draw();
+  }
+});
+document.querySelector("#picked").addEventListener("click", e => {
+  if (e.target.dataset.remove !== undefined) {
+    picked.splice(Number(e.target.dataset.remove), 1); draw();
+  }
+  if (e.target.dataset.since !== undefined) {
+    const i = Number(e.target.dataset.since);
+    picked[i].open = !picked[i].open;
+    draw();
+  }
+});
+
+/* ---- run ------------------------------------------------------- */
+document.getElementById("run").addEventListener("click", async () => {
+  const btn = document.getElementById("run");
+  const out = document.getElementById("out");
+  btn.disabled = true; btn.textContent = "Working\u2026";
+  out.innerHTML = "";
+  try {
+    const r = await fetch("/api/portfolio/lookthrough", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        // Only sent when all three are there. A half-filled row is the
+        // person part-way through typing, not an instruction, and the
+        // server would reject it anyway.
+        holdings: picked.map(p => {
+          const h = {key: p.code, amount: p.amount};
+          if (p.invested_on && p.invest_mode && p.invest_amount > 0) {
+            h.invested_on = p.invested_on;
+            h.invest_mode = p.invest_mode;
+            h.invest_amount = p.invest_amount;
+            if (p.plan) h.plan = p.plan;
+          }
+          return h;
+        }), top: 30
+      })
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      out.innerHTML = `<div class="err">${esc(data.detail || "Something went wrong.")}</div>`;
+    } else {
+      render(data);
+    }
+  } catch {
+    out.innerHTML = '<div class="err">Could not reach the server. Try again.</div>';
+  }
+  // Not "what I own": a distributor running this for a client owns
+  // none of it, and neither does the client until they place the
+  // order. The page reads the funds in the box, whoever holds them.
+  btn.disabled = false; btn.textContent = "Look through these funds";
+});
+
+/* ---- render ---------------------------------------------------- */
+/* ---- CSV / paste import -----------------------------------------
+   Matching happens server-side via /api/portfolio/match -- the SAME
+   function the saved-portfolios page uses, so the two can never disagree
+   about what a name means. Here the result fills the picker rather than
+   being written anywhere, because this page never saves.               */
+
+function parseImportLine(line) {
+  // Strip thousands separators BEFORE splitting. "Fund, Rs. 1,25,000"
+  // otherwise splits into four cells and the first numeric one is "1" --
+  // a 1,25,000 holding read as one rupee, with nothing looking wrong.
+  // Only commas between two digits go; "Fund, 60000" is untouched.
+  line = line.replace(/(\d),(?=\d)/g, "$1");
+
+  const cells = [];
+  let cur = "", quoted = false;
+  for (const ch of line) {
+    if (ch === '"') { quoted = !quoted; continue; }
+    if (!quoted && (ch === "," || ch === "\t")) { cells.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  cells.push(cur);
+
+  const name = (cells[0] || "").trim();
+  if (!name) return null;
+
+  // First remaining cell that parses as a number. Taking cells[1] blindly
+  // breaks on "Fund, Equity, 50000".
+  let amount = null;
+  for (let i = 1; i < cells.length; i++) {
+    const raw = cells[i].replace(/[₹,\s]/g, "").replace(/^rs\.?/i, "");
+    if (!raw || /%$/.test(cells[i].trim())) continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) { amount = n; break; }
+  }
+  return {name, amount};
+}
+
+function parseImportText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rows = [];
+  lines.forEach((line, i) => {
+    const row = parseImportLine(line);
+    if (!row) return;
+    if (i === 0 && row.amount === null &&
+        /^(fund|scheme|name|fund ?name|scheme ?name)$/i.test(row.name)) return;
+    rows.push(row);
+  });
+  return rows;
+}
+
+function initImport() {
+  const box = document.getElementById("imppreview");
+  const paste = document.getElementById("paste");
+  const file = document.getElementById("impfile");
+  const go = document.getElementById("impgo");
+  if (!box || !paste || !go) return;
+
+  file.addEventListener("change", () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    document.getElementById("impfilename").textContent = f.name;
+    const reader = new FileReader();
+    // Into the textarea, not straight into matching: the person sees what
+    // was read and can fix a stray column before anything happens.
+    reader.onload = () => { paste.value = reader.result; };
+    reader.onerror = () => { box.innerHTML =
+      `<div class="err">Could not read that file.</div>`; };
+    reader.readAsText(f);
+  });
+
+  go.addEventListener("click", async () => {
+    const rows = parseImportText(paste.value || "");
+    if (!rows.length) {
+      box.innerHTML = `<div class="err">No rows found. One fund per line,
+        name first.</div>`;
+      return;
+    }
+    box.innerHTML = `<p class="muted">Matching ${rows.length}
+      row${rows.length === 1 ? "" : "s"}&hellip;</p>`;
+    let out;
+    try {
+      const r = await fetch("/api/portfolio/match", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({rows})});
+      const text = await r.text();
+      out = text ? JSON.parse(text) : null;
+      if (!r.ok) throw new Error((out && out.detail) || ("server returned " + r.status));
+    } catch (e) {
+      box.innerHTML = `<div class="err">${esc(e.message ||
+        "Could not reach the server.")}</div>`;
+      return;
+    }
+    drawPreview(out, box);
+  });
+}
+
+function drawPreview(out, box) {
+  const rows = [...out.matched, ...out.ambiguous];
+  let html = `<div class="prev">`;
+
+  if (rows.length) {
+    html += `<p class="note">Found ${rows.length} fund${
+        rows.length === 1 ? "" : "s"}. Check each match before adding &mdash;
+        rows with a dropdown matched more than one.</p>
+      <table><thead><tr><th>From your file</th><th>Matched to</th>
+        <th>Value today</th></tr></thead><tbody>`;
+    rows.forEach(r => {
+      const alt = r.alternatives;
+      html += `<tr data-imp>
+        <td>${esc(r.name)}</td>
+        <td>${alt
+          ? `<select data-code>${alt.map(a =>
+              `<option value="${esc(a.scheme_code)}" data-name="${esc(a.scheme_name)}"${
+                a.scheme_code === r.scheme_code ? " selected" : ""}>${
+                esc(a.scheme_name)}</option>`).join("")}</select>`
+          : `${esc(r.scheme_name)}
+             <input type="hidden" data-code value="${esc(r.scheme_code)}"
+                    data-name="${esc(r.scheme_name)}">`}</td>
+        <td><input type="number" data-amt min="1" step="1000"
+             value="${r.amount ?? ""}" placeholder="amount"></td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  // Failures are shown, never dropped. An import that quietly loses three
+  // of sixteen funds produces a confident report about the wrong portfolio.
+  if (out.unmatched.length) {
+    html += `<div class="badbox"><b>${out.unmatched.length}
+      row${out.unmatched.length === 1 ? "" : "s"} could not be matched.</b>
+      Add ${out.unmatched.length === 1 ? "it" : "them"} with the search box
+      above, or correct the name and check again.
+      <ul style="margin:8px 0 0;padding-left:18px">${out.unmatched.map(u =>
+        `<li>${esc(u.name)} <span class="sub">&mdash; ${esc(u.why)}</span></li>`
+      ).join("")}</ul></div>`;
+  }
+
+  if (rows.length) {
+    html += `<p style="margin:14px 0 0">
+      <button class="go" id="impadd">Add ${rows.length} fund${
+        rows.length === 1 ? "" : "s"}</button>
+      <button class="ghostlbl" id="impcancel" style="margin-left:8px">Cancel</button>
+      </p>`;
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+
+  const cancel = document.getElementById("impcancel");
+  if (cancel) cancel.addEventListener("click", () => { box.innerHTML = ""; });
+
+  const add = document.getElementById("impadd");
+  if (add) add.addEventListener("click", () => {
+    let added = 0, skipped = 0;
+    box.querySelectorAll("tr[data-imp]").forEach(tr => {
+      const el = tr.querySelector("[data-code]");
+      const code = String(el.value);
+      const name = el.tagName === "SELECT"
+        ? el.options[el.selectedIndex].dataset.name : el.dataset.name;
+      const amt = Number(tr.querySelector("[data-amt]").value);
+      if (!Number.isFinite(amt) || amt <= 0) { skipped++; return; }
+      // Same shape the picker produces, and the same guard against adding
+      // a fund twice.
+      if (picked.some(p => p.code === code)) { skipped++; return; }
+      picked.push({code, name, amount: amt});
+      added++;
+    });
+    draw();
+    box.innerHTML = skipped
+      ? `<div class="badbox">Added ${added}. <b>${skipped}</b> skipped &mdash;
+         already in your list, or no amount given. This page needs an amount
+         for every fund.</div>`
+      : `<p class="muted">Added ${added} fund${added === 1 ? "" : "s"}.</p>`;
+  });
+}
+
+let savedName = null;   // set when arriving from /portfolios
+let savedId = null;     // the portfolio alerts attach to
+
+/* Who the report is for and who made it.
+   Kept in the browser rather than the database: it is the same three
+   strings on every report an adviser produces, so asking once and
+   remembering beats a column and a migration. Nothing here is sent to
+   the server. */
+const WHO_KEY = "finchaya.reportDetails";
+
+function reportDetails() {
+  const get = id => (document.getElementById(id)?.value || "").trim();
+  const who = {forName: get("preparedfor"), byName: get("preparedby"),
+               contact: get("preparedcontact")};
+  try { localStorage.setItem(WHO_KEY, JSON.stringify(who)); } catch {}
+  return who;
+}
+
+// Restore on load, so the preparer line is typed once and not once a report.
+(function restoreWho() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(WHO_KEY) || "{}"); } catch { return; }
+  const set = (id, v) => {const el = document.getElementById(id); if (el && v) el.value = v};
+  set("preparedby", saved.byName);
+  set("preparedcontact", saved.contact);
+  // The CLIENT name is deliberately not restored. Carrying the last
+  // client's name onto the next client's report is the one mistake here
+  // that would actually embarrass someone.
+})();
+
+/* Who is looking decides what this page offers.
+
+   The report-header fields are for a distributor preparing something for
+   a client; the look-through itself is subscription. Both are ALSO
+   enforced on the server -- /api/portfolio/lookthrough had no
+   authentication of any kind until today -- and this only decides what is
+   drawn. */
+function portfolioGate() {
+  const st = window.fcAuthState;
+  if (!st || !st.ready) return;
+
+  const whofor = document.getElementById("whofor");
+  if (whofor) whofor.hidden = !st.distributor;
+
+  // `subscribed`, not `score_access`: scores can be switched off for
+  // everyone, and that must not lock paying users out of the look-through.
+  if (st.subscribed) return;
+  const entry = document.getElementById("entry");
+  if (!entry || entry.dataset.locked) return;
+  entry.dataset.locked = "1";
+  const host = document.createElement("div");
+  entry.appendChild(host);
+  if (window.fcLocked)
+    window.fcLocked(host, "Looking through a portfolio",
+      "It explodes every fund you hold down to the individual companies, "
+      + "adds up what you really own, and shows where two funds are buying "
+      + "you the same thing twice. That is the part that is paid for.");
+  const run = document.getElementById("run");
+  if (run) run.disabled = true;
+}
+document.addEventListener("fc-auth", portfolioGate);
+portfolioGate();
+
+function render(d) {
+  const stale = d.funds.filter(f => f.stale);
+  let html = "";
+
+  // Screen: one button. Paper: a title block, because a file that arrives
+  // in someone's inbox has to say what it is, whose it is and when it was
+  // made -- none of which is obvious once it leaves this tab.
+  const total = d.funds.reduce((a, f) => a + (f.amount || 0), 0);
+  const who = reportDetails();
+  html += `<div class="printonly cover">
+      ${who.forName ? `<p class="coverfor">${esc(who.forName)}&rsquo;s</p>` : ""}
+      <h1 class="covertitle">Portfolio Analysis</h1>
+      <p class="coverbrand">by FinChaya</p>
+      <p class="covermeta">${who.byName
+        ? `Prepared by <b>${esc(who.byName)}</b> on ` : "Prepared "}<b>${
+        new Date().toLocaleDateString("en-IN",
+          {day: "2-digit", month: "short", year: "numeric"})}</b></p>
+      ${who.contact ? `<p class="covermeta">${esc(who.contact)}</p>` : ""}
+      <p class="covermeta">${d.funds.length} fund${d.funds.length > 1 ? "s" : ""}${
+        total ? " &middot; " + rupee(total) : ""}${
+        savedName ? " &middot; " + esc(savedName) : ""}
+        &middot; holdings as at ${esc(d.as_of)}</p>
+    </div>
+
+    <div class="printonly runhead">
+      <span>Holdings as at ${esc(d.as_of)}</span>
+      <span>Portfolio Analysis${who.forName ? " \u2014 " + esc(who.forName) : ""}</span>
+      <span class="brandmark">FinChaya</span>
+    </div>`;
+
+  // A sticky strip rather than a carousel. Panels hidden behind a "next"
+  // arrow get a fraction of the views the first one does, and the sections
+  // here are different shapes and different lengths -- a fixed frame either
+  // jumps height or wastes it. This keeps the whole report readable top to
+  // bottom, and printable, while still letting someone jump straight to the
+  // one number they came for.
+  // ================= SUMMARY =================
+  //
+  // Six findings, each one a COUNT or a RANGE over the funds -- never a
+  // judgement about what to do next. "One fund trailed its benchmark in
+  // all three windows" is arithmetic; "consider replacing it" would not
+  // be, and is not this report's to say.
+  //
+  // Every line is derived from the same numbers the sections below show,
+  // and each names the section that explains it. A summary that cannot be
+  // checked against the page under it is just an assertion.
+  /* ---- real returns, where the dates were given -------------------
+     Everything else in this panel is a what-if over a fixed window.
+     This is not: when a fund carries invested_on, invest_mode and
+     invest_amount, the actual cashflows are known and the answer is an
+     XIRR rather than an assumption.
+
+     BISECTION, NOT NEWTON. Newton is faster and diverges on exactly the
+     inputs this meets -- a short holding with a large gain gives a
+     derivative near zero and the iteration runs away. Bisection cannot
+     diverge; it only needs the answer inside the bracket, and -99% to
+     +1000% a year covers every real portfolio.
+
+     The SIP case is the reason this exists. Five thousand a month for
+     three years, 1,80,000 paid in, worth 2,30,000: treated as a lump
+     sum that is 8.5% a year, and the truth is 16.6%, because the
+     average rupee was invested for eighteen months and not thirty-six.
+     Halving a client's return is not a rounding error. */
+  const XDAY = 86400000;
+  function xirr(flows) {
+    if (!flows || flows.length < 2) return null;
+    if (!flows.some(f => f.amount > 0) || !flows.some(f => f.amount < 0))
+      return null;
+    const t0 = flows[0].when.getTime();
+    const yrs = f => (f.when.getTime() - t0) / XDAY / 365.25;
+    const npv = r => flows.reduce((a, f) =>
+      a + f.amount / Math.pow(1 + r, yrs(f)), 0);
+    let lo = -0.9999, hi = 10, flo = npv(lo), fhi = npv(hi);
+    if (!isFinite(flo) || !isFinite(fhi) || flo * fhi > 0) return null;
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2, fm = npv(mid);
+      if (Math.abs(fm) < 1e-7 || hi - lo < 1e-9) return mid * 100;
+      if (flo * fm < 0) { hi = mid; fhi = fm; } else { lo = mid; flo = fm; }
+    }
+    return (lo + hi) / 2 * 100;
+  }
+
+  // The instalments somebody actually paid, from the three fields they
+  // typed. A SIP dated the 31st lands on the 28th in February, which is
+  // what the AMC does too.
+  function contributions(f, endDate) {
+    if (!f.invested_on || !f.invest_mode || !(f.invest_amount > 0)) return null;
+    const start = new Date(f.invested_on + "T00:00:00");
+    if (isNaN(start) || start >= endDate) return null;
+    if (f.invest_mode === "lumpsum")
+      return [{when: start, amount: -f.invest_amount}];
+    if (f.invest_mode !== "sip") return null;
+    const out = [], d0 = new Date(start), dom = start.getDate();
+    while (d0 < endDate && out.length < 600) {
+      out.push({when: new Date(d0), amount: -f.invest_amount});
+      const m = d0.getMonth() + 1;
+      d0.setDate(1); d0.setMonth(m);
+      const last = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();
+      d0.setDate(Math.min(dom, last));
+    }
+    return out.length ? out : null;
+  }
+
+  // What the same instalments would be worth at a flat annual rate --
+  // how the benchmark and category columns are built. Each contribution
+  // is grown from its OWN date, which is the only honest way to treat
+  // money that went in at different times.
+  const grownTo = (flows, endDate, ratePct) => flows.reduce((a, f) => {
+    const y = (endDate.getTime() - f.when.getTime()) / XDAY / 365.25;
+    return a + (-f.amount) * Math.pow(1 + ratePct / 100, y);
+  }, 0);
+
+  /* The benchmark has no NAV series here -- only CAGRs at 1, 3 and 5
+     years. So a holding of 3.4 years is compared against the 3-year
+     figure, the nearest window we have. Stated on the page rather than
+     smoothed over: it is an approximation, and a reader who is being
+     shown their own money deserves to know which parts are exact. */
+  function nearestWindow(f, years) {
+    const want = years <= 2 ? ["1Y", "3Y", "5Y"]
+               : years <= 4 ? ["3Y", "5Y", "1Y"]
+                            : ["5Y", "3Y", "1Y"];
+    for (const p of want) {
+      const r = (f.returns || []).find(x => x.period === p);
+      if (r && r.bench_cagr != null) return r;
+    }
+    return null;
+  }
+
+  const SORTED = a => a.slice().sort((x, y) => x.when - y.when);
+
+  /* ONE FUND, from the three fields somebody typed.
+     Everything the report says about real money -- the summary tiles,
+     the per-fund rows in the returns section, the portfolio block --
+     is this function summed up in different ways. Computing it once
+     and adding it up is why those three cannot disagree with each
+     other, which they would within a week if each did its own sums. */
+  function fundActual(f, today) {
+    const cf = contributions(f, today);
+    if (!cf || !(Number(f.amount) > 0)) return null;
+    const start = new Date(f.invested_on + "T00:00:00");
+    const years = (today - start) / XDAY / 365.25;
+    const r = nearestWindow(f, years);
+    if (!r) return null;                    // no benchmark: no comparison
+
+    // Both figures come from the API where it priced them: it knows how
+    // many instalments actually fell inside the fund's NAV history, and
+    // the browser does not. Falling back to the client-side schedule
+    // only for holdings the server could not price.
+    const paid = (f.priced && f.priced.paid != null)
+      ? Number(f.priced.paid) : cf.reduce((a, c) => a - c.amount, 0);
+    const value = Number(f.amount);
+    const rate = end => xirr([...SORTED(cf), {when: today, amount: end}]);
+
+    // The benchmark and category columns are the SAME instalments grown
+    // at a flat rate, so the rupee figure and the percentage beside it
+    // always agree -- they come from the same number.
+    const benchValue = grownTo(cf, today, Number(r.bench_cagr));
+    const catCagr = (r.vs_category != null && r.fund_cagr != null)
+      ? Number(r.fund_cagr) - Number(r.vs_category) : null;
+    const catValue = catCagr != null ? grownTo(cf, today, catCagr) : null;
+
+    // THE FUND IS INCLUDED WHETHER OR NOT THE RATE CAN BE SOLVED.
+    //
+    // This used to be `if (fundRate == null) return null`, and it was
+    // wrong in a way that hid itself: a big loss over a short period
+    // annualises to worse than -99.99% a year, which is outside the
+    // bracket the solver searches, so xirr returned null -- and the
+    // whole fund then vanished from the summary, the returns card and
+    // the portfolio total, with nothing on the page saying it had
+    // gone. Four funds became "across 1 fund".
+    //
+    // What went in and what it is worth are always known. Only the
+    // yearly RATE can be unsolvable, so only the yearly rate is
+    // allowed to be missing. Every figure derived from rupees stands.
+    const fundRate = rate(value);
+    return {cf, paid, value, years, start, window: r.period,
+            sip: f.invest_mode === "sip",
+            // UNDER A YEAR, NOTHING IS ANNUALISED.
+            //
+            // A SIP that started two months ago has had one or two
+            // instalments in the market. Annualising that compounds a
+            // few weeks of noise into a yearly rate and produces
+            // figures like 300% or -95% -- arithmetically correct and
+            // completely meaningless, and on a client report actively
+            // misleading in whichever direction it lands.
+            //
+            // Indian practice is the same: fund factsheets show simple
+            // absolute returns below one year and only annualise above
+            // it, and SEBI's advertisement code will not let a scheme
+            // under a year old show past performance at all. Below the
+            // line this report shows what actually happened in rupees
+            // and percent, and says it is not a yearly rate.
+            annualised: years >= 1,
+            fundRate, benchRate: rate(benchValue),
+            catRate: catValue != null ? rate(catValue) : null,
+            benchValue, catValue};
+  }
+
+  // Absolute return -- what it grew by, not per year. The honest figure
+  // for a holding too young to annualise.
+  const absPct = (end, paid) =>
+    (end == null || !paid) ? null : (end / paid - 1) * 100;
+
+  /* ---- does this look like the monthly amount in the wrong box? ----
+     There are two amount fields on a SIP row -- what goes in each month,
+     and what the holding is worth today -- and putting the first in the
+     second is an easy mistake that produces a catastrophic-looking loss
+     out of perfectly healthy investments.
+
+     The tell is precise: a SIP that has paid several instalments, whose
+     stated value today is no more than roughly one instalment. Real
+     funds do not do that. Nothing is corrected automatically, because
+     guessing at somebody's money is worse than asking -- the report
+     says what it thinks happened and leaves the correction to them. */
+  function looksLikeMonthlyInValue(f, a) {
+    // Only for values somebody TYPED. Where the server priced the
+    // holding from NAV there is no box to get wrong, so the warning
+    // would be noise -- and worse, it would be wrong: a fund really
+    // can be worth about one instalment a month or two into a SIP.
+    return f.amount_source !== "nav"
+      && f.invest_mode === "sip" && a && a.cf.length >= 2
+      && f.invest_amount > 0
+      && Number(f.amount) <= Number(f.invest_amount) * 1.05;
+  }
+  const valueWarnings = (d.funds || []).filter(f =>
+    looksLikeMonthlyInValue(f, fundActual(f, new Date())));
+
+  const valueWarningNote = valueWarnings.length ? `
+    <div class="datawarn">
+      <b>Check the &ldquo;value today&rdquo; figures before sharing this.</b>
+      <!-- Written out rather than calling plural(), which is declared
+           further down this function: a const is not hoisted, so using
+           it up here is a ReferenceError that takes the whole report
+           down with it. -->
+      <p>${valueWarnings.length === 1
+        ? `<b>${esc(valueWarnings[0].name)}</b> is`
+        : `${valueWarnings.length} funds are`}
+        recorded as worth about one monthly instalment, after paying in
+        several. That is almost always the monthly SIP amount typed into
+        the value box by mistake &mdash; and it makes the returns below
+        read as a heavy loss when nothing of the sort has happened.</p>
+      <p class="sub">${valueWarnings.map(f =>
+        `${esc(f.name)}: ${rupee(f.invest_amount)} a month, value recorded
+         as ${rupee(f.amount)}`).join(" &middot; ")}</p>
+      <p class="sub">The value box wants what the holding is worth
+        <b>today</b>, from the statement or the AMC app.</p>
+    </div>` : "";
+
+  function actualReturn(d) {
+    const today = new Date();
+    let paid = 0, fundEnd = 0, benchEnd = 0, catEnd = 0;
+    let n = 0, catOk = true, allMoney = 0, covered = 0, earliest = null;
+    const flows = [];
+
+    (d.funds || []).forEach(f => {
+      allMoney += Number(f.amount) || 0;
+      const a = fundActual(f, today);
+      if (!a) return;
+
+      n += 1;
+      covered += a.value;
+      paid += a.paid;
+      if (!earliest || a.start < earliest) earliest = a.start;
+
+      flows.push(...a.cf);
+      fundEnd += a.value;                    // what it is actually worth
+      benchEnd += a.benchValue;
+      if (a.catValue == null) catOk = false;
+      else catEnd += a.catValue;
+    });
+
+    // Same rule as fundActual: a portfolio is reported on because money
+    // went into it, not because a solver converged.
+    if (!n || !paid) return null;
+    const rate = end => xirr([...SORTED(flows), {when: today, amount: end}]);
+    const fundRate = rate(fundEnd);
+    return {
+      funds: n, paid, value: fundEnd, earliest,
+      covered: allMoney ? covered / allMoney * 100 : 0,
+      // Annualised only if the OLDEST holding is at least a year old.
+      // Mixing a five-year holding and a two-month one into a single
+      // yearly rate is defensible; presenting a portfolio whose whole
+      // history is two months as a yearly rate is not.
+      annualised: earliest
+        && (new Date() - earliest) / XDAY / 365.25 >= 1,
+      fundRate,
+      benchRate: rate(benchEnd),
+      // Only when EVERY covered fund has a category figure. Adding a
+      // category total over some of the funds and comparing it with a
+      // fund total over all of them is two different portfolios in one
+      // sentence.
+      catRate: catOk ? rate(catEnd) : null,
+      benchValue: benchEnd, catValue: catOk ? catEnd : null,
+      gap: fundEnd - benchEnd,
+      sip: (d.funds || []).some(f => f.invest_mode === "sip"
+        && f.invested_on && f.invest_amount > 0),
+    };
+  }
+
+  const P3 = ["1Y", "3Y", "5Y"];
+  const retOf = (f, p) => (f.returns || []).find(r => r.period === p) || null;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  // Weighted by the rupees in each fund, so a large holding is not
+  // outvoted by a small one. Defined here rather than inside the trend
+  // section because the summary tile needs the same figure, and two
+  // independent calculations of "how much is rising" is how a report
+  // ends up contradicting itself.
+  function trendSplit(d) {
+    let uV = 0, sV = 0, dV = 0, nV = 0;
+    d.funds.forEach(f => {
+      const t = f.trend; if (!t) return;
+      uV += f.amount * (t.up_pct || 0) / 100;
+      sV += f.amount * (t.sideways_pct || 0) / 100;
+      dV += f.amount * (t.down_pct || 0) / 100;
+      nV += f.amount * (t.unscored_pct || 0) / 100;
+    });
+    const tV = uV + sV + dV + nV || 1;
+    const dUp = Math.round(100 * uV / tV), dSw = Math.round(100 * sV / tV),
+          dDn = Math.round(100 * dV / tV);
+    return {dUp, dSw, dDn, dNa: Math.max(0, 100 - dUp - dSw - dDn)};
+  }
+
+  /* THE THREE FACES.
+     One path each, over a shared circle and eyes, so the only thing that
+     differs between them is the mouth -- which is what makes them
+     readable at 22px. A dot for the unsure eyebrow would be lost at this
+     size, so the confusion is carried by the wavy mouth alone. */
+  const FACE_PATH = {
+    good:   "M6.5 11.5c.9 1.6 2.4 2.5 4 2.5s3.1-.9 4-2.5",
+    poor:   "M6.5 14c.9-1.6 2.4-2.5 4-2.5s3.1.9 4 2.5",
+    unsure: "M6.5 12.8c1-.9 1.9-.9 2.9 0s1.9.9 2.9 0 1.9-.9 2.8 0",
+  };
+  function faceSvg(kind, why) {
+    if (!kind || !FACE_PATH[kind]) return "";
+    // The title is the whole justification for showing a face at all --
+    // a verdict nobody can interrogate is worse than no verdict.
+    return `<svg class="sumface ${kind}" viewBox="0 0 21 21" fill="none"
+        role="img" aria-label="${esc(why || kind)}"><title>${esc(why || "")}</title>
+      <circle cx="10.5" cy="10.5" r="8.6" stroke="currentColor"
+        stroke-width="1.5"/>
+      <circle cx="7.7" cy="8.4" r="1.05" fill="currentColor"/>
+      <circle cx="13.3" cy="8.4" r="1.05" fill="currentColor"/>
+      <path d="${FACE_PATH[kind]}" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round"/></svg>`;
+  }
+
+  const findings = [];
+
+  /* 0. THE MONEY, when the dates are there -- and it leads everything,
+        because "what did I put in, what is it worth, what did it earn"
+        is the question a person actually opens this report with. Every
+        other tile is a property of the funds; these three are about
+        their money, and only these three are exact.
+
+        Absent entirely when no fund carries a date. An empty tile
+        reading "not known" would take the most prominent position on
+        the page to say nothing. */
+  const summaryActual = actualReturn(d);
+  if (summaryActual) {
+    const a = summaryActual;
+    const gain = a.value - a.paid;
+    const part = a.covered < 99.5
+      ? ` (${Math.round(a.covered)}% of your money)` : "";
+    // NO FACE ON "PUT IN". It is what somebody chose to invest, not an
+    // outcome -- there is no good or bad version of it, and even the
+    // unsure face would be the page pretending to have an opinion about
+    // how much of their own money they spent.
+    findings.push({k: "Put in", href: "#sec-vsindex",
+      num: rupee(a.paid),
+      cap: `across ${plural(a.funds, "fund", "funds")} with dates
+            entered${part}`});
+    findings.push({k: "Worth now", href: "#sec-vsindex",
+      num: rupee(a.value),
+      cap: `${gain >= 0 ? "up" : "down"} <b>${rupee(Math.abs(gain))}</b>
+            on what went in`,
+      tone: gain >= 0 ? "up" : "down",
+      face: gain >= 0 ? "good" : "poor",
+      why: gain >= 0
+        ? `Worth more than went in, by ${rupee(Math.abs(gain))}.`
+        : `Worth less than went in, by ${rupee(Math.abs(gain))}. Over a
+           short holding period that is ordinary and says little.`});
+    // A yearly rate that could not be solved is simply absent -- the
+    // tile is dropped rather than shown as a dash or a zero. "Put in"
+    // and "Worth now" are rupee facts and always stand.
+    const mine = a.annualised ? a.fundRate : absPct(a.value, a.paid);
+    const theirs = a.annualised ? a.benchRate : absPct(a.benchValue, a.paid);
+    if (mine != null) {
+      findings.push({k: a.annualised ? "Your return" : "So far",
+        href: "#sec-vsindex",
+        num: `${mine.toFixed(1)}%`,
+        cap: theirs != null
+          ? `${a.annualised ? "a year" : "in total, not yearly"} &mdash;
+             against <b>${theirs.toFixed(1)}%</b> from their benchmarks`
+          : (a.annualised ? "a year, money-weighted (XIRR)"
+                          : "in total &mdash; too early to state a yearly rate"),
+        tone: theirs != null ? (mine >= theirs ? "up" : "down") : null,
+        // Against the benchmark, or not at all. A return on its own is
+        // not good or bad -- 11% is excellent in one year and poor in
+        // another, and only the comparison says which this was.
+        face: theirs == null ? "unsure" : (mine >= theirs ? "good" : "poor"),
+        why: theirs == null
+          ? `There is no benchmark figure to compare this with, so
+             whether it is good cannot be said from the number alone.`
+          : (mine >= theirs
+              ? `Ahead of what the same funds' benchmarks did over the
+                 same stretch, by ${(mine - theirs).toFixed(1)} points.`
+              : `Behind what the same funds' benchmarks did over the same
+                 stretch, by ${(theirs - mine).toFixed(1)} points.`)});
+    }
+  }
+
+  // 1. OVERLAP, and it leads, because the sections below now lead with
+  //    it -- a summary in a different order from the report it summarises
+  //    makes the reader hunt.
+  if (d.duplicated_pct > 0.05) {
+    // High overlap is the one direction that is unambiguous here: paying
+    // two funds to own the same companies is the thing owning two funds
+    // was supposed to avoid. The bands are wide because some overlap is
+    // normal and expected -- any two Indian equity funds will both hold
+    // HDFC Bank -- and only a lot of it is a finding.
+    const ov = Math.round(d.duplicated_pct);
+    findings.push({k: "Overlap", href: "#sec-overlap",
+      num: `${ov}%`,
+      cap: "of your shares are held through more than one fund",
+      face: ov >= 50 ? "poor" : ov >= 25 ? "unsure" : "good",
+      why: ov >= 50
+        ? `More than half of what you own is held through more than one
+           fund. The second fund is doing much less for spreading risk
+           than its name suggests.`
+        : ov >= 25
+          ? `Some overlap is normal — any two Indian equity funds
+             will both hold the big names. A quarter to a half is worth
+             looking at rather than worth worrying about.`
+          : `Little of what you own is duplicated across funds.`});
+  }
+
+  // 2. RETURN -- the spread, not an average. Averaging two funds that
+  //    returned 0.3% and 12% produces a number describing neither.
+  {
+    const oneY = d.funds.map(f => retOf(f, "1Y")).filter(r => r && r.fund_cagr != null);
+    if (oneY.length) {
+      const vals = oneY.map(r => Number(r.fund_cagr)).sort((a, b) => a - b);
+      const lo = vals[0], hi = vals[vals.length - 1];
+      // Above or below zero is the only judgement available. Whether a
+      // given per cent was GOOD needs the benchmark, and that is the
+      // tile two along -- this one only knows whether money grew.
+      findings.push({k: "Last year", href: "#sec-returns",
+        num: vals.length === 1 ? `${hi.toFixed(1)}%`
+          : `${lo.toFixed(1)}&ndash;${hi.toFixed(1)}%`,
+        cap: vals.length === 1 ? "your fund&rsquo;s return over the past year"
+          : "the range your funds returned over the past year",
+        face: lo >= 0 ? "good" : hi < 0 ? "poor" : "unsure",
+        why: lo >= 0
+          ? `Every one of these was up over the past year. Whether that
+             beat what it should have is the benchmark tile, not this one.`
+          : hi < 0
+            ? `Every one of these was down over the past year. One year is
+               a short stretch and says little about a fund on its own.`
+            : `Some up, some down. A range this wide across funds meant to
+               do similar jobs is itself worth a look.`});
+    }
+  }
+
+  // 2 and 3. VS BENCHMARK and VS CATEGORY MEDIAN -- same shape, same rule
+  //    as the verdict table below: positive is a beat, negative is behind,
+  //    null is no comparison rather than a loss.
+  [["excess_cagr", "their own benchmark", "Beat benchmark"],
+   ["vs_category", "their category median", "Beat category"]
+  ].forEach(([field, what, label]) => {
+    let eligible = 0, allWin = 0, uncompared = 0;
+    d.funds.forEach(f => {
+      const vals = P3.map(p => retOf(f, p)).map(r => r && r[field] != null
+        ? Number(r[field]) : null).filter(v => v !== null);
+      // A fund with no comparison in ANY window is not a fund that lost.
+      // It stays out of the denominator -- but it is COUNTED, because a
+      // reader holding four funds who is shown "3 of 3" reads that as
+      // all four, and silently shrinking the universe to make a tidier
+      // number is the exact half-truth this panel is meant to avoid.
+      if (!vals.length) { uncompared += 1; return; }
+      eligible += 1;
+      if (vals.every(v => v > 0)) allWin += 1;
+    });
+    if (!eligible) return;
+    findings.push({k: label, href: "#sec-returns",
+      num: `${allWin} of ${eligible}`,
+      // "in every window" is the whole claim. A fund that beat its
+      // benchmark over one year and lost over five has not beaten it,
+      // and a summary that says otherwise is the kind of half-truth
+      // this report exists to avoid.
+      cap: `${eligible === 1 ? "fund" : "funds"} beat ${what} in
+            every window` + (uncompared
+              ? ` &mdash; ${uncompared} more ${uncompared === 1
+                  ? "has no comparable history" : "have no comparable history"}`
+              : ""),
+      tone: allWin === eligible ? "up" : allWin === 0 ? "down" : null,
+      // The cleanest judgement on the panel, because the bar is the
+      // fund's own yardstick rather than one we picked. All of them, none
+      // of them, or a mixture -- and a mixture really is unclear.
+      face: allWin === eligible ? "good" : allWin === 0 ? "poor" : "unsure",
+      why: allWin === eligible
+        ? `Every comparable fund here beat ${what} in all three windows.`
+        : allWin === 0
+          ? `Not one of them beat ${what} in all three windows. Beating it
+             in one and losing in another is not beating it.`
+          : `${allWin} of ${eligible} managed it in every window and the
+             rest did not, so the basket as a whole is neither.`});
+  });
+
+  // 5. WHERE IT LEANS -- the largest size band, with its figure, rather
+  //    than a label like "aggressive". The label would be a risk
+  //    judgement; 41% small cap is the fact such a judgement would rest
+  //    on, and the reader can make it themselves. The largest industry
+  //    used to be bolted onto the same line -- it has its own bar chart
+  //    two screens down and did not need saying twice.
+  if (d.caps && d.caps.length) {
+    const top = [...d.caps].filter(c => c.cap !== "Unclassified")
+      .sort((a, b) => b.pct - a.pct)[0];
+    // ALWAYS THE UNSURE FACE, and that is the honest answer rather than a
+    // gap. 80% in large caps is right for a three-year goal and wrong for
+    // a twenty-year one; 60% in small caps is the reverse. This page does
+    // not know what the money is for, and a tool that does not know the
+    // goal cannot grade the shape. The planner, which does ask, judges
+    // exactly this against an allocation for the goal -- so the answer
+    // exists, just not here.
+    if (top) findings.push({k: "Biggest band", href: "#sec-sectors",
+      num: `${Math.round(top.pct)}%`,
+      cap: `of your shares are in <b>${top.cap.toLowerCase()} cap</b>
+            companies`,
+      face: "unsure",
+      why: `Neither good nor bad on its own — the right mix of
+            company sizes depends on what the money is for and how long it
+            has. This page was not told either.`});
+  }
+
+  // The effective-holdings number used to be a tile here. It is the
+  // headline figure of "What is underneath", which sits immediately
+  // below this panel with the same number in a larger typeface -- so
+  // the tile was a caption for something already on screen. Six tiles
+  // also happen to fill three across and two down without a gap.
+
+  // 6. TRADING NOW -- the same weighted figure the trend section leads
+  //    with, from the same function, so the two cannot drift apart.
+  if (d.funds.some(f => f.trend && (f.trend.up || f.trend.down
+      || f.trend.sideways))) {
+    // Rising against FALLING, not against a hoped-for level. The tile
+    // shows only the rising share, so ₹17 looks alarming until you know
+    // the other ₹83 is mostly sideways rather than falling. The face
+    // compares the two ends, which is arithmetic; calling momentum good
+    // would be a forecast, and this figure describes the past few months
+    // and predicts nothing -- as the trend section itself says.
+    const ts = trendSplit(d);
+    findings.push({k: "Rising now", href: "#sec-trend",
+      num: `&#8377;${ts.dUp}`,
+      cap: "of every &#8377;100 is in shares whose price is rising",
+      face: ts.dUp >= ts.dDn + 10 ? "good"
+          : ts.dDn >= ts.dUp + 10 ? "poor" : "unsure",
+      why: ts.dUp >= ts.dDn + 10
+        ? `More of your money is in shares that have been rising
+           (₹${ts.dUp}) than falling (₹${ts.dDn}). It describes
+           the past few months and forecasts nothing.`
+        : ts.dDn >= ts.dUp + 10
+          ? `More of your money is in shares that have been falling
+             (₹${ts.dDn}) than rising (₹${ts.dUp}). Recent
+             prices, not a prediction — and cheap is where returns
+             often start.`
+          : `Rising (₹${ts.dUp}) and falling (₹${ts.dDn}) are
+             close enough that neither direction is the story.`});
+  }
+
+  // NUMBERS, NOT SENTENCES.
+  //
+  // This was six numbered paragraphs. Each was accurate and each was
+  // three lines long, and the honest description of the result is the
+  // one the person paying for this gave: by the sixth point the reader
+  // is tired, confused, and leaving. Six correct paragraphs at the top
+  // of a report are a wall, and a wall is skipped whole -- so the
+  // accuracy bought nothing.
+  //
+  // Now each finding is ONE FIGURE with a caption under it. The figure
+  // is the thing the eye lands on and it is large; the caption says
+  // what it counts and is short. Nothing was thrown away -- every one
+  // of these still comes from the sections below and can be checked
+  // against them -- but the summary is now something you take in at a
+  // glance instead of something you read.
+  //
+  // The whole tile is the link. "See the detail" under every item was
+  // six more lines of text saying the same thing six times.
+  if (findings.length) {
+    html += `<div class="panel summary" id="sec-summary">
+      <h2>In summary</h2>
+      ${valueWarningNote}
+      <p class="note">Counts and ranges taken from the sections below.
+         Nothing here is a recommendation.</p>
+      <p class="note" style="margin-top:-6px">A face marks whether that
+         particular figure reads well, badly, or neither &mdash; hover or
+         tap one for the reason. It judges the number beside it and
+         nothing else: not whether a fund is worth holding, and not
+         whether this portfolio suits you.</p>
+      <div class="sumgrid">`;
+    findings.forEach(f => {
+      html += `<a class="sumtile${f.tone ? " " + f.tone : ""}" href="${f.href}">
+        <span class="sumtop"><span class="sumk">${esc(f.k)}</span>${
+          faceSvg(f.face, f.why)}</span>
+        <b class="sumn">${f.num}</b>
+        <span class="sumc">${f.cap}</span></a>`;
+    });
+    html += `</div></div>`;
+  }
+
+  html += `<nav class="secnav" aria-label="Sections">
+    <span class="navscroll">
+      <span class="navlabel">Jump to</span>
+      <a href="#sec-summary">Summary</a>
+      <a href="#sec-overlap">Overlap</a>
+      <a href="#sec-vsindex">Funds or index</a>
+      <a href="#sec-returns">Returns</a>
+      <a href="#sec-sectors">Where it sits</a>
+      <a href="#sec-stocks">Positions</a>
+      ${d.funds.some(f => f.trend && (f.trend.up || f.trend.down || f.trend.sideways))
+        ? '<a href="#sec-trend">Trading now</a>' : ""}
+    </span>
+    <button class="pdfbtn" id="pdf" title="Save this report as a PDF">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/>
+      </svg>Save as<span class="long">&nbsp;PDF</span>
+    </button>
+  </nav>`;
+
+  html += `<div class="panel" id="sec-under">
+    <h2>What is underneath</h2>
+    <p class="lead">Your ${d.funds.length} fund${d.funds.length > 1 ? "s" : ""}
+       hold ${d.stock_count} companies between them &mdash; and the ten
+       largest hold ${rupee100(d.top10_pct)} of every ₹100.</p>
+    <p class="note">Portfolios as disclosed for ${esc(d.as_of)}. Holdings are
+       published monthly, so these are month-end positions, not today's.</p>
+    <div class="figures">
+      <a class="figure" href="#sec-stocks"><b class="num">${d.stock_count}</b>
+        <span>companies held</span></a>
+      <a class="figure" href="#sec-stocks"><b class="num">${d.effective_stocks}</b>
+        <span>equally weighted equivalent</span></a>
+      <a class="figure" href="#sec-stocks"><b class="num">${pct(d.top10_pct)}</b>
+        <span>in the largest ten</span></a>
+      <a class="figure" href="#sec-overlap"><b class="num">${pct(d.duplicated_pct)}</b>
+        <span>in stocks held by two or more funds</span></a>
+    </div>
+    <p class="foot">Your ${d.funds.length} funds hold ${d.stock_count}
+       companies between them, but weighted by how much you own, that is
+       about as concentrated as ${d.effective_stocks} equally sized positions.</p>
+  </div>`;
+
+  /* funds */
+  /* "Each fund" used to sit here: a table of resolved %, unique %,
+     score rank and coverage. Removed, and the reasons are worth keeping
+     because they are the test for anything that replaces it.
+
+       - "Unique" answered the same question as the overlap section, from
+         the other side. Two sections for one idea is one too many, and
+         the overlap one shows it rather than tabulating it.
+       - "Resolved" was a data-quality figure -- how much of the fund we
+         could see through to shares. That is OUR problem, not the
+         reader's, and it belongs in the gap note where it now lives
+         alone.
+       - The score rank is on each fund's own page, with room.
+
+     What was left was a table whose only readable conclusion was "Quant
+     returned more", which the returns section says properly. */
+
+/* ---- what a trend LOOKS like --------------------------------------
+   Drawn rather than described. Three bars and a path each: climbing to
+   an arrowhead, a wave through the middle, falling to an arrowhead.
+
+   Shape is the primary channel and colour the second, which is the rule
+   for anything carrying a status: the three read correctly in greyscale,
+   in print, and for a reader who cannot separate the green from the red.
+   A key underneath is not a substitute for that -- it is what you need
+   when the mark itself says nothing. */
+function trendIcon(kind) {
+  const bar = (x, y) => `<rect x="${x}" y="${y}" width="7" height="${34 - y}"
+    rx="1.5" fill="currentColor" opacity=".22"/>`;
+  const head = (x, y, dir) => `<path d="M${x} ${y} l0 ${dir * 7} l${-dir * 7} 0"
+    fill="none" stroke="currentColor" stroke-width="2.6"
+    stroke-linecap="round" stroke-linejoin="round"
+    transform="rotate(${dir > 0 ? -45 : 45} ${x} ${y})"/>`;
+
+  if (kind === "up") {
+    return `<svg viewBox="0 0 46 38" class="ticon" aria-hidden="true">
+      ${bar(3, 24)}${bar(13, 18)}${bar(23, 12)}${bar(33, 5)}
+      <path d="M4 30 L15 21 L25 25 L42 6" fill="none" stroke="currentColor"
+        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M42 6 L33 7 M42 6 L41 15" fill="none" stroke="currentColor"
+        stroke-width="2.6" stroke-linecap="round"/>
+    </svg>`;
+  }
+  if (kind === "down") {
+    return `<svg viewBox="0 0 46 38" class="ticon" aria-hidden="true">
+      ${bar(3, 5)}${bar(13, 12)}${bar(23, 18)}${bar(33, 24)}
+      <path d="M4 8 L15 17 L25 13 L42 32" fill="none" stroke="currentColor"
+        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M42 32 L33 31 M42 32 L41 23" fill="none" stroke="currentColor"
+        stroke-width="2.6" stroke-linecap="round"/>
+    </svg>`;
+  }
+  if (kind === "side") {
+    return `<svg viewBox="0 0 46 38" class="ticon" aria-hidden="true">
+      ${bar(3, 16)}${bar(13, 18)}${bar(23, 15)}${bar(33, 17)}
+      <path d="M3 19 C9 7, 15 7, 21 19 S33 31, 43 19" fill="none"
+        stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 46 38" class="ticon" aria-hidden="true">
+    <path d="M4 19 h38" stroke="currentColor" stroke-width="2.6"
+      stroke-linecap="round" stroke-dasharray="3 6"/>
+  </svg>`;
+}
+
+/* ---- the overlap, as circles --------------------------------------
+   A percentage in a sentence is read past. Circles that actually
+   intersect are not.
+
+   TWO FUNDS get a REAL Venn: the gap between the centres is solved so
+   the lens AREA is the overlap, using the renderer finchaya.js already
+   has. The picture is then a measurement, not an illustration.
+
+   THREE OR MORE get a SCHEMATIC, and the page says so. Four circles
+   cannot express four sets honestly -- a true 4-set Venn needs
+   ellipses and fifteen regions, and any drawing that implies otherwise
+   is lying about geometry to look clever. So: one circle per fund,
+   arranged in a ring, meeting in a middle that carries the real number.
+   The pair table underneath is where the exact figures live, and it
+   stays.
+*/
+function overlapPicture(d) {
+  const total = d.duplicated_pct;
+  const names = (d.funds || []).map(f => f.name);
+
+  if (names.length === 2 && window.fcVenn) {
+    return `<div class="ovpic">${window.fcVenn(total, names[0], names[1])}
+      <p class="sub">The shaded middle is drawn to scale: its area really is
+         ${pct(total)} of each circle.</p></div>`;
+  }
+
+  const n = Math.min(names.length, 6);
+  const R = 132, r = 56, cx = R, cy = R;
+  // Pulled well inside the rim so every circle reaches the middle -- the
+  // point of the picture is the region they all share.
+  const ring = r * 0.78;
+  const COLOURS = ["#1d4ed8", "#e8a33d", "#1d6b4f", "#b4472f",
+                   "#5b2c83", "#0f7a8a"];
+  let circles = "", legend = "";
+  for (let i = 0; i < n; i++) {
+    const ang = (Math.PI * 2 * i) / n - Math.PI / 2;
+    const x = cx + Math.cos(ang) * ring, y = cy + Math.sin(ang) * ring;
+    circles += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}"
+      fill="${COLOURS[i]}" fill-opacity=".26"
+      stroke="${COLOURS[i]}" stroke-width="2"/>`;
+    legend += `<span class="ovleg"><i style="background:${COLOURS[i]}"></i>${
+      esc(names[i])}</span>`;
+  }
+
+  // THE NUMBER SITS ON ITS OWN PLATE.
+  //
+  // Without it the figure was dark ink over four overlapping translucent
+  // fills -- technically present, unreadable in practice, and worst
+  // exactly where the circles pile up, which is the middle. A solid disc
+  // is not decoration; it is what makes the one number that matters
+  // legible against whatever is behind it.
+  //
+  // The legend went BELOW for the same class of reason: labels placed
+  // around the rim sat on top of the circles and truncated. A legend in
+  // a row cannot collide with anything.
+  return `<div class="ovpic">
+    <div class="ovwrap">
+      <svg viewBox="0 0 ${R * 2} ${R * 2}" class="ovsvg" role="img"
+        aria-label="${pct(total)} of your equity sits in companies held by more than one fund">
+        ${circles}
+        <circle cx="${cx}" cy="${cy}" r="54" fill="var(--card)"
+          fill-opacity=".93" stroke="var(--rule)"/>
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="ovbig">${
+          Math.round(total)}%</text>
+        <text x="${cx}" y="${cy + 20}" text-anchor="middle" class="ovsmall">held
+          more than once</text>
+      </svg>
+    </div>
+    <div class="ovlegend">${legend}</div>
+    <p class="sub" style="text-align:center">One circle per fund. The middle
+       carries the real figure; the circles themselves are a sketch &mdash;
+       ${n} sets cannot be drawn honestly as ${n} overlapping circles, so the
+       exact pair-by-pair numbers are in the table below.</p>
+  </div>`;
+}
+
+  /* overlap */
+  if (d.overlaps.length) {
+    html += `<div class="panel" id="sec-overlap"><h2>Where your funds repeat each other</h2>
+      <p class="lead">${rupee100(d.duplicated_pct)} of every ₹100 you hold in
+         shares is in a company you own through more than one fund.</p>
+      ${overlapPicture(d)}
+      <p class="note">For each pair below, the smaller of the two weights in
+         every shared stock, added up. A pair sharing many names but little
+         money still counts as little overlap.</p>
+      <table><thead><tr>
+        <th>This fund</th><th style="text-align:left">and this one</th>
+        <th class="w-count">Shared</th><th class="w-bar">Overlap</th>
+        <th class="w-see"></th>
+      </tr></thead><tbody>`;
+    d.overlaps.forEach(o => {
+      html += `<tr><td>${esc(o.a)}</td><td style="text-align:left">${esc(o.b)}</td>
+        <td class="num w-count">${o.common}</td>
+        <td class="w-bar"><div class="barwrap">
+          <span class="num">${o.overlap_pct.toFixed(1)}%</span>
+          <div class="bar"><i style="width:${Math.min(100, o.overlap_pct)}%"></i></div>
+        </div></td>
+        <td class="w-see">${o.a_code && o.b_code
+          ? `<button class="linkish" data-pair="${esc(o.a_code)}|${esc(o.b_code)}"
+              >See which</button>` : ""}</td></tr>`;
+    });
+    // A percentage is where the question starts. "These two are 31% the
+    // same" invites "the same in WHAT", and until now the page had no
+    // answer -- so the pair opens, name by name, underneath.
+    html += `</tbody></table>
+      <div id="pairoverlap"></div></div>`;
+  }
+
+  /* returns */
+  const PERIODS = ["1Y", "3Y", "5Y"];
+
+  /* ---- the portfolio against its own index -------------------------
+     The per-fund bars say which funds beat their benchmarks. They do
+     not answer the question a client actually asks: "would I have been
+     better off in the index?"
+
+     Answered by REBUILDING the portfolio three ways over the same
+     window and the same money -- the funds as held, every rupee in each
+     fund's own benchmark instead, and every rupee in the middle fund of
+     each category. Ending values, then the growth rate that implies.
+
+     TWO HONEST LIMITS, both printed on the page:
+
+       1. Only funds that HAVE a mapped benchmark can be in the
+          benchmark column, so all three figures are computed over that
+          same subset -- otherwise the comparison silently changes which
+          funds it is about. The share of money covered is stated.
+
+       2. The amounts are what is held TODAY, not what was invested at
+          the start of the window. Nobody's SIP went in as one lump on
+          day one. This is "what these weights would have done", which
+          is a fair comparison of the CHOICES, not a statement of what
+          the client's account did. Saying so is the difference between
+          a comparison and a claim.
+  */
+
+  function vsIndex(d) {
+    const YEARS = {"1Y": 1, "3Y": 3, "5Y": 5};
+    const out = [];
+    Object.keys(YEARS).forEach(period => {
+      const yrs = YEARS[period];
+      let money = 0, fundEnd = 0, benchEnd = 0, catEnd = 0;
+      let n = 0, catOk = true, allMoney = 0;
+      (d.funds || []).forEach(f => {
+        const amt = Number(f.amount) || 0;
+        allMoney += amt;
+        const r = (f.returns || []).find(x => x.period === period);
+        if (!amt || !r || r.fund_cagr == null || r.bench_cagr == null) return;
+        const grow = v => amt * Math.pow(1 + v / 100, yrs);
+        money += amt; n += 1;
+        fundEnd += grow(Number(r.fund_cagr));
+        benchEnd += grow(Number(r.bench_cagr));
+        if (r.vs_category == null) catOk = false;
+        else catEnd += grow(Number(r.fund_cagr) - Number(r.vs_category));
+      });
+      if (!money || n === 0) return;
+      const rate = end => (Math.pow(end / money, 1 / yrs) - 1) * 100;
+      out.push({period, yrs, funds: n, money, covered: allMoney ? money / allMoney * 100 : 0,
+                fundRate: rate(fundEnd), benchRate: rate(benchEnd),
+                catRate: catOk ? rate(catEnd) : null,
+                fundEnd, benchEnd, catEnd: catOk ? catEnd : null});
+    });
+    return out;
+  }
+
+  const vs = vsIndex(d);
+  const act = actualReturn(d);
+
+  if (vs.length || act) {
+    html += `<div class="panel" id="sec-vsindex"><h2>Your funds, or the index?</h2>`;
+
+    /* THE REAL ONE GOES FIRST, and looks different, because it IS
+       different: it is computed from the dates and amounts somebody
+       actually entered, not from a window we picked. When it is here,
+       the hypothetical cards below become the secondary view rather
+       than the answer -- and they are labelled as such. */
+    if (act) {
+      // Under a year, these are totals rather than yearly rates -- see
+      // the note in fundActual. Same three bars, different meaning, and
+      // the label under them says which.
+      const AR = act.annualised ? act.fundRate : absPct(act.value, act.paid);
+      const AB = act.annualised ? act.benchRate : absPct(act.benchValue, act.paid);
+      const AC = act.annualised ? act.catRate : absPct(act.catValue, act.paid);
+      const top = Math.max(AR ?? -99, AB ?? -99, AC ?? -99, 0.001);
+      const h = r => Math.max(4, Math.round((r / top) * 100));
+      const since = act.earliest.toLocaleDateString("en-IN",
+        {month: "short", year: "numeric"});
+      const gain = act.value - act.paid;
+      html += `<div class="actual">
+        <p class="acthead">What you actually earned
+          <span>from the dates entered &mdash; not an assumption${
+            act.annualised ? "" : ". Held under a year, so these are"
+              + " totals, not yearly rates"}</span></p>
+        <div class="vsgrid"><div class="vscard wide">
+          <p class="retlab">since ${esc(since)}</p>
+          <div class="vsbars">
+            ${AR != null ? `<div class="vsbar">
+              <span class="vsv">${AR.toFixed(1)}%</span>
+              <span class="vstrack"><b style="height:${h(AR)}%"
+                class="mine"></b></span>
+              <span class="vsk">your funds</span></div>` : ""}
+            ${AB != null ? `<div class="vsbar">
+              <span class="vsv">${AB.toFixed(1)}%</span>
+              <span class="vstrack"><b style="height:${h(AB)}%"
+                class="bench"></b></span>
+              <span class="vsk">their benchmarks</span></div>` : ""}
+            ${AC != null ? `<div class="vsbar">
+              <span class="vsv">${AC.toFixed(1)}%</span>
+              <span class="vstrack"><b style="height:${h(AC)}%"
+                class="cat"></b></span>
+              <span class="vsk">category middle</span></div>` : ""}
+          </div>
+          <p class="vsline ${gain >= 0 ? "pos" : "neg"}">
+            <span class="vsif">${rupee(act.paid)} paid in, worth
+              ${rupee(act.value)} today &mdash;</span>
+            <b>${gain >= 0 ? "+" : "&minus;"}${rupee(Math.abs(gain))}</b>
+            <span class="vsvs">${gain >= 0 ? "gained" : "lost"}</span></p>
+        </div></div>
+        <p class="foot">${act.annualised
+             ? "A money-weighted return (XIRR) on"
+             : "The plain total growth, not annualised, on"}
+           ${plural(act.funds, "fund", "funds")}${act.covered < 99.5
+             ? ` &mdash; ${Math.round(act.covered)}% of your money, the part
+                 with dates entered` : ""}.
+           ${act.sip ? `Monthly instalments are assumed to have run
+             unbroken and unchanged since the start date; a SIP that was
+             paused or stepped up will differ. ` : ""}The benchmark and
+           category columns use the nearest published window (1, 3 or 5
+           years) to each holding&rsquo;s own length, so those two are
+           close rather than exact. Your own figure is exact.</p>
+      </div>`;
+    }
+  }
+
+  if (vs.length) {
+    html += `${act ? `<p class="note secondary">And the same thing as a
+         what-if, over fixed windows, for every fund &mdash; including
+         those without dates:</p>`
+      : `<p class="note">The same money, over the same window, three ways:
+         in the funds you hold, in each fund&rsquo;s own benchmark
+         instead, and in the middle fund of each category.</p>`}
+      <div class="vsgrid">`;
+    vs.forEach(v => {
+      const top = Math.max(v.fundRate, v.benchRate, v.catRate ?? -99, 0.001);
+      const h = r => Math.max(4, Math.round((r / top) * 100));
+      const gap = v.fundEnd - v.benchEnd;
+      html += `<div class="vscard">
+        <p class="retlab">over ${v.yrs} year${v.yrs === 1 ? "" : "s"}</p>
+        <div class="vsbars">
+          <div class="vsbar">
+            <span class="vsv">${v.fundRate.toFixed(1)}%</span>
+            <span class="vstrack"><b style="height:${h(v.fundRate)}%" class="mine"></b></span>
+            <span class="vsk">your funds</span></div>
+          <div class="vsbar">
+            <span class="vsv">${v.benchRate.toFixed(1)}%</span>
+            <span class="vstrack"><b style="height:${h(v.benchRate)}%" class="bench"></b></span>
+            <span class="vsk">their benchmarks</span></div>
+          ${v.catRate != null ? `<div class="vsbar">
+            <span class="vsv">${v.catRate.toFixed(1)}%</span>
+            <span class="vstrack"><b style="height:${h(v.catRate)}%" class="cat"></b></span>
+            <span class="vsk">category middle</span></div>` : ""}
+        </div>
+        <!-- THE CONDITION COMES BEFORE THE NUMBER, and that ordering is
+             the whole point of this block rather than a stylistic
+             choice. "Ahead of the index by Rs 1,93,713" reads as money
+             the client made. It is not: it is what today's holdings
+             would have done had they all gone in on one day, years ago,
+             which is nobody's actual account. A footnote under the
+             figure does not fix that -- the eye takes the rupees and
+             leaves. Put the "if" first and the number cannot be read
+             without its condition. -->
+        <p class="vsline ${gap >= 0 ? "pos" : "neg"}">
+          <span class="vsif">If ${rupee(v.money)} had gone in as one lump
+            sum ${v.yrs} year${v.yrs === 1 ? "" : "s"} ago, split the way
+            you hold today &mdash;</span>
+          <b>${gap >= 0 ? "+" : "&minus;"}${rupee(Math.abs(gap))}</b>
+          <span class="vsvs">${gap >= 0 ? "more" : "less"} than the
+            index</span></p>
+        ${v.covered < 99 ? `<p class="sub">${v.funds} fund${
+          v.funds === 1 ? "" : "s"} with a mapped benchmark &mdash; ${
+          Math.round(v.covered)}% of your money</p>` : ""}
+      </div>`;
+    });
+    html += `</div>
+      <!-- Shorter than it was. Each card now states its own "if" above
+           its own figure, so this no longer has to carry the warning --
+           only the one thing the cards cannot say for themselves. -->
+      <p class="foot">This compares the funds <b>chosen</b>, not your
+         account: money paid in monthly did not experience these figures.
+         Funds with no benchmark mapped are left out of all three columns,
+         so every column is about the same set of funds.
+         ${act ? "" : `Enter when and how you invested against a fund and
+           this section shows what it really earned instead.`}</p></div>`;
+  } else if (act) {
+    html += `</div>`;   // close the panel opened for the actual block alone
+  }
+
+  /* ---- what they returned, as diverging bars ----------------------
+     The table said "Beat" or "Behind" and hid the size behind a hover.
+     Beating a benchmark by 0.2 points and by 9 points are not the same
+     fact, and a reader who cannot hover -- on paper, on a phone, in the
+     PDF -- got neither.
+
+     The margin is a signed number around zero, which is a DIVERGING
+     bar: a centre line, above to the right, below to the left, and the
+     length is the size. One block per fund instead of three rows, and
+     the figure is printed on every bar so colour is never the only
+     thing saying which way it went.
+  */
+  const rBars = (rows, key) => {
+    const vals = rows.map(r => r[key]).filter(v => v != null);
+    if (!vals.length) return `<p class="sub nobar">no benchmark mapped</p>`;
+    // One scale across BOTH charts of a fund and across every fund, so a
+    // bar twice as long really is twice the margin. Per-chart scaling
+    // would make a 0.3 point win look like a 9 point one.
+    const span = Math.max(2, RET_SPAN);
+    return `<div class="divchart">` + rows.map(r => {
+      const v = r[key];
+      if (v == null) return `<div class="divrow">
+        <span class="divp">${esc(r.period)}</span>
+        <span class="divtrack"><i class="divzero"></i></span>
+        <span class="divv muted">&mdash;</span></div>`;
+      const w = Math.min(50, Math.abs(v) / span * 50);
+      const pos = v >= 0;
+      return `<div class="divrow">
+        <span class="divp">${esc(r.period)}</span>
+        <span class="divtrack"><i class="divzero"></i>
+          <b class="${pos ? "pos" : "neg"}" style="${pos
+            ? `left:50%;width:${w}%` : `right:50%;width:${w}%`}"></b></span>
+        <span class="divv ${pos ? "pos" : "neg"}">${pos ? "+" : ""}${
+          v.toFixed(1)}</span></div>`;
+    }).join("") + `</div>`;
+  };
+
+  // The widest margin anywhere on the page sets the scale for every bar.
+  let RET_SPAN = 2;
+  d.funds.forEach(f => (f.returns || []).forEach(r => {
+    [r.excess_cagr, r.vs_category].forEach(v => {
+      if (v != null) RET_SPAN = Math.max(RET_SPAN, Math.abs(v));
+    });
+  }));
+  RET_SPAN = Math.ceil(RET_SPAN);
+
+  html += `<div class="panel" id="sec-returns"><h2>What they returned</h2>
+    <p class="note">How far each fund was ahead of or behind its own
+       benchmark, and the middle fund of its category. Bars right of the
+       line are ahead; every bar carries its figure, in percentage points
+       a year.</p>
+    <div class="retgrid">`;
+  d.funds.forEach(f => {
+    if (!f.returns.length) {
+      html += `<div class="retcard"><h3>${esc(f.name)}</h3>
+        <p class="muted">No returns computed yet</p></div>`;
+      return;
+    }
+    const byPeriod = {};
+    f.returns.forEach(r => { byPeriod[r.period] = r; });
+    const rows = PERIODS.filter(p => byPeriod[p]).map(p => byPeriod[p]);
+
+    /* WHAT THIS FUND DID WITH THIS PERSON'S MONEY, where the dates
+       were entered. The bars underneath are about the FUND -- how far
+       ahead of its benchmark it ran, over windows we chose. This is
+       about the MONEY: what went in, what it is worth, and what the
+       same instalments would have come to in the benchmark and at the
+       category median instead.
+
+       Three rows rather than a chart. Three numbers ranked by size,
+       each with its rupee figure beside it, is a comparison the eye
+       finishes in a second; a chart of three bars would need a legend
+       and an axis to say less. */
+    const a = fundActual(f, new Date());
+    let money = "";
+    if (a) {
+      const gain = a.value - a.paid;
+      // The percentage column is a YEARLY rate only where the holding
+      // is old enough for that to mean anything; below a year it is the
+      // plain total, and the column heading says which.
+      const line = (label, rate, val, cls) => {
+        const pct = a.annualised ? rate : absPct(val, a.paid);
+        return `<tr class="${cls || ""}">
+        <td>${label}</td>
+        <td class="num">${pct == null ? "&mdash;" : pct.toFixed(1) + "%"}</td>
+        <td class="num">${val == null ? "&mdash;" : rupee(val)}</td></tr>`;
+      };
+      money = `<div class="fmoney">
+        <p class="retlab">since ${a.start.toLocaleDateString("en-IN",
+          {month: "short", year: "numeric"})} &middot;
+          ${rupee(a.paid)} ${a.sip
+            ? "paid in over " + ((f.priced && f.priced.instalments)
+                || a.cf.length) + " instalments"
+            : "put in"}${f.plan === "REGULAR" && !f.plan_fallback
+            ? " &middot; regular plan" : ""}${f.amount_source === "nav"
+            ? ` &middot; valued at the NAV of ${(f.priced || {}).nav_date
+                ? new Date((f.priced.nav_date) + "T00:00:00")
+                    .toLocaleDateString("en-IN",
+                      {day: "numeric", month: "short", year: "numeric"})
+                : "the latest date on file"}` : ""}</p>
+        <table class="ftab"><thead><tr><th></th>
+          <th class="num">${a.annualised ? "a year" : "in total"}</th>
+          <th class="num">worth</th>
+        </tr></thead><tbody>
+          ${line("This fund", a.fundRate, a.value, "mine")}
+          ${line("Its benchmark", a.benchRate, a.benchValue)}
+          ${line("Its category", a.catRate, a.catValue)}
+        </tbody></table>
+        <p class="sub ${gain >= 0 ? "up" : "down"}">${gain >= 0 ? "Up" : "Down"}
+          ${rupee(Math.abs(gain))}${a.benchValue != null
+            ? `, and ${a.value >= a.benchValue ? "ahead of" : "behind"} the
+               benchmark by ${rupee(Math.abs(a.value - a.benchValue))}` : ""}.</p>
+        ${a.annualised ? "" : `<p class="sub muted">Held under a year, so
+          these are totals, not yearly rates.</p>`}
+        ${(f.plan_fallback || f.returns_plan_fallback) ? `<p class="sub warn">
+          ${f.plan_fallback
+            ? `Direct plan figures &mdash; this fund has no regular plan on
+               file, so it is measured on a different basis from the others
+               here.`
+            // Valued on regular, but its performance figures are the
+            // direct plan's. Worth its own sentence rather than the
+            // blanket one: the rupee totals above ARE right, and only
+            // the percentages are on the other footing. Telling somebody
+            // the whole card is suspect when half of it is exact costs
+            // more trust than it saves.
+            : `The rupee figures above are this fund&rsquo;s regular plan.
+               Its return percentages are the direct plan&rsquo;s &mdash;
+               no regular-plan history is on file &mdash; so they run a
+               little better than what was actually earned.`}</p>` : ""}
+      </div>`;
+    }
+
+    html += `<div class="retcard">
+      <h3>${esc(f.name)}</h3>
+      ${money}
+      <div class="rettwo">
+        <div><p class="retlab">vs its benchmark</p>${rBars(rows, "excess_cagr")}</div>
+        <div><p class="retlab">vs its category</p>${rBars(rows, "vs_category")}</div>
+      </div>
+    </div>`;
+  });
+  html += `</div>
+    <p class="foot">Bars share one scale across every fund, so a bar twice
+       as long is twice the margin &mdash; the widest here is
+       ${RET_SPAN} points. A dash against a benchmark means no total-return
+       index is mapped to that fund, which is common for sectoral and index
+       funds. Beating a category median is a comparison with the funds we
+       hold data for, not with every fund in the category.</p></div>`;
+
+  /* sectors */
+  // Six named, the rest folded together. Past six the bars stop being
+  // comparable and the list becomes a directory of the market.
+  // ONE colour for every industry bar, not six.
+  //
+  // Six different colours encoded nothing here: the bar's length already
+  // says the size and its label already says the industry, so the palette
+  // was decoration. It became actively confusing once the size-band bar
+  // above started using blue as a SCALE -- a reader who has just learnt
+  // that dark blue means large cap then meets a dark blue bar that means
+  // Financial Services. One neutral bar colour, grey for the fold, and
+  // the only colour on the panel that carries meaning is the ramp.
+  const SECT = "#2a78d6";
+  const shown = d.sectors.slice(0, 6);
+  const restPct = d.sectors.slice(6).reduce((a, x) => a + x.pct, 0);
+  const widest = Math.max(shown[0] ? shown[0].pct : 1, restPct, 1);
+
+  /* ---- the size bands, as one bar ---------------------------------
+     Large / Mid / Small is an ORDERED scale, not a set of categories,
+     and that decides both the chart and the colours.
+
+       - One stacked bar, never a pie and never sorted by size. The
+         bands stay in scale order in every report, so two portfolios
+         can be held side by side and read in one glance. A pie would
+         put the biggest slice wherever the geometry felt like it.
+       - A sequential blue ramp -- dark for large, pale for small --
+         rather than three unrelated colours. The shade itself carries
+         the ordering, so the bar reads as a scale before the key is
+         consulted. Unclassified is grey: it is not a rung on the
+         ladder, it is the part we could not place.
+
+     Every band's figure is printed under the bar whatever its width,
+     so a 3% sliver too narrow to label inside is still readable. */
+  /* ONE COLOUR PER SIZE, NOT THREE SHADES OF BLUE.
+
+     These were a blue ramp, dark to light, on the argument that the
+     three sizes are one ordered scale. On a ring that argument does not
+     survive contact with a reader. The slices are scattered round a
+     circle rather than stacked in order, so there is no ramp to read,
+     and three shades of one hue is the hardest thing to match back to a
+     legend -- you have to hold "how blue was it" in your head while
+     your eye travels. Four distinct hues, each one nameable, and the
+     matching is instant.
+
+     Unclassified stays a warm grey, and it is the only one off the
+     colour wheel on purpose: it is not a fourth size, it is the part we
+     could not place, and any real hue would make it look like one.
+
+     EVERY PAIR IS MEASURED, NOT EYEBALLED. All six pairs clear the
+     colour-blindness floor (worst 8.6 protan) and the normal-vision
+     floor (worst 16.5), and all four clear 3:1 against the page. That
+     matters because a ring drops empty bands: a portfolio with nothing
+     in mid caps puts blue straight next to magenta, so checking only
+     the neighbours in this list would not be enough. An earlier
+     candidate -- the theme's aqua for small cap -- failed exactly here,
+     4.2 from the grey under deuteranopia. */
+  const CAPCOL = {Large: "#2a78d6", Mid: "#eb6834", Small: "#b53e95",
+                  Unclassified: "#8f8779"};
+  const CAPSAY = {Large: "large cap", Mid: "mid cap", Small: "small cap",
+                  Unclassified: "not classified"};
+  const caps = (d.caps || []).filter(c => c.pct > 0);
+  let capBlock = "";
+  if (caps.length) {
+    const capTotal = caps.reduce((a, c) => a + c.pct, 0) || 100;
+    const biggestCap = [...caps].sort((a, b) => b.pct - a.pct)[0];
+
+    /* A RING, NOT A PIE, and the hole is the reason.
+       A pie of these four shows the split and nothing else. The same
+       drawing with the middle taken out carries the headline -- the
+       largest band and its figure -- in the one place the eye lands
+       first, so the reader gets the answer before they have read a
+       single label. A pie cannot do that, and a pie's centre is also
+       where its slices are hardest to compare.
+
+       Drawn with stroke-dasharray on one circle per band rather than arc
+       paths: the maths is a running total instead of trigonometry, and
+       the 2px gap between fills comes free from shortening each dash. */
+    const R = 54, C = 2 * Math.PI * R;
+    let at = 0;
+    const arcs = caps.map(c => {
+      const frac = c.pct / capTotal;
+      const len = C * frac;
+      // Never a negative dash: a band under about 1.5% is thinner than
+      // the gap itself, and subtracting the gap would flip it.
+      const draw = Math.max(len - 2, Math.min(len, 0.6));
+      const seg = `<circle class="capseg" data-cap="${esc(c.cap)}"
+        cx="70" cy="70" r="${R}" fill="none"
+        stroke="${CAPCOL[c.cap] || "#8f8779"}" stroke-width="22"
+        stroke-dasharray="${draw.toFixed(2)} ${(C - draw).toFixed(2)}"
+        stroke-dashoffset="${(-C * at).toFixed(2)}"
+        ><title>₹${Math.round(c.pct)} of every ₹100 is in ${
+          CAPSAY[c.cap] || esc(c.cap)} companies</title></circle>`;
+      at += frac;
+      return seg;
+    }).join("");
+
+    capBlock = `
+      <p class="note segnote">By the size of the companies, out of every ₹100
+         you hold in shares:</p>
+      <div class="capwrap">
+        <svg class="capring" viewBox="0 0 140 140" role="img"
+             aria-label="Split of your shares by company size: ${
+               caps.map(c => `₹${Math.round(c.pct)} ${CAPSAY[c.cap] || c.cap}`)
+                   .join(", ")}">
+          <!-- Rotated so the first band starts at twelve o'clock. Left
+               alone, stroke-dasharray begins at three, and a reader
+               reads a ring clockwise from the top. -->
+          <g transform="rotate(-90 70 70)">${arcs}</g>
+        </svg>
+        <div class="capside">
+          <div class="capbig">
+            <b>&#8377;${Math.round(biggestCap.pct)}</b>
+            <span>of every &#8377;100 is in <b>${
+              CAPSAY[biggestCap.cap] || esc(biggestCap.cap)}</b> companies</span>
+          </div>
+          <div class="segkey">` + caps.map(c =>
+            `<span><i style="background:${CAPCOL[c.cap] || "#8f8779"}"></i>
+              <b>₹${Math.round(c.pct)}</b> ${CAPSAY[c.cap] || esc(c.cap)}</span>`
+          ).join("") + `</div>
+        </div>
+      </div>`;
+  }
+
+  // How much of the money is listed shares at all. Everything else on
+  // this page is a share of the equity, so saying what equity itself is
+  // a share of belongs here and nowhere else.
+  const eqNote = d.equity_pct != null && d.equity_pct < 99.5
+    ? `<p class="foot">Everything above is a share of the listed shares in
+       these funds &mdash; which is ${rupee100(d.equity_pct)} of every ₹100
+       you hold. The rest is cash, debt and instruments the disclosures do
+       not break down.</p>` : "";
+
+  html += `<div class="panel" id="sec-sectors"><h2>Where the money sits</h2>
+    ${shown[0] ? `<p class="lead">${esc(shown[0].sector)} is your biggest
+       exposure &mdash; ${rupee100(shown[0].pct)} of every ₹100 you hold in
+       shares.</p>` : ""}
+    ${capBlock}
+    <p class="note segnote">${capBlock ? "And by industry:"
+      : "If everything you hold in shares came to ₹100:"}</p>
+    <div class="r100">`;
+  shown.forEach((x, i) => {
+    html += `<div class="row">
+      <span class="amt">₹${Math.round(x.pct)}</span>
+      <span class="track"><i style="width:${(100 * x.pct / widest).toFixed(1)}%;
+        background:${SECT}"></i></span>
+      <span class="lbl">${esc(x.sector)}</span></div>`;
+  });
+  if (restPct > 0.5) {
+    html += `<div class="row">
+      <span class="amt">₹${Math.round(restPct)}</span>
+      <span class="track"><i style="width:${(100 * restPct / widest).toFixed(1)}%;
+        background:#b8b2a4"></i></span>
+      <span class="lbl">everything else
+        <span class="sub">(${d.sectors.length - shown.length} more)</span></span></div>`;
+  }
+  html += `</div>${eqNote}</div>`;
+  /* stocks */
+  const biggest = d.stocks[0];
+  html += `<div class="panel" id="sec-stocks"><h2>Your largest positions</h2>
+    ${biggest ? `<p class="lead">${esc(biggest.name)} is your single biggest
+       company, at ${rupee(biggest.value)} across
+       ${biggest.held_by.length} fund${biggest.held_by.length > 1 ? "s" : ""}.</p>` : ""}
+    <p class="note">Every fund's holding in the same company, added together.</p>
+    <table><thead><tr>
+      <th>Company</th><th class="w-money">Value</th>
+      <th class="w-bar">Share of equity</th><th class="w-count">Through</th>
+    </tr></thead><tbody>`;
+  const max = d.stocks.length ? d.stocks[0].pct_of_equity : 1;
+  d.stocks.forEach(s => {
+    html += `<tr>
+      <td>${esc(s.name)}${s.sector ? `<span class="sub"> ${esc(s.sector)}</span>` : ""}</td>
+      <td class="num w-money">${rupee(s.value)}</td>
+      <td class="w-bar"><div class="barwrap">
+        <span class="num">${s.pct_of_equity.toFixed(1)}%</span>
+        <div class="bar"><i style="width:${(100 * s.pct_of_equity / max).toFixed(1)}%"></i></div>
+      </div></td>
+      <td class="num w-count">${s.held_by.length}
+        <span class="sub">fund${s.held_by.length > 1 ? "s" : ""}</span></td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+
+  /* holdings trend -- descriptive, not predictive. The wording carries
+     the two caveats: the timing gap, and that these are momentum
+     indicators describing what already happened. */
+  const anyTrend = d.funds.some(f => f.trend &&
+    (f.trend.up || f.trend.down || f.trend.sideways));
+  if (anyTrend) {
+    const sd = d.funds.map(f => f.trend && f.trend.score_date).find(Boolean);
+    // Computed once, above, and read here as well as in the summary tile.
+    // It used to be worked out in this block alone; the summary then
+    // quoted a RANGE across funds instead, so the top of the report and
+    // the middle of it described the same thing two different ways.
+    const {dUp, dSw, dDn, dNa} = trendSplit(d);
+    const dot = (n, c) => Array(n).fill(
+      `<span style="background:${c}"></span>`).join("");
+
+    html += `<div class="panel" id="sec-trend"><h2>How those holdings are trading now</h2>
+      <p class="lead">Of every ₹100 you hold in shares, ₹${dUp} is in companies
+         whose price is rising and ₹${dDn} in companies whose price is falling.</p>
+
+      <!-- THREE FIGURES, EACH WITH ITS OWN SHAPE.
+           The dot grid alone was accurate and flat: three colours of square
+           that a reader has to decode against a key underneath. The shape
+           says which is which before the colour does -- climbing bars with
+           an arrow, a wave, falling bars -- so the reading survives a
+           colourblind reader, a greyscale print and a glance. -->
+      <div class="trendcards">
+        <div class="tcard up">${trendIcon("up")}
+          <b>₹${dUp}</b><span>rising</span></div>
+        <div class="tcard sw">${trendIcon("side")}
+          <b>₹${dSw}</b><span>going sideways</span></div>
+        <div class="tcard dn">${trendIcon("down")}
+          <b>₹${dDn}</b><span>falling</span></div>
+        ${dNa ? `<div class="tcard na">${trendIcon("none")}
+          <b>₹${dNa}</b><span>no reading</span></div>` : ""}
+      </div>
+
+      <div class="dots">${dot(dUp, "#1d6b4f")}${dot(dSw, "#b8b2a4")}${dot(dDn, "#b4472f")}${dot(dNa, "#e3ded2")}</div>
+      <p class="note">One square for every rupee in each hundred. Below, the same
+         split fund by fund, as at ${esc(sd || "the latest reading")}.</p>
+      <div class="tfunds">`;
+    d.funds.forEach(f => {
+      const t = f.trend;
+      if (!t || (!t.up && !t.down && !t.sideways)) {
+        html += `<div class="tfund"><div class="tfname">${esc(f.name)}</div>
+          <p class="muted" style="margin:0">No current readings for these
+          holdings</p></div>`;
+        return;
+      }
+      // Segments carry their own label when there is room for it. A bar you
+      // have to match against a legend elsewhere is a bar people skip.
+      const seg = (p, c, label) => p <= 0 ? "" :
+        `<i style="width:${p}%;background:${c}">${
+          p >= 12 ? `<em>₹${Math.round(p)}</em>` : ""}</i>`;
+      html += `<div class="tfund">
+        <div class="tfname">${esc(f.name)}</div>
+        <div class="tbar big">
+          ${seg(t.up_pct, "#1d6b4f")}
+          ${seg(t.sideways_pct || 0, "#b8b2a4")}
+          ${seg(t.down_pct, "#b4472f")}
+          ${seg(t.unscored_pct, "#e3ded2")}
+        </div>
+        <div class="tkeys">
+          <span><b class="tup">&uarr; ${t.up}</b> rising
+            <span class="sub">₹${Math.round(t.up_pct)} of every ₹100</span></span>
+          <span><b class="tsw">&rarr; ${t.sideways || 0}</b> sideways
+            <span class="sub">₹${Math.round(t.sideways_pct || 0)}</span></span>
+          <span><b class="tdn">&darr; ${t.down}</b> falling
+            <span class="sub">₹${Math.round(t.down_pct)}</span></span>
+        </div>`;
+      // The named downtrend stocks used to sit here. On a multi-fund table
+      // they read as a wall of small print between the rows being compared,
+      // and the same list is on each fund's own page where it has room.
+      // How this fund's split compares with its peers.
+      //
+      // Rising 23 says nothing alone. Rising 23 against a peer average of
+      // 44 says the fund is well behind other small cap funds on the same
+      // reading -- which is the sentence a reader can actually use.
+      //
+      // "the N small cap funds we hold data for", never "the category":
+      // the average covers funds whose portfolios we have, which is not
+      // every fund in the category, and the difference is ours to admit
+      // rather than the reader's to discover.
+      const ct = f.trend_category;
+      if (ct) {
+        const mine = Math.round(t.up_pct);
+        const theirs = Math.round(ct.up_pct);
+        const gap = mine - theirs;
+        // Colour and weight follow the DIRECTION of the gap: above the
+        // peer average in green, below in red. Same palette as the bars,
+        // so green keeps meaning "more rising" on this page rather than
+        // acquiring a second meaning.
+        //
+        // The number and the words carry the fact on their own -- someone
+        // printing in greyscale, or not distinguishing the two colours,
+        // reads "7 less than" and loses nothing.
+        const cls = gap === 0 ? "" : gap > 0 ? "tup" : "tdn";
+        const word = gap === 0 ? "the same as"
+                   : gap > 0 ? `<b class="${cls}">${Math.abs(gap)} more than</b>`
+                             : `<b class="${cls}">${Math.abs(gap)} less than</b>`;
+        html += `<p class="sub" style="margin:7px 0 0">
+          Rising <b class="${cls || "tup"}">₹${mine}</b> &mdash; ${word} the
+          <b>₹${theirs}</b> average of the
+          <span title="Funds in this category whose portfolios we hold. Not every fund in the category."
+                style="border-bottom:1px dotted currentColor">${ct.fund_count}
+          ${esc((f.category || "").toLowerCase())}s we hold data for</span>.
+          Sideways ₹${Math.round(ct.sideways_pct)}, falling
+          ₹${Math.round(ct.down_pct)} on average.</p>`;
+      }
+
+      if (t.unscored) {
+        html += `<p class="sub" style="margin:6px 0 0">${t.unscored}
+          holding${t.unscored > 1 ? "s" : ""} (${pct(t.unscored_pct)})
+          ${t.unscored > 1 ? "have" : "has"} no current reading.</p>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>
+      <p class="foot">These are the stocks each fund last disclosed holding,
+         on ${esc(d.as_of)}, grouped by their price trend as at
+         ${esc(sd || "the latest available date")}. The manager may have
+         bought or sold since.</p></div>`;
+  }
+
+
+  html += `<div class="printonly pfoot">
+      <p style="margin:0 0 6px"><b>About this report.</b> It sets out publicly
+         disclosed scheme holdings, past returns and sector exposure for the
+         funds listed. It is information, not a recommendation, and nothing
+         in it is advice to buy, sell or hold any scheme.</p>
+      <p style="margin:0 0 6px">Holdings are as disclosed at month end and the
+         manager may have bought or sold since. Rupee figures are this
+         report's amounts applied to disclosed portfolio weights, not
+         holdings you own directly. Returns are past performance and do not
+         indicate future results.${anyTrend ? ` The rising / sideways /
+         falling reading describes share price behaviour that has already
+         happened and forecasts nothing.` : ""}</p>
+      <p style="margin:0">Mutual fund investments are subject to market risks.
+         Read all scheme related documents carefully.</p>
+      <p class="confid">Private &amp; confidential &middot; prepared for the
+         named recipient &middot; finchaya.com</p>
+    </div>`;
+
+  const out = document.getElementById("out");
+  out.innerHTML = html;
+
+  const pdf = document.getElementById("pdf");
+  if (pdf) pdf.addEventListener("click", () => window.print());
+
+  // Opening a pair. One host under the table, reused -- two open pairs
+  // side by side would invite comparing two overlap figures against each
+  // other, which is not a comparison that means anything.
+  out.querySelectorAll("[data-pair]").forEach(b =>
+    b.addEventListener("click", () => {
+      const host = document.getElementById("pairoverlap");
+      if (!host || !window.fcOverlap) return;
+      const [a, c] = b.dataset.pair.split("|");
+      out.querySelectorAll("[data-pair]").forEach(x => {
+        x.textContent = "See which";
+        x.removeAttribute("aria-expanded");
+      });
+      b.textContent = "Showing";
+      b.setAttribute("aria-expanded", "true");
+      host.innerHTML = "";
+      const inner = document.createElement("div");
+      inner.style.marginTop = "var(--s4)";
+      host.appendChild(inner);
+      window.fcOverlap(inner, a, c);
+      inner.scrollIntoView({behavior: "smooth", block: "nearest"});
+    }));
+
+  // Tell the reader of the PAPER version that the table was cut, so a
+  // trimmed list never reads as the whole list.
+  const posPanel = document.getElementById("sec-stocks");
+  const rows = posPanel ? posPanel.querySelectorAll("tbody tr").length : 0;
+  if (posPanel && rows > 10) {
+    posPanel.insertAdjacentHTML("beforeend",
+      `<p class="foot trimnote" style="display:none">The ten largest of
+       ${rows} companies are shown here. The full list is on the website.</p>`);
+  }
+
+  // There used to be a DOM reshuffle here -- it pulled "Trading now" up
+  // under the nav and pushed the positions table to the end with
+  // out.append(). Both are now done in the BUILD order above, where the
+  // order is visible to anyone reading the file, and the append() had a
+  // quiet bug: it moved the positions panel past the print footer, so the
+  // PDF ended with a table after its own disclaimer. One source of truth
+  // for section order, and it is the order the code is written in.
+
+  // Highlight whichever section is on screen, so the bar reads as a place
+  // you are rather than a row of links you scrolled past.
+  const ids = [...out.querySelectorAll(".panel[id]")];
+  const links = [...out.querySelectorAll(".secnav a")];
+  const spy = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      links.forEach(a => a.classList.toggle(
+        "here", a.getAttribute("href") === "#" + e.target.id));
+    });
+  }, {rootMargin: "-72px 0px -60% 0px"});
+  ids.forEach(el => spy.observe(el));
+
+  out.scrollIntoView({behavior: "smooth", block: "start"});
+}
+/* ---- arriving from a saved portfolio ---------------------------- */
+// /portfolios hands off to here rather than re-rendering the whole report
+// on its own page: render() above is the long one, and a second copy of it
+// would drift from this within a session.
+initImport();
+
+/* ---- alerts -------------------------------------------------------
+
+   What the holder has asked to be told about. Attached to a SAVED
+   portfolio, because a one-off look-through has nothing to attach to.
+
+   THE NOTICE AT THE TOP IS NOT A DISCLAIMER, IT IS THE FIRST FACT.
+   Nothing in this product sends anything yet. Putting that in small grey
+   type under a row of live-looking switches would be a design that tells
+   the truth in a place nobody reads it -- and somebody who ticks these
+   and then stops checking their portfolio would be worse off than before
+   they found the panel.
+
+   EACH RULE SAYS WHAT ITS DATA CAN SUPPORT, measured by the server on
+   every load rather than hard-coded here. "Accruing" means the history it
+   reads has only just started being kept and it will begin working on its
+   own; "missing" means nothing currently computes what it needs. Both can
+   still be switched on -- the choice is recorded and honoured the day the
+   data arrives, which is a promise that can be kept. */
+let ALERTS = null;
+
+async function loadAlerts() {
+  const host = document.getElementById("alertpanel");
+  if (!host || !savedId) return;
+  try {
+    const r = await fetch(`/api/portfolio/saved/${savedId}/alerts`);
+    if (!r.ok) { host.innerHTML = ""; return; }
+    ALERTS = await r.json();
+  } catch { host.innerHTML = ""; return; }
+  drawAlerts();
+}
+
+function drawAlerts() {
+  const host = document.getElementById("alertpanel");
+  if (!host || !ALERTS) return;
+
+  const groups = [];
+  ALERTS.rules.forEach(r => {
+    let g = groups.find(x => x.name === r.group);
+    if (!g) groups.push(g = {name: r.group, rules: []});
+    g.rules.push(r);
+  });
+
+  const tag = r => r.status === "ready" ? ""
+    : `<span class="atag ${r.status}">${
+        r.status === "accruing" ? "not yet — see below" : "needs data we don't keep"
+      }</span>`;
+
+  const rule = r => `<label class="arule">
+      <input type="checkbox" data-rule="${r.key}" ${r.enabled ? "checked" : ""}>
+      <span class="abody">
+        <b>${esc(r.name)}${tag(r)}</b>
+        <span class="awhat">${esc(r.what)}</span>
+        <span class="awhy">${esc(r.why)}</span>
+        ${r.unit ? `<span class="athresh">Tell me when it passes
+          <input type="number" data-thresh="${r.key}" value="${r.threshold}"
+                 min="${r.min}" max="${r.max}" step="1"> ${esc(r.unit)}</span>`
+        : ""}
+        ${r.note ? `<span class="anote">${esc(r.note)}</span>` : ""}
+      </span>
+    </label>`;
+
+  host.innerHTML = `<div class="panel" id="sec-alerts">
+    <div class="alerthead">
+      <h2 style="margin:0">Tell me when something changes</h2>
+    </div>
+    <p class="sub" style="margin:6px 0 0;max-width:72ch">Everything below is
+       measured <b>from the day you invested in each fund</b> &mdash; not
+       from last month, and not from a calendar window you were not
+       invested for. A fund added recently is judged from its own start
+       date even if the rest have been held for years.</p>
+
+    <div class="flag" style="margin-top:var(--s2)">
+      <b>Nothing is being sent yet.</b> These switches record what you want
+      to be told about. FinChaya does not currently send email, WhatsApp or
+      notifications of any kind &mdash; you still have to come and look.
+      Your choices are saved so that when sending is built, it already
+      knows what to send you; until then, treat this as a note to us rather
+      than as cover.
+    </div>
+
+    ${groups.map(g => `<div class="agrp">
+      <h3>${esc(g.name)}</h3>
+      ${g.rules.map(rule).join("")}
+    </div>`).join("")}
+
+    <div class="agrp">
+      <h3>How you would want to hear</h3>
+      <p class="sub" style="margin:0">None of these work yet. Choosing one
+         says which you would prefer.</p>
+      <div class="achans">
+        ${ALERTS.channels.map(c => `<label class="achan">
+          <input type="checkbox" data-chan="${c.key}" ${c.enabled ? "checked" : ""}>
+          <span>${esc(c.name)}</span></label>`).join("")}
+      </div>
+    </div>
+
+    <div class="asave">
+      <button class="go" id="alertsave">Save these</button>
+      <span class="asaved" id="alertsaved" hidden>Saved.</span>
+      <span class="sub" id="alerterr"></span>
+    </div>
+  </div>`;
+
+  document.getElementById("alertsave")
+    .addEventListener("click", saveAlerts);
+  // Any change clears the confirmation: a "Saved." sitting beside edits
+  // that have not been saved is the worst of both.
+  host.querySelectorAll("input").forEach(i =>
+    i.addEventListener("input", () => {
+      document.getElementById("alertsaved").hidden = true;
+    }));
+}
+
+async function saveAlerts() {
+  const host = document.getElementById("alertpanel");
+  const btn = document.getElementById("alertsave");
+  const ok = document.getElementById("alertsaved");
+  const err = document.getElementById("alerterr");
+  err.textContent = "";
+
+  const rules = {};
+  host.querySelectorAll("[data-rule]").forEach(box => {
+    const key = box.dataset.rule;
+    const t = host.querySelector(`[data-thresh="${key}"]`);
+    rules[key] = {enabled: box.checked,
+                  threshold: t ? Number(t.value) : null};
+  });
+  const channels = {};
+  host.querySelectorAll("[data-chan]").forEach(box => {
+    channels[box.dataset.chan] = box.checked;
+  });
+
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/portfolio/saved/${savedId}/alerts`, {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({rules, channels})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "Could not save.");
+    ok.hidden = false;
+    // Re-read rather than trust the local state: the server clamps
+    // thresholds to the range each rule allows, and the page should show
+    // what was actually stored.
+    loadAlerts();
+  } catch (e) {
+    err.textContent = e.message || "Could not save.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---- funds carried over from the overlap check ----------------------
+   The overlap page leaves the funds it just checked in localStorage under
+   `fc_handoff_funds`. They go into the same picker as anything typed by
+   hand, so they stay visible and editable and more can be added. Each starts
+   at the picker's own default amount, because the overlap page never asked
+   what anything is worth -- the note says so, and the person sets the real
+   figures. Read once and deleted, ignored if ten minutes old, and never
+   used when a saved portfolio is being opened. */
+(function fromOverlap() {
+  if (/^#saved=/.test(location.hash)) return;
+  let h = null;
+  try {
+    h = JSON.parse(localStorage.getItem("fc_handoff_funds") || "null");
+    localStorage.removeItem("fc_handoff_funds");
+  } catch { return; }
+  if (!h || !Array.isArray(h.funds) || !h.funds.length) return;
+  if (Date.now() - Number(h.t || 0) > 10 * 60 * 1000) return;
+
+  const seen = new Set(picked.map(p => p.code));
+  h.funds.slice(0, 20).forEach(f => {
+    const code = String((f && f.code) || "");
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    picked.push({code, name: String(f.name || code), amount: 100000});
+  });
+  if (!picked.length) return;
+  draw();
+
+  const lead = document.querySelector("#entry .note");
+  if (lead) lead.insertAdjacentHTML("afterend",
+    `<p class="note" id="carried" style="background:var(--wash, #eef5f1);
+        padding:10px 12px;border-radius:8px"><b>${picked.length} fund${
+        picked.length === 1 ? "" : "s"} carried over from the overlap
+        check.</b> Each starts at &#8377;1,00,000 &mdash; change it to what
+        that holding is worth today. Search above to add more funds.</p>`);
+})();
+
+(async function fromSaved() {
+  const m = location.hash.match(/^#saved=(\d+)/);
+  if (!m) return;
+
+  const out = document.getElementById("out");
+  try {
+    const r = await fetch("/api/portfolio/saved/" + m[1]);
+    if (r.status === 401) {
+      out.innerHTML = '<div class="err">Sign in to open a saved portfolio.</div>';
+      return;
+    }
+    const d = await r.json();
+    if (!r.ok) {
+      out.innerHTML = `<div class="err">${esc(d.detail
+        || "Could not load that portfolio.")}</div>`;
+      return;
+    }
+
+    // Populate the picker rather than bypass it. The funds stay visible and
+    // editable, so trying a one-off change does not mean saving it first --
+    // and the person can see what is being explained.
+    savedName = d.name;   // titles the printed report
+    savedId = Number(m[1]);
+    // The three invest fields come across too. Without them, a date
+    // typed in the saved portfolio would be stored, shown in that
+    // editor, and then quietly dropped on the way to the one page that
+    // exists to use it.
+    // A fund with dates needs no typed amount -- the server prices it.
+    // Filtering on `amount != null` alone dropped exactly the funds
+    // this feature exists for.
+    picked = d.funds
+      .filter(f => f.amount != null
+        || (f.invested_on && f.invest_mode && f.invest_amount > 0))
+      .map(f => ({code: String(f.scheme_code),
+                  name: f.scheme_name,
+                  amount: Number(f.amount),
+                  invested_on: f.invested_on || null,
+                  invest_mode: f.invest_mode || null,
+                  invest_amount: f.invest_amount || null,
+                  // Resolved by the saved-portfolio API, which knows
+                  // whether this portfolio belongs to a client. The
+                  // look-through does not, so it must be told.
+                  plan: f.plan || null}));
+    draw();
+    if (picked.length) document.getElementById("run").click();
+    loadAlerts();
+  } catch {
+    out.innerHTML = '<div class="err">Could not reach the server.</div>';
+  }
+})();
+
+</script>
+</body>
+</html>

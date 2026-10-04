@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Do these funds hold the same thing? &mdash; FinChaya</title>
+<meta name="description" content="Check how much two or more Indian mutual
+  funds actually hold in common, measured through to the shares underneath
+  rather than guessed from their names.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  overlap.html -- one question, answered on its own page.
+  ======================================================
+  WHY THIS EXISTS SEPARATELY FROM THE PLANNER
+      The planner answers it too, on tab 3, but only for somebody who has
+      already set a goal and worked through two tabs to get there. "Do
+      these two funds hold the same thing" is a question people arrive
+      with, not one they build up to -- an existing investor with four
+      funds and a suspicion, not somebody starting a plan.
+
+      So it gets a URL, a link in the header, and no prerequisites.
+
+  WHAT IT DELIBERATELY DOES NOT DO
+      It does not rank the funds, score them, or suggest replacing any of
+      them. Overlap is a fact; what to do about it is a judgement this
+      page does not make. The way through to the full review is offered at
+      the end for anybody who wants the rest.
+-->
+<style>
+  .pickbox{position:relative}
+  .results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;
+    background:var(--card);border:1px solid var(--line-firm);
+    border-radius:var(--r);box-shadow:0 10px 30px rgba(11,31,25,.13);
+    max-height:320px;overflow:auto}
+  .results[hidden]{display:none}
+  .results div{padding:10px 13px;cursor:pointer;border-bottom:1px solid var(--line);
+    font-size:14.5px;line-height:1.35}
+  .results div:last-child{border-bottom:none}
+  .results div:hover,.results div.on{background:var(--brand-wash)}
+  .results small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:var(--s3) 0 0}
+  .chip{display:inline-flex;align-items:center;gap:9px;background:var(--surface);
+    border:1px solid var(--line-firm);border-radius:999px;
+    padding:7px 8px 7px 14px;font-size:14px;max-width:100%}
+  .chip b{font-weight:600;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .chip button{appearance:none;border:0;background:none;cursor:pointer;
+    color:var(--muted);font-size:17px;line-height:1;padding:0 4px;
+    border-radius:50%}
+  .chip button:hover{color:var(--neg)}
+
+  /* THE VENN, AND WHY THERE IS ONLY EVER ONE.
+     fcVenn's SVG carries a hard-coded clipPath id, so two of them on one
+     page both clip to whichever rendered first -- the second picture
+     would be quietly wrong rather than broken. Five funds also make ten
+     pairs, and ten Venns is a wall, not an explanation.
+
+     So one picture, for the pair being looked at, and the table below
+     chooses which. With two funds there is only one pair and it is simply
+     there. */
+  .vennpanel{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+  .vennsaid{flex:1;min-width:250px}
+  .vennsaid .big{font-size:30px;font-weight:700;letter-spacing:-.02em;
+    line-height:1.1;margin:0 0 6px}
+  .vennpick{font-size:13px;color:var(--muted);margin:0 0 10px}
+  .ovrow{display:flex;align-items:center;gap:16px;padding:11px 0;
+    border-bottom:1px solid var(--line);font-size:14.5px}
+  .ovrow:last-of-type{border-bottom:none}
+  /* Every row is a button when there is more than one pair to choose
+     between. With a single pair it stays inert -- a control that only
+     ever reselects what is already selected teaches the reader that
+     pressing things here does nothing. */
+  .ovrow.pickable{cursor:pointer;margin:0 -10px;padding-left:10px;
+    padding-right:10px;border-radius:var(--r)}
+  .ovrow.pickable:hover{background:var(--surface)}
+  .ovrow.on{background:var(--brand-wash)}
+  .ovrow.on:hover{background:var(--brand-wash)}
+  .ovrow.on .ovn{font-weight:600}
+  .ovn{flex:1;min-width:0;line-height:1.35}
+  .ovd{color:var(--muted);font-size:13px}
+  .ovbar{flex:0 1 300px;min-width:90px;height:9px;border-radius:999px;
+    background:var(--line);overflow:hidden}
+  .ovbar i{display:block;height:100%;border-radius:999px;background:#7b8a99}
+  /* Only the pairs that are actually close are coloured. Painting every
+     bar amber turns a warning into wallpaper, and a 6% overlap into a
+     thing to worry about. */
+  .ovrow[data-hot=warm] .ovbar i{background:#c8861a}
+  .ovrow[data-hot=hot] .ovbar i{background:var(--neg)}
+  .ovpct{flex:none;width:58px;text-align:right;font-weight:700;font-size:15px}
+  .ovrow[data-hot=hot] .ovpct{color:var(--neg)}
+  .verdictline{border-left:3px solid var(--line-firm);padding:2px 0 2px 13px;
+    margin:var(--s3) 0 0;font-size:15px;line-height:1.55}
+  .verdictline[data-hot=hot]{border-left-color:var(--neg)}
+  .verdictline[data-hot=warm]{border-left-color:#c8861a}
+  .verdictline[data-hot=cool]{border-left-color:var(--brand)}
+  @media (max-width:620px){
+    .ovrow{flex-wrap:wrap;gap:7px 14px}
+    .ovn{flex:1 0 100%}
+    .ovbar{flex:1 1 auto}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <p class="eyebrow">Overlap check</p>
+  <h1>Do these funds hold the same thing?</h1>
+  <p class="note">Two funds with different names can own largely the same
+     companies. Add the funds you hold, or are thinking of holding, and
+     this measures how much of each pair is the same &mdash; read through
+     to the shares underneath, not guessed from the categories.</p>
+
+  <div class="panel">
+    <h2>Pick the funds</h2>
+    <p class="note">At least two. Up to twenty.</p>
+    <div class="pickbox">
+      <input type="text" id="q" placeholder="Start typing a fund name"
+             autocomplete="off" aria-label="Search for a fund">
+      <div class="results" id="results" hidden></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <p style="margin:var(--s4) 0 0">
+      <button class="go" id="run" disabled>Check the overlap</button>
+      <button class="ghost" id="clear" style="margin-left:8px" hidden>Start
+        again</button></p>
+    <div id="err"></div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="panel">
+    <h2>What this measures, and what it does not</h2>
+    <p class="note">Overlap here is the <b>weighted</b> figure: for every
+       company two funds both hold, the smaller of the two weights is
+       counted, and those are added up. Two funds that both own the same
+       twenty companies but in very different sizes overlap less than two
+       that own them in the same sizes &mdash; which is the distinction
+       that matters and the one a plain count of shared names misses.</p>
+    <p class="note">Each pair is read on a date <b>both</b> funds have
+       published. Comparing one fund&rsquo;s newest portfolio against
+       another&rsquo;s older one would count a month of ordinary trading as
+       a difference between the two funds, and would assert something about
+       a portfolio the second fund has not disclosed. Whole fund houses
+       file a month apart, so this is not a rare case.</p>
+    <p class="note">It is a fact, not a verdict. High overlap is not
+       automatically wrong &mdash; two funds running the same strategy well
+       is a reasonable thing to own &mdash; but it does mean the second one
+       is doing less for spreading risk than its name suggests. What to do
+       about that is a judgement this page does not make.</p>
+    <p class="note">Holdings are disclosed monthly and published up to ten
+       days after the month ends, so the newest figure here is always some
+       weeks behind what the funds hold today.</p>
+  </div>
+
+</div>
+
+<script>
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+
+let picked = [];          // {code, name, amc}
+
+/* ---- the picker -------------------------------------------------- */
+(function search() {
+  const q = $("q"), box = $("results");
+  let timer, rows = [], at = -1;
+
+  const close = () => { box.hidden = true; at = -1; };
+  const paint = () => {
+    box.innerHTML = rows.length ? rows.map((f, i) =>
+      `<div data-i="${i}" class="${i === at ? "on" : ""}">${esc(f.scheme_name)}
+        <small>${esc(f.amc_name || "")}${f.category ? " · " + esc(f.category) : ""}</small>
+      </div>`).join("")
+      : `<div class="sub" style="cursor:default">Nothing matching that.</div>`;
+    box.hidden = false;
+  };
+
+  q.addEventListener("input", () => {
+    clearTimeout(timer);
+    const term = q.value.trim();
+    if (term.length < 2) { close(); return; }
+    timer = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/portfolio/search?q=" + encodeURIComponent(term));
+        rows = r.ok ? await r.json() : [];
+      } catch { rows = []; }
+      at = -1;
+      paint();
+    }, 180);
+  });
+
+  // Arrow keys and Enter, because a list you can only reach with a mouse
+  // is a list half the people using it cannot reach at all.
+  q.addEventListener("keydown", e => {
+    if (box.hidden || !rows.length) return;
+    if (e.key === "ArrowDown") { at = Math.min(at + 1, rows.length - 1); paint(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { at = Math.max(at - 1, 0); paint(); e.preventDefault(); }
+    else if (e.key === "Enter" && at >= 0) { add(rows[at]); e.preventDefault(); }
+    else if (e.key === "Escape") close();
+  });
+
+  box.addEventListener("click", e => {
+    const d = e.target.closest("[data-i]");
+    if (d) add(rows[Number(d.dataset.i)]);
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".pickbox")) close();
+  });
+
+  function add(f) {
+    if (!f) return;
+    const code = String(f.scheme_code);
+    // Silently ignoring a second press on the same fund is worse than
+    // saying so: the reader assumes it did not register and presses again.
+    if (picked.some(p => p.code === code)) {
+      say(`${esc(f.scheme_name)} is already on the list.`);
+    } else if (picked.length >= 20) {
+      say("Twenty funds is the limit.");
+    } else {
+      picked.push({code, name: f.scheme_name, amc: f.amc_name});
+      $("err").innerHTML = "";
+    }
+    q.value = ""; rows = []; close(); drawChips();
+  }
+})();
+
+function say(html) {
+  $("err").innerHTML = `<p class="sub" style="margin-top:var(--s2)">${html}</p>`;
+}
+
+function drawChips() {
+  $("chips").innerHTML = picked.map((p, i) =>
+    `<span class="chip"><b title="${esc(p.name)}">${esc(p.name)}</b>
+      <button type="button" data-drop="${i}"
+        aria-label="Remove ${esc(p.name)}">&times;</button></span>`).join("");
+  $("run").disabled = picked.length < 2;
+  $("clear").hidden = picked.length === 0;
+  // The answer on screen belongs to the funds it was built from. A
+  // three-fund table sitting under a four-fund list would look current.
+  $("out").innerHTML = "";
+  $("run").textContent = picked.length < 2
+    ? "Check the overlap"
+    : `Check these ${picked.length} funds`;
+}
+
+$("chips").addEventListener("click", e => {
+  const b = e.target.closest("[data-drop]");
+  if (!b) return;
+  picked.splice(Number(b.dataset.drop), 1);
+  $("err").innerHTML = "";
+  drawChips();
+});
+
+$("clear").addEventListener("click", () => {
+  picked = []; $("err").innerHTML = ""; drawChips(); $("q").focus();
+});
+
+/* ---- the answer -------------------------------------------------- */
+$("run").addEventListener("click", async () => {
+  if (picked.length < 2) return;
+  const btn = $("run");
+  btn.disabled = true;
+  btn.textContent = "Reading what they hold…";
+  $("err").innerHTML = "";
+  let d;
+  try {
+    const r = await fetch("/api/selector/overlap", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      // No amounts: this page is about the funds, not about a plan. The
+      // server splits evenly and says so, which is the honest reading of
+      // "these funds" with no shares given.
+      body: JSON.stringify({funds: picked.map(p => ({scheme_code: p.code}))}),
+    });
+    const t = await r.text();
+    d = t ? JSON.parse(t) : null;
+    if (r.status === 401) {
+      // The header carries the sign-in dialogue on every page, so there
+      // is somewhere to go from here.
+      $("err").innerHTML = `<div class="err" style="margin-top:var(--s3)">
+        <b>This needs an account.</b> Reading through to what each fund
+        holds is part of the paid plan. Sign in from the top of the
+        page.</div>`;
+      throw new Error("signin");
+    }
+    if (!r.ok) throw new Error((d && d.detail) || ("server returned " + r.status));
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Try again";
+    if (String(e.message) !== "signin") {
+      $("err").innerHTML = `<div class="err" style="margin-top:var(--s3)">
+        Could not read the holdings just now. ${esc(e.message || "")}</div>`;
+    }
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = `Check these ${picked.length} funds`;
+  paint(d);
+});
+
+function paint(d) {
+  const pairs = d.pairs || [];
+  const gone = d.no_holdings || [];
+
+  if (!pairs.length) {
+    $("out").innerHTML = `<div class="panel"><h2>Nothing to compare</h2>
+      <p class="note">${gone.length
+        ? `We do not hold a published portfolio for
+           <b>${gone.map(esc).join(", ")}</b>, so the overlap cannot be
+           measured. That is a gap in what has reached us, not a finding
+           about the fund.`
+        : `These funds have not both filed a portfolio we can read on the
+           same date.`}</p></div>`;
+    return;
+  }
+
+  const worst = pairs[0].overlap_pct;
+  // THE SAME THRESHOLDS THE FULL REVIEW USES. 25% is where the review
+  // raises it as a gap; the same number has to mean the same thing here,
+  // or the two screens disagree about one pair of funds.
+  const hot = p => p >= 25 ? "hot" : p >= 15 ? "warm" : "";
+  const band = worst >= 25 ? "hot" : worst >= 15 ? "warm" : "cool";
+  const verdict = worst >= 25
+    ? `<b>Two of these are largely the same holding.</b> ${esc(pairs[0].a)}
+       and ${esc(pairs[0].b)} hold ${worst}% of the same companies by
+       weight. Two funds overlapping this much do less for spreading risk
+       than two names suggest.`
+    : worst >= 15
+      ? `<b>The closest pair shares about a sixth of its weight.</b>
+         ${esc(pairs[0].a)} and ${esc(pairs[0].b)} overlap ${worst}%.
+         Worth knowing; not necessarily worth changing.`
+      : `<b>No two of these hold much of the same thing.</b> The closest
+         pair overlaps ${worst}%.`;
+
+  const dates = [...new Set(pairs.map(p => p.as_of).filter(Boolean))];
+
+  $("out").innerHTML = `
+    ${d.companies ? `<div class="tiles">
+      <div class="tile"><div class="k">Companies held</div>
+        <div class="v">${d.companies}</div>
+        <div class="d">across all ${picked.length} funds, counted once</div></div>
+      <div class="tile"><div class="k">Really spread across</div>
+        <div class="v">${d.effective_holdings ?? "&ndash;"}</div>
+        <div class="d">equal-sized equivalent</div></div>
+      <div class="tile"><div class="k">In the ten biggest</div>
+        <div class="v">${d.top10_pct != null ? d.top10_pct + "%" : "&ndash;"}</div>
+        <div class="d">of everything held</div></div>
+      <div class="tile"><div class="k">Held by two or more</div>
+        <div class="v">${d.held_by_more_than_one ?? "&ndash;"}</div>
+        <div class="d">companies owned by more than one of them</div></div>
+    </div>` : ""}
+
+    <div class="panel" id="vennpanelwrap">
+      <h2>${pairs.length === 1 ? "These two funds" : "The closest pair"}</h2>
+      <div id="vennhost"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Every pair</h2>
+      <p class="note">Highest first, because the question being asked of
+         this table is always &ldquo;what is the closest&rdquo;.
+         Weighted by ${esc(d.weighted_by || "an equal split")}.${
+         pairs.length > 1 ? " Press any pair to draw it above." : ""}</p>
+      ${pairs.map((p, i) => `<div class="ovrow${
+          pairs.length > 1 ? " pickable" : ""}${i === 0 ? " on" : ""}"
+          data-hot="${hot(p.overlap_pct)}" data-pair="${i}"
+          ${pairs.length > 1 ? 'role="button" tabindex="0"' : ""}>
+        <span class="ovn">${esc(p.a)}<span class="ovd"> and
+          ${esc(p.b)}</span></span>
+        <span class="ovbar"><i style="width:${Math.min(100, p.overlap_pct)}%"></i></span>
+        <span class="ovpct">${p.overlap_pct}%</span>
+      </div>`).join("")}
+      <p class="verdictline" data-hot="${band}">${verdict}</p>
+      ${gone.length ? `<p class="sub" style="margin-top:var(--s3)">Left out:
+        <b>${gone.map(esc).join(", ")}</b> &mdash; no published portfolio has
+        reached us for ${gone.length === 1 ? "it" : "them"} yet.</p>` : ""}
+      <p class="sub" style="margin-top:var(--s3)">Each pair is read on a
+        date <b>both</b> funds published${dates.length === 1
+          ? ` &mdash; ${esc(dates[0])}` : ", so the dates differ by pair"}.
+        Past disclosures, not a forecast, and not a recommendation to hold
+        or to drop any of these.</p>
+    </div>
+
+    <div class="panel">
+      <h2>This is the overlap alone</h2>
+      <p class="note">The portfolio analysis takes the same funds and also
+         shows what the whole thing is really made of &mdash; the companies
+         and sectors underneath, how each fund has returned against its own
+         benchmark and its own category, and whether the funds together beat
+         a plain index.</p>
+      <p style="margin:0"><a class="go" id="toPortfolio" href="/portfolio"
+        style="display:inline-block;text-decoration:none">Take these to
+        portfolio analysis</a></p>
+      <p class="sub" style="margin-top:var(--s2)">Opens Portfolio Analysis
+        with these funds already in. You can add more there, and enter what
+        each holding is worth.</p>
+    </div>`;
+
+  // Hand the funds across. localStorage rather than the address, because
+  // the address would have to carry fund names, and rather than
+  // sessionStorage, because a link opened in a new tab does not share it.
+  // The portfolio page reads it once, ignores it after ten minutes, and
+  // deletes it either way. Funds with no published portfolio are left out:
+  // the look-through could not read them, and carrying them over would
+  // only produce an error there.
+  $("toPortfolio").addEventListener("click", () => {
+    try {
+      localStorage.setItem("fc_handoff_funds", JSON.stringify({
+        t: Date.now(),
+        funds: picked.filter(p => !gone.includes(p.name) && !gone.includes(p.code))
+                     .map(p => ({code: p.code, name: p.name})),
+      }));
+    } catch { /* storage blocked: the page still opens, just empty */ }
+  });
+
+  PAIRS = pairs;
+  drawVenn(0);
+  if (pairs.length > 1) {
+    $("out").querySelectorAll(".ovrow.pickable").forEach(row => {
+      const go = () => drawVenn(Number(row.dataset.pair));
+      row.addEventListener("click", go);
+      // A row that is only reachable with a mouse is unreachable for
+      // anybody using a keyboard, and this one carries the picture.
+      row.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+  }
+  $("out").scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+let PAIRS = [];
+
+/* One pair, drawn. See the .vennpanel comment for why never two. */
+function drawVenn(i) {
+  const p = PAIRS[i];
+  const host = $("vennhost");
+  if (!p || !host) return;
+
+  $("out").querySelectorAll(".ovrow").forEach(r =>
+    r.classList.toggle("on", Number(r.dataset.pair) === i));
+
+  const pct = p.overlap_pct;
+  // The picture is the nice-to-have; the sentence is the finding. If
+  // finchaya.js has not loaded, the sentence still stands on its own
+  // rather than leaving a blank box where a diagram should be.
+  const pic = window.fcVenn ? window.fcVenn(pct, p.a, p.b) : "";
+  const rest = Math.max(0, 100 - pct);
+
+  host.innerHTML = `<div class="vennpanel">
+    ${pic}
+    <div class="vennsaid">
+      ${PAIRS.length > 1 ? `<p class="vennpick">Showing pair ${i + 1} of
+        ${PAIRS.length}</p>` : ""}
+      <p class="big">${pct.toFixed(1)}% the same</p>
+      <p class="note" style="margin-bottom:10px">${esc(p.a)} and
+        ${esc(p.b)} hold <b>${pct.toFixed(1)}%</b> of the same companies by
+        weight. The other <b>${rest.toFixed(1)}%</b> of each is its own.</p>
+      <p class="sub">Split a rupee evenly between these two and about
+        <b>${Math.round(pct)}p of every 100</b> buys a company you would
+        already own through the other.${p.as_of
+          ? ` Measured on ${esc(p.as_of)}, the newest portfolio both of them
+             have filed.` : ""}</p>
+    </div>
+  </div>`;
+}
+
+drawChips();
+</script>
+</body>
+</html>

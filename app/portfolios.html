@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your portfolios — FinChaya</title>
+<style>
+  /* Same tokens as portfolio.html. Copied rather than shared because there
+     is no build step and a second stylesheet request costs more than the
+     duplication saves. If a third page appears, extract them. */
+  :root{
+    --ground:#efece3; --card:#ffffff;
+    --ink:#123027; --ink-soft:#5b6b63; --rule:#ddd8cc;
+    --bench:#e0a33c; --median:#a9a396;
+    --up:#1d6b4f; --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:16px/1.55 var(--font)}
+  .wrap{max-width:1060px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+    text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:62ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);
+    border-radius:3px;padding:26px 28px;margin-bottom:22px}
+  h2{font-size:21px;font-weight:600;margin:0 0 4px}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 16px}
+  .foot{color:var(--ink-soft);font-size:13px;margin:14px 0 0}
+  .lead{font-size:22px;line-height:1.4;margin:0 0 12px;max-width:44ch}
+  .sub{font-size:12.5px;color:var(--ink-soft)}
+  .muted{color:var(--ink-soft)}
+  .num{font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)}
+
+  input,button,select{font:inherit}
+  input[type=text],input[type=number]{padding:9px 11px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink);width:100%}
+  input:focus{outline:2px solid var(--bench);outline-offset:1px}
+  .go{background:var(--ink);color:#f6f3ea;border:none;padding:11px 22px;
+    border-radius:3px;cursor:pointer}
+  .go:disabled{opacity:.45;cursor:default}
+  .ghost{background:none;border:1px solid var(--rule);color:var(--ink);
+    padding:10px 18px;border-radius:3px;cursor:pointer}
+  .link{background:none;border:none;color:var(--down);cursor:pointer;
+    padding:2px 4px;font-size:14px}
+  .back{background:none;border:none;color:var(--ink-soft);cursor:pointer;
+    padding:0;font-size:14px;margin:0 0 14px}
+  .back:hover{color:var(--bench)}
+
+  .search{position:relative;margin-bottom:14px}
+  .results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);
+    background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    max-height:290px;overflow:auto;box-shadow:0 8px 20px rgba(18,48,39,.10)}
+  .results div{padding:9px 12px;cursor:pointer;font-size:15px}
+  .results div:hover{background:#f4f1e8}
+  .results small{color:var(--ink-soft);display:block;font-size:12.5px}
+
+  /* The table is wide by nature -- category, rank, three return windows and
+     a split bar. Scrolling it beats dropping a column, and the fund name is
+     pinned so a scrolled row still says which fund it is. */
+  .scroller{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;margin-top:6px;min-width:760px}
+  th{font-size:12px;letter-spacing:.05em;color:var(--ink-soft);font-weight:600;
+    text-align:right;padding:0 8px 7px;border-bottom:1px solid var(--rule);
+    white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;padding-left:0;
+    position:sticky;left:0;background:var(--card)}
+  td{padding:11px 8px;border-bottom:1px solid #f0ece2;text-align:right;font-size:15px}
+  tbody tr:last-child td{border-bottom:none}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--bench)}
+  th.sorted::after{content:"\00a0\25be";color:var(--bench)}
+  th.sorted.asc::after{content:"\00a0\25b4"}
+
+  /* Split bar, identical construction to the look-through page so the same
+     colours mean the same thing on both. */
+  .tbar{display:flex;height:9px;border-radius:2px;overflow:hidden;
+    background:#efeadf;min-width:120px}
+  .tbar i{display:block;height:100%}
+  .splitcell{width:210px}
+  .splitnums{font-size:12px;margin-top:4px;display:flex;gap:10px;
+    justify-content:flex-end;font-variant-numeric:tabular-nums}
+  .tup{color:var(--up);font-weight:600}
+  .tdn{color:var(--down);font-weight:600}
+  .tsw{opacity:.7;font-weight:600}
+
+  .track{margin:4px 0 18px;border:1px solid var(--rule);border-radius:3px;
+    padding:16px 18px;background:#fbfaf6}
+  .track h3{font-size:17px;font-weight:600;margin:0 0 4px}
+  .tgrid{display:grid;gap:16px;grid-template-columns:repeat(4,1fr);
+    margin:14px 0 0}
+  .tgrid b{display:block;font-size:20px;font-variant-numeric:tabular-nums;
+    line-height:1.2}
+  .tgrid span{display:block;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--ink-soft);margin-top:3px}
+  @media (max-width:640px){.tgrid{grid-template-columns:1fr 1fr}}
+  .verdictline{font-size:18px;line-height:1.45;margin:14px 0 0;max-width:58ch;
+    border-left:3px solid var(--rule);padding-left:14px}
+  .verdictline.good{border-left-color:var(--up)}
+  .verdictline.bad{border-left-color:var(--down)}
+  .tform{display:grid;gap:12px;grid-template-columns:1fr 1fr;margin-top:12px}
+  .tform label{display:block;font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-soft);font-weight:600;
+    margin-bottom:4px}
+  .tform input{width:100%}
+  @media (max-width:640px){.tform{grid-template-columns:1fr}}
+
+  /* TWO CONTROLS, NOT ONE BOX PRETENDING TO BE TWO.
+     The first version fused the number and the unit inside a single
+     bordered flex container. It collapsed: the number box rendered at
+     zero width and all that showed was a rupee sign and a dropdown, so
+     there was nowhere to type.
+     A grid with a stated column width cannot do that -- the number gets
+     what is left, the unit gets 108px, and neither can squeeze the
+     other out however long the option text is. */
+  /* The pane rule stands alone. Nothing else in this file may set
+     `display` on [data-ptab]; see the note above showPTab(). */
+  [data-ptab][hidden]{display:none}
+  .ptabs{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 20px;
+    border-bottom:1px solid var(--rule);padding-bottom:0}
+  .ptabs button{background:none;border:none;border-bottom:2px solid transparent;
+    padding:9px 14px;font-size:15px;color:var(--ink-soft);cursor:pointer;
+    margin-bottom:-1px}
+  .ptabs button:hover{color:var(--ink)}
+  .ptabs button[aria-selected=true]{color:var(--ink);font-weight:600;
+    border-bottom-color:var(--ink)}
+  /* On paper every pane prints. A PDF of whichever tab happened to be
+     open is not a report of the portfolio. */
+  @media print{
+    .ptabs{display:none}
+    [data-ptab][hidden]{display:block !important}
+  }
+  .whose{display:inline-block;margin-left:8px;font-size:11.5px;
+    padding:1px 8px;border-radius:2px;background:#eaf2ee;color:var(--up);
+    vertical-align:2px}
+  /* "When did this go in", opened one fund at a time under its row. */
+  .since{margin-left:8px;font-size:12px}
+  .sincerow td{background:#faf8f2;padding:12px 14px 10px}
+  .sincebox{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
+  .sincebox label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;
+    color:var(--ink-soft)}
+  .sincebox input,.sincebox select{font:inherit;font-size:14px;padding:6px 8px;
+    border:1px solid var(--rule);border-radius:4px;background:var(--card);
+    min-width:150px;width:auto}
+  .sincenote{margin:9px 0 0;font-size:11.5px;line-height:1.45;
+    color:var(--ink-soft);max-width:62ch}
+  @media print{ .sincerow,.since{display:none !important} }
+
+  .amtrow{display:grid;grid-template-columns:minmax(0,1fr) 108px;gap:8px}
+  .amtrow input[type=number],.amtrow select{width:100%;padding:9px 11px;
+    border:1px solid var(--rule);border-radius:3px;background:#fdfcfa;
+    color:var(--ink)}
+  .amtrow select{color:var(--ink-soft)}
+  .amtecho{display:block;margin-top:4px;min-height:16px}
+
+  /* Every step reachable from every step. A wizard that only goes
+     forwards makes one wrong click unfixable without a reload. */
+  .steprow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0}
+  .stepchip{background:none;border:1px solid var(--rule);border-radius:999px;
+    padding:6px 14px;font-size:13px;color:var(--ink-soft);cursor:pointer}
+  .stepchip:hover{border-color:var(--bench);color:var(--ink)}
+  .stepchip.on{background:var(--ink);border-color:var(--ink);color:#f6f3ea}
+
+  /* The prescribed category is a default, not a sentence. Putting the
+     dropdown inside the heading says so without a paragraph explaining
+     that it can be changed. */
+  .catpick{font:inherit;font-size:inherit;font-weight:600;color:var(--ink);
+    background:#fdfcfa;border:1px solid var(--rule);border-radius:3px;
+    padding:2px 6px}
+  tr.picked td{background:#f4f8f4}
+
+  /* The chosen funds beside the choosing, not under it -- the same
+     basket plan.html uses, for the same reason it gives: they are a
+     running total, and adding one must not scroll the evidence away.
+     Sticky, so the button is on screen however far down the table you
+     have read. */
+  .sugwrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;
+    gap:22px;align-items:start}
+  .sugcart{position:sticky;top:12px}
+  .sugcartbox{background:var(--card);border:1px solid var(--rule);
+    border-radius:3px;padding:18px}
+  .carthead{display:flex;align-items:center;justify-content:space-between;
+    gap:10px;margin-bottom:12px}
+  .carthead b{font-size:16px}
+  .cartcount{background:var(--ink);color:#f6f3ea;border-radius:999px;
+    min-width:24px;height:24px;display:inline-flex;align-items:center;
+    justify-content:center;font-size:13px;font-weight:700;padding:0 8px;
+    font-variant-numeric:tabular-nums}
+  .cartcount.none{background:var(--rule);color:var(--ink-soft)}
+  .cartlist{max-height:46vh;overflow:auto;margin:0 -4px;padding:0 4px}
+  .cartrow{padding:10px 0;border-bottom:1px solid #f0ece2}
+  .cartrow:last-child{border-bottom:none}
+  .cartrow b{font-size:14px;line-height:1.3;display:block;
+    overflow-wrap:anywhere}
+  .cartrow.pending{background:#f4f8f4;margin:0 -8px;padding:10px 8px;
+    border-radius:3px}
+  .cartfoot{display:flex;justify-content:space-between;gap:10px;
+    padding-top:12px;margin-top:6px;border-top:1px solid var(--rule);
+    font-size:14px}
+  .sugcart .go{width:100%;margin-top:14px}
+  @media (max-width:980px){
+    .sugwrap{grid-template-columns:1fr}
+    .sugcart{position:static}
+    .cartlist{max-height:none}
+  }
+  td input[type=checkbox]{margin-right:8px;vertical-align:baseline}
+
+  .imp{margin:6px 0 4px;border:1px solid var(--rule);border-radius:3px;
+    padding:12px 14px;background:#fbfaf6}
+  .imp summary{cursor:pointer;font-size:15px;color:var(--ink)}
+  .imp summary:hover{color:var(--bench)}
+  .imp textarea{width:100%;padding:10px 11px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+  .imp textarea:focus{outline:2px solid var(--bench);outline-offset:1px}
+  .prev{margin-top:16px}
+  .prev h3{font-size:15px;margin:14px 0 6px;font-weight:600}
+  .prev table{min-width:0}
+  .prev td,.prev th{padding:7px 8px;font-size:14px}
+  .prev select{max-width:100%;padding:5px 7px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink);font-size:13.5px}
+  .prev input[type=number]{width:110px;padding:5px 7px}
+  .badbox{background:#fbf0ec;border:1px solid #e6c8bd;border-radius:3px;
+    padding:10px 12px;margin-top:12px;font-size:14px}
+  .badbox b{color:var(--down)}
+
+  .cards{display:flex;flex-direction:column;gap:12px}
+  .pcard{display:flex;justify-content:space-between;align-items:center;gap:14px;
+    padding:16px 18px;background:#fbfaf6;border:1px solid var(--rule);
+    border-radius:4px;cursor:pointer;text-align:left;width:100%;
+    font:inherit;color:inherit}
+  .pcard:hover{border-color:var(--bench);background:#fdfbf5}
+  .pcard b{font-size:18px;font-weight:600;display:block}
+  .pill{display:inline-block;font-size:12px;padding:1px 7px;border-radius:2px;
+    background:#f0ece2;color:var(--ink-soft);margin-left:6px}
+  .err{background:#fbf0ec;border:1px solid #e6c8bd;color:var(--down);
+    padding:12px 14px;border-radius:3px;margin-bottom:16px}
+  .ok{background:#f1f5f0;border:1px solid #cfded3;color:var(--up);
+    padding:12px 14px;border-radius:3px;margin-bottom:16px}
+  .empty{color:var(--ink-soft);padding:8px 0}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  /* Amber is the export action, here and on the look-through report. One
+     colour meaning one thing across both pages beats each page choosing
+     its own and neither reading as a control. */
+  .pdfbtn{display:inline-flex;align-items:center;gap:7px;
+    background:var(--bench);color:#22201a;border:none;font:inherit;
+    font-size:15px;font-weight:700;padding:11px 18px;border-radius:3px;
+    cursor:pointer;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.18)}
+  .pdfbtn:hover,.pdfbtn:focus-visible{background:#f0b757;outline:none}
+  .pdfbtn:active{transform:translateY(1px)}
+  .pdfbtn svg{width:15px;height:15px;flex:none}
+  .periodbar{display:flex;gap:10px;align-items:center;margin:22px 0 4px;
+    flex-wrap:wrap}
+  .periodbar select{padding:7px 10px;border:1px solid var(--rule);
+    border-radius:3px;background:#fdfcfa;color:var(--ink)}
+
+  /* Print / save-as-PDF.
+     No server-side PDF library: the browser already renders this page
+     correctly and can write it to a file. A library on the droplet would
+     be a second renderer to keep in step with this one. */
+  .printonly{display:none}
+  .amtprint{display:none}
+  @page{margin:16mm 12mm 15mm}
+
+  @media print{
+    /* Same reason as the report page: Chrome drops background colours by
+       default, which turns every split bar into a blank rectangle. */
+    *{-webkit-print-color-adjust:exact !important;
+      print-color-adjust:exact !important}
+    body{background:#fff;font-size:11pt}
+    .wrap{max-width:none;padding:0}
+    /* Website furniture. The printed version has its own title block. */
+    #pagehead{display:none !important}
+    .panel{border:none;padding:0;margin:0}
+    .back,.link,.search,.periodbar,#run,#pdf,#delete,.pdfbtn,
+    .results,input[data-amount]{display:none !important}
+    .printonly{display:block}
+    .amtprint{display:inline}
+    .scroller{overflow:visible}
+    table{min-width:0}
+    th:first-child,td:first-child{position:static}
+    tr,.lead{page-break-inside:avoid}
+    thead{display:table-header-group}   /* repeat headers across pages */
+    a{color:inherit;text-decoration:none}
+    .pfoot{border-top:1px solid var(--rule);margin-top:22px;padding-top:12px;
+      font-size:9.5pt;color:#4a5a53}
+  }
+  @media (max-width:640px){
+    .wrap{padding:24px 14px 70px} h1{font-size:27px}
+    .panel{padding:20px 16px} td,th{font-size:14px}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+
+</head>
+<body>
+<div class="wrap">
+  <div id="pagehead">
+    <p class="eyebrow">Portfolios</p>
+    <h1>Your portfolios</h1>
+    <p class="lede">Keep a set of funds together, and see what each one is —
+       its category, where it places on return, what it has returned, and how
+       the shares it holds are trading now.</p>
+  </div>
+  <div id="app"><p class="empty">Loading&hellip;</p></div>
+</div>
+
+<script>
+/* ---- helpers, same shapes as portfolio.html -------------------- */
+const rupee = n => "\u20b9" + Math.round(n).toLocaleString("en-IN");
+const pct   = n => (n == null ? "\u2014" : Number(n).toFixed(1) + "%");
+const rupee100 = p => "\u20b9" + Math.round(p ?? 0);
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---- amounts in lakh and crore ---------------------------------
+   A target is typed as "50" and "lakh", not as seven zeroes counted back.
+   The multiplier lives on the field's own <select>, and unitOf() is the
+   only way anything reads it, so no caller can forget it. */
+const inWords = n => n >= 1e7
+  ? "₹" + (n / 1e7).toFixed(2).replace(/\.00$/, "") + " crore"
+  : n >= 1e5 ? "₹" + (n / 1e5).toFixed(2).replace(/\.00$/, "") + " lakh"
+  : rupee(n);
+
+const unitOf = id => {
+  const el = document.getElementById(id + "Unit");
+  const v = el ? Number(el.value) : 1;
+  return Number.isFinite(v) && v > 0 ? v : 1;
+};
+
+/* Stored values are always full rupees. Coming back to an edit, the unit
+   is chosen to suit the figure -- showing 5000000 in a box labelled
+   "rupees" is technically right and unreadable. */
+function amtBox(id, stored, placeholder) {
+  let unit = 100000, shown = "";
+  if (stored != null && stored !== "") {
+    const n = Number(stored);
+    unit = n >= 1e7 ? 10000000 : n >= 1e5 ? 100000 : 1;
+    shown = String(+(n / unit).toFixed(4));
+  }
+  const opt = (v, t) => `<option value="${v}"${
+    unit === v ? " selected" : ""}>${t}</option>`;
+  return `<div class="amtrow">
+      <input type="number" id="${id}" min="0" step="any" inputmode="decimal"
+             placeholder="${placeholder}" value="${shown}">
+      <select id="${id}Unit" aria-label="Unit">
+        ${opt(1, "\u20b9")}${opt(100000, "lakh")}${opt(10000000, "crore")}
+      </select>
+    </div>
+    <span class="sub amtecho" id="${id}Echo"></span>`;
+}
+
+function wireAmounts(ids) {
+  ids.forEach(id => {
+    const box = document.getElementById(id);
+    const unit = document.getElementById(id + "Unit");
+    const echo = document.getElementById(id + "Echo");
+    if (!box || !unit || !echo) return;
+    const paint = () => {
+      const v = Number(box.value) * unitOf(id);
+      echo.innerHTML = (box.value === "" || !Number.isFinite(v) || v <= 0)
+        ? "" : `= <b>${rupee(v)}</b> &middot; ${inWords(v)}`;
+    };
+    box.addEventListener("input", paint);
+    unit.addEventListener("change", paint);
+    paint();
+  });
+}
+
+/* ---- years, or an exact date -----------------------------------
+   A date picker is the right control for "the fees are due in March".
+   It is the wrong one for a retirement twenty-five years out, where
+   nobody knows the day and clicking back through 300 months to find it
+   is absurd.
+
+   Both write the SAME field: target_date is what the goal stores, and
+   years is a convenience that fills it. One source of truth, so there is
+   no mode to be in and nothing to disagree. */
+function wireYears(existing) {
+  const yrs = document.getElementById("g_years");
+  const unit = document.getElementById("g_yearsUnit");
+  const date = document.getElementById("g_date");
+  const echo = document.getElementById("g_yearsEcho");
+  if (!yrs || !unit || !date || !echo) return;
+
+  const MONTH = id => id === "months";
+
+  /* WHY THE UNIT EXISTS.
+     With years assumed, somebody planning an 11-month goal types 11 and
+     gets an eleven-YEAR plan -- a horizon out by a factor of twelve,
+     which picks an aggressive equity allocation for money needed next
+     year. Nothing on the page would have contradicted it. */
+  const fromNumber = () => {
+    const n = Number(yrs.value);
+    if (!yrs.value || !Number.isFinite(n) || n <= 0) { echo.innerHTML = ""; return; }
+    const d = new Date();
+    if (MONTH(unit.value)) d.setMonth(d.getMonth() + Math.round(n));
+    else {
+      d.setFullYear(d.getFullYear() + Math.floor(n));
+      // A fractional year is months, not a rounding error to discard.
+      d.setMonth(d.getMonth() + Math.round((n % 1) * 12));
+    }
+    date.value = d.toISOString().slice(0, 10);
+    say();
+  };
+
+  /* Said back in the unit that suits the distance, not the one typed.
+     "0.9 years away" is how a short goal gets misread. */
+  const say = () => {
+    if (!date.value) { echo.innerHTML = ""; return; }
+    const d = new Date(date.value + "T00:00:00");
+    const months = (d - new Date()) / (30.44 * 24 * 3600 * 1000);
+    if (months <= 0) { echo.innerHTML = `<b>that date has passed</b>`; return; }
+    const when = months < 24
+      ? `${Math.round(months)} month${Math.round(months) === 1 ? "" : "s"}`
+      : `${(months / 12).toFixed(1)} years`;
+    echo.innerHTML = `${when} away &middot; ${esc(date.value)}`;
+  };
+
+  yrs.addEventListener("input", fromNumber);
+  unit.addEventListener("change", fromNumber);
+  // Typing a date is the other way round, so the number is cleared
+  // rather than left saying something the date no longer agrees with.
+  date.addEventListener("change", () => { yrs.value = ""; say(); });
+
+  if (existing) say();
+}
+
+/* ---- risk follows purpose, until it is set by hand ----------------
+   The plan page has always done this; this form did not, so a goal saved
+   here arrived with no risk band and the allocation rules had nothing to
+   key on. Capital appreciation defaults to aggressive, preservation to
+   conservative, income to moderate -- and the moment the box is touched
+   by hand, the default stops following. */
+const RISK_FOR = {appreciation: "aggressive",
+                  preservation: "conservative",
+                  income: "moderate"};
+
+function wireRiskDefault(alreadySet) {
+  const purpose = document.getElementById("g_purpose");
+  const risk = document.getElementById("g_risk");
+  if (!purpose || !risk) return;
+  // A band already saved is the user's, not ours, and is never moved.
+  let byHand = !!alreadySet;
+  risk.addEventListener("change", () => { byHand = true; hide(); });
+
+  const hint = document.createElement("span");
+  hint.className = "sub";
+  hint.hidden = true;
+  hint.style.display = "block";
+  hint.style.marginTop = "4px";
+  hint.textContent = "Set to match the purpose. Change it if that is wrong.";
+  risk.parentNode.insertBefore(hint, risk.nextSibling);
+  const hide = () => { hint.hidden = true; };
+
+  purpose.addEventListener("change", () => {
+    if (byHand) return;
+    const want = RISK_FOR[purpose.value];
+    if (!want) return;
+    risk.value = want;
+    hint.hidden = false;
+  });
+}
+
+const app = () => document.getElementById("app");
+let state = {list: [], detail: null, period: "1Y",
+             sort: {key: "name", asc: true},
+             // Which funds have their "when did this go in" row open.
+             // Held here rather than in the DOM because renderDetail()
+             // rebuilds the table on every sort and period change, and
+             // a panel that closes itself when you sort is infuriating.
+             openSince: new Set()};
+
+const PERIODS = {"1Y": "1 year", "3Y": "3 years", "5Y": "5 years"};
+
+// Caps the date picker. A start date in the future is not a typo we can
+// interpret, and the server rejects it anyway -- better to make it
+// unpickable than to explain it afterwards.
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+async function api(path, opts) {
+  const r = await fetch("/api/portfolio/saved" + path, Object.assign(
+    {headers: {"Content-Type": "application/json"}}, opts || {}));
+  if (r.status === 401) throw {signin: true};
+
+  // Read the body as TEXT first, then try to parse it.
+  //
+  // Going straight to r.json() throws on a non-JSON error page -- an
+  // uncaught server exception returns plain text, and a gateway error
+  // returns HTML -- and the catch then reported a generic message that
+  // said nothing about what actually happened. The status code alone
+  // separates "not signed in" from "bad request" from "server crashed".
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+
+  if (!r.ok) {
+    let detail = body && body.detail;
+    if (Array.isArray(detail)) {           // FastAPI validation errors
+      detail = detail.map(d => d.msg || JSON.stringify(d)).join("; ");
+    }
+    throw {message: detail
+      ? `${detail} (${r.status})`
+      : `The server returned ${r.status}. ${text.slice(0, 160) || ""}`.trim()};
+  }
+  return body;
+}
+
+function fail(e) {
+  if (e && e.signin) {
+    // Sign-in lives on the main page -- there is no separate /login route.
+    // Linking to one produced a 404 that looked like the feature was broken
+    // rather than like the reader simply was not signed in.
+    app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
+      <p class="note">Portfolios are saved against your account, so we need
+         to know whose they are. Sign in on the main page, then come back
+         here &mdash; this page will be waiting.</p>
+      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
+         and sign in</a></p>
+      <p class="foot">Already signed in and still seeing this? Your session
+         may have expired. Signing in again fixes it.</p>
+      </div>`;
+    return;
+  }
+  const box = document.createElement("div");
+  box.className = "err";
+  box.textContent = (e && e.message) || "Could not reach the server.";
+  app().prepend(box);
+}
+
+/* ---- routing: #/ list, #/p/<id> one portfolio ------------------ */
+window.addEventListener("hashchange", route);
+route();
+
+function route() {
+  const m = location.hash.match(/^#\/p\/(\d+)/);
+  if (m) openPortfolio(Number(m[1])); else showList();
+}
+
+/* ---- list ------------------------------------------------------ */
+async function showList() {
+  try {
+    state.list = await api("");
+    // Whose each one is. A portfolio built for a client sat in this list
+    // looking exactly like the user's own, which is wrong twice: it is
+    // not theirs, and a distributor with thirty clients cannot tell one
+    // "Retirement" from another.
+    if (state.list.some(p => p.client_id) && !state.clients) {
+      try {
+        const cs = await fetch("/api/distributor/clients")
+          .then(r => r.ok ? r.json() : []);
+        state.clients = {};
+        cs.forEach(c => { state.clients[c.client_id] = c.name; });
+      } catch { state.clients = {}; }
+    }
+  } catch (e) { return fail(e); }
+
+  let html = `<div class="panel">
+    <h2>Saved portfolios</h2>
+    <p class="note">A portfolio is just a list of funds. Amounts are optional
+       &mdash; without them you still get category, placing, returns and the
+       split; with them you can open the funds up into the shares underneath.</p>`;
+
+  if (!state.list.length) {
+    html += `<p class="empty">Nothing saved yet.</p>`;
+  } else {
+    // Mine first, then each client's. Sorted rather than mixed, because
+    // "which of these is actually mine" is the first question this page
+    // has to answer.
+    const mine = state.list.filter(p => !p.client_id);
+    const theirs = state.list.filter(p => p.client_id);
+    const card = p => `
+      <button class="pcard" data-open="${p.portfolio_id}">
+        <span>
+          <b>${esc(p.name)}</b>${p.client_id
+            ? `<span class="whose">${esc((state.clients || {})[p.client_id]
+                 || "a client")}</span>` : ""}
+          <span class="sub">${p.fund_count} fund${p.fund_count === 1 ? "" : "s"}${
+            p.total_amount ? " \u00b7 " + rupee(p.total_amount) : ""}${
+            p.fund_count && !p.can_lookthrough
+              ? ' <span class="pill">amounts missing</span>' : ""}</span>
+        </span>
+        <span class="sub">Open &rarr;</span>
+      </button>`;
+
+    if (mine.length) {
+      html += theirs.length ? `<p class="eyebrow" style="margin-top:18px">Your own</p>` : "";
+      html += `<div class="cards">` + mine.map(card).join("") + `</div>`;
+    }
+    if (theirs.length) {
+      html += `<p class="eyebrow" style="margin-top:22px">For your clients</p>
+        <div class="cards">` + theirs.map(card).join("") + `</div>`;
+    }
+  }
+
+  html += `<div class="row" style="margin-top:20px">
+      <input type="text" id="newname" placeholder="Name a new portfolio"
+             style="max-width:280px" aria-label="New portfolio name">
+      <button class="go" id="create">Create</button>
+    </div></div>`;
+
+  app().innerHTML = html;
+
+  app().querySelectorAll("[data-open]").forEach(b =>
+    b.addEventListener("click", () => location.hash = "#/p/" + b.dataset.open));
+
+  const name = document.getElementById("newname");
+  const create = async () => {
+    const value = name.value.trim();
+    if (!value) { name.focus(); return; }
+    try {
+      const p = await api("", {method: "POST",
+        body: JSON.stringify({name: value})});
+      location.hash = "#/p/" + p.portfolio_id;
+    } catch (e) { fail(e); }
+  };
+  document.getElementById("create").addEventListener("click", create);
+  name.addEventListener("keydown", e => { if (e.key === "Enter") create(); });
+}
+
+/* ---- one portfolio --------------------------------------------- */
+async function openPortfolio(id) {
+  try {
+    state.detail = await api("/" + id);
+  } catch (e) { return fail(e); }
+  renderDetail();
+}
+
+/* Sort keys. Default is NAME, and that is a decision rather than a
+   default: sorting by rank or by rising weight on load would tell the
+   reader which fund is best, which is the claim the fund score was
+   removed for making. Sorting is available; it just has to be asked for. */
+// Everything period-dependent reads state.period, so one dropdown moves
+// the return, the benchmark margin and the placing together.
+const row = f => (f.returns || {})[state.period] || null;
+
+const SORTS = {
+  name:  f => (f.scheme_name || "").toLowerCase(),
+  cat:   f => (f.category || "\uffff").toLowerCase(),
+  rank:  f => {const r = row(f);
+               return (r && r.rank_meaningful && r.category_rank) || 1e9},
+  ret:   f => {const r = row(f); return (r && r.fund_cagr) ?? -1e9},
+  vs:    f => {const r = row(f); return (r && r.excess_cagr) ?? -1e9},
+  rise:  f => (f.split && f.split.up_pct) ?? -1,
+  amount:f => f.amount ?? -1,
+};
+
+function renderDetail() {
+  const d = state.detail;
+  // Scores switched off (server: MF_SCORES_ENABLED unset): the rising /
+  // sideways / falling split is read off the stock scores, so its column,
+  // its headline sentence and its footnotes are left out. The server says so
+  // in the portfolio itself, so this needs nothing else to have loaded.
+  const off = d.scores_enabled === false;
+  const funds = [...d.funds].sort((a, b) => {
+    const get = SORTS[state.sort.key] || SORTS.name;
+    const x = get(a), y = get(b);
+    const cmp = x < y ? -1 : x > y ? 1 : 0;
+    return state.sort.asc ? cmp : -cmp;
+  });
+
+  // Shown only on paper. On screen the name is already in the heading and
+  // the date is the reader's own "now"; in a file that someone opens next
+  // month, neither is obvious.
+  let html = `<button class="back" id="back">&larr; All portfolios</button>
+    <div class="panel">
+      <div class="printonly" style="margin-bottom:18px">
+        <p class="eyebrow" style="margin-bottom:4px">FinChaya \u00b7 Portfolio report</p>
+        <h1 style="font-size:26px;margin:0 0 4px">${esc(d.name)}</h1>
+        <p class="sub" style="margin:0">Prepared ${new Date().toLocaleDateString("en-IN",
+          {day: "numeric", month: "long", year: "numeric"})}
+          \u00b7 returns over ${PERIODS[state.period]}</p>
+      </div>
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">${esc(d.name)}</h2>
+        <button class="link" id="delete">Delete portfolio</button>
+      </div>
+      <p class="note">${d.fund_count} fund${d.fund_count === 1 ? "" : "s"}${
+        d.total_amount ? " \u00b7 " + rupee(d.total_amount) : ""}.</p>
+      <!-- TABS, NOT ONE LONG SCROLL.
+           The page carried four unrelated things stacked vertically: the
+           target and its progress, a search box, the funds table, and the
+           look-through buttons. Reading any one of them meant scrolling
+           past the others, and the buttons at the foot were below the
+           fold on every screen.
+
+           The buttons stay OUTSIDE the tabs -- "Look through these funds"
+           and "Save as PDF" apply to the whole portfolio, not to whichever
+           tab happens to be open, and hiding them behind one would be a
+           worse version of the problem. -->
+      <div class="ptabs" id="ptabs">
+        <button data-ptabgo="plan" aria-selected="true">The plan</button>
+        <button data-ptabgo="funds">The funds</button>
+        <button data-ptabgo="add">Add funds</button>
+      </div>
+
+      <section data-ptab="plan"><div id="trackbox"></div></section>
+
+      <section data-ptab="add" hidden>
+      <div class="search">
+        <input type="text" id="q" placeholder="Start typing a fund name"
+               autocomplete="off" aria-label="Search for a fund">
+        <div class="results" id="results" hidden></div>
+      </div>
+
+      <details class="imp">
+        <summary>Or paste a list / upload a CSV</summary>
+        <p class="note" style="margin:10px 0">One fund per line: the name,
+           then a comma, then the amount. The amount is optional. A header
+           row is ignored.</p>
+        <textarea id="paste" rows="5" spellcheck="false"
+          placeholder="Tata Small Cap Fund, 60000&#10;Parag Parikh Flexi Cap Fund, 125000&#10;HDFC Mid Cap Opportunities, 40000"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="go" id="impgo">Check these</button>
+          <label class="ghost" style="cursor:pointer">Choose a CSV file
+            <input type="file" id="impfile" accept=".csv,.txt,text/csv,text/plain"
+                   hidden></label>
+          <span class="sub" id="impfilename"></span>
+        </div>
+        <div id="imppreview"></div>
+      </details>
+      </section>`;
+
+  if (!funds.length) {
+    html += `<section data-ptab="funds" hidden>
+      <p class="empty">No funds yet. Add one from the Add funds tab.</p>
+      </section></div>`;
+    app().innerHTML = html;
+    wireDetail();
+    return;
+  }
+
+  /* The split across the whole portfolio, weighted by amount where amounts
+     exist and equally where they do not.
+
+     Equal weighting is stated on the page rather than assumed. Silently
+     averaging a ₹50,000 holding with a ₹5,00,000 one produces a number that
+     describes nobody's portfolio, and the reader has no way to tell. */
+  html += `<section data-ptab="funds" hidden>`;
+
+  const weighted = off ? [] : funds.filter(f => f.split);
+  if (weighted.length) {
+    const useAmounts = weighted.every(f => f.amount != null);
+    const total = useAmounts
+      ? weighted.reduce((a, f) => a + f.amount, 0) : weighted.length;
+    const mix = k => weighted.reduce((a, f) =>
+      a + (f.split[k] || 0) * (useAmounts ? f.amount : 1), 0) / (total || 1);
+    const up = mix("up_pct"), sw = mix("sideways_pct"),
+          dn = mix("down_pct"), na = mix("unscored_pct");
+    html += `<p class="lead" style="margin-top:20px">Of every ₹100 across
+        ${useAmounts ? "this portfolio" : "these funds"},
+        <span class="tup">${rupee100(up)}</span> sits in shares whose price is
+        rising, <span class="tsw">${rupee100(sw)}</span> going sideways and
+        <span class="tdn">${rupee100(dn)}</span> falling.</p>
+      <div class="tbar" style="height:22px">
+        ${seg(up, "#1d6b4f")}${seg(sw, "#b8b2a4")}
+        ${seg(dn, "#b4472f")}${seg(na, "#e3ded2")}</div>
+      <p class="note" style="margin-top:10px">${useAmounts
+        ? "Weighted by what you hold in each fund."
+        : "Each fund counted equally, because not every fund has an amount yet."}
+        These are momentum readings: they describe what has already happened
+        to a share price, not what it will do next.</p>`;
+  }
+
+  const th = (key, label, cls) =>
+    `<th class="sortable ${cls || ""} ${state.sort.key === key
+      ? "sorted " + (state.sort.asc ? "asc" : "") : ""}"
+      data-sort="${key}">${label}</th>`;
+
+  html += `<div class="periodbar">
+      <label for="period">Returns over</label>
+      <select id="period">${Object.entries(PERIODS).map(([k, v]) =>
+        `<option value="${k}"${k === state.period ? " selected" : ""}>${v}</option>`
+      ).join("")}</select>
+      <span class="sub">Placing moves with this too.</span>
+    </div>`;
+
+  // Return and margin get their OWN columns. Colouring a return by whether
+  // it beat its benchmark put two different facts in one cell -- 16.1% a
+  // year shown in red reads as a bad return when it means a good return
+  // that trailed its index.
+  html += `<div class="scroller"><table><thead><tr>
+      ${th("name", "Fund")}
+      ${th("cat", "Category")}
+      ${th("rank", "Placing")}
+      ${th("ret", "Return")}
+      ${th("vs", "vs benchmark")}
+      ${off ? "" : th("rise", "Rising / sideways / falling", "splitcell")}
+      ${th("amount", "Value today")}
+      <th></th>
+    </tr></thead><tbody>`;
+
+  /* ---- when and how the money went in -----------------------------
+     Optional, and folded away one fund at a time. Eight columns is
+     already a wide table; three more would push the returns off a
+     laptop screen to serve a field most rows will never carry.
+
+     `amount` in the column on the right is what the holding is worth
+     TODAY. These three say what went IN and when, which is the only
+     way to compute what it actually earned -- and the mode is not a
+     detail: a SIP read as a lump sum reports roughly half the true
+     return. */
+  const MONTHYEAR = {month: "short", year: "numeric"};
+  const sinceLabel = f => {
+    if (state.openSince.has(f.scheme_code)) return "hide";
+    if (!f.invested_on) return "add when you invested";
+    const d0 = new Date(f.invested_on + "T00:00:00");
+    return (f.invest_mode === "sip" ? "SIP since " : "since ")
+      + d0.toLocaleDateString("en-IN", MONTHYEAR);
+  };
+
+  const sinceRow = f => {
+    if (!state.openSince.has(f.scheme_code)) return "";
+    const c = esc(f.scheme_code);
+    const sip = f.invest_mode === "sip";
+    return `<tr class="sincerow"><td colspan="${off ? 7 : 8}">
+      <div class="sincebox">
+        <label>Invested since
+          <input type="date" data-sd="${c}" max="${TODAY_ISO}"
+                 value="${f.invested_on || ""}"></label>
+        <label>How
+          <select data-sm="${c}">
+            <option value="">—</option>
+            <option value="lumpsum"${f.invest_mode === "lumpsum"
+              ? " selected" : ""}>One lump sum</option>
+            <option value="sip"${sip ? " selected" : ""}>Monthly SIP</option>
+          </select></label>
+        <label>${sip ? "Each month" : "Amount put in"}
+          <input type="number" data-sa="${c}" min="1" step="500"
+                 value="${f.invest_amount ?? ""}"></label>
+        <button class="link" data-sclear="${c}">Clear</button>
+      </div>
+      <p class="sincenote">All three, or none. Filled in, the report shows
+         what this holding really earned; left empty, it compares the fund
+         with its index over fixed windows instead.</p>
+    </td></tr>`;
+  };
+
+  funds.forEach(f => {
+    html += `<tr>
+      <td><span style="font-weight:600">${esc(f.scheme_name)}</span>
+        <span class="sub" style="display:block">${esc(f.amc_name || "")}
+          <button class="link since" data-since="${esc(f.scheme_code)}"
+            >${sinceLabel(f)}</button></span></td>
+      <td class="sub">${esc(f.category || "\u2014")}</td>
+      <td class="num">${placing(f)}</td>
+      <td class="num">${retCell(f)}</td>
+      <td class="num">${vsCell(f)}</td>
+      ${off ? "" : `<td class="splitcell">${splitCell(f)}</td>`}
+      <td><input type="number" class="num" min="1" step="1000"
+           style="width:120px" value="${f.amount ?? ""}" placeholder="optional"
+           data-amount="${esc(f.scheme_code)}"
+           aria-label="What ${esc(f.scheme_name)} is worth today">
+        <span class="amtprint num">${f.amount != null
+          ? rupee(f.amount) : "\u2014"}</span></td>
+      <td><button class="link" data-remove="${esc(f.scheme_code)}">Remove</button></td>
+    </tr>${sinceRow(f)}`;
+  });
+
+  html += `</tbody></table></div>`;
+
+  /* Holdings are month-end and prices are today's. Where funds disclosed on
+     different dates, say so rather than printing one date that is only true
+     for some of them. */
+  const dates = d.holdings_dates || [];
+  html += `<p class="foot">Placing and return are both over
+      ${PERIODS[state.period]}. &ldquo;vs benchmark&rdquo; is the fund minus its
+      own benchmark over the same window, in percentage points.
+      ${off ? `Holdings are as each fund last disclosed them${dates.length > 1
+        ? " &mdash; disclosed between " + esc(dates[0]) + " and "
+          + esc(dates[dates.length - 1]) + ", so these are not all the same month"
+        : dates.length ? ", as at " + esc(dates[0]) : ""}.`
+      : `The split reads each fund's last disclosed holdings ${dates.length > 1
+        ? "&mdash; disclosed between " + esc(dates[0]) + " and "
+          + esc(dates[dates.length - 1]) + ", so these are not all the same month"
+        : dates.length ? "as at " + esc(dates[0]) : ""} against current
+      prices.`} The manager may have bought or sold since.</p>`;
+
+  html += `</section>`;
+
+  const missing = funds.filter(f => f.amount == null).length;
+  html += `<p style="margin:20px 0 0">
+      <button class="go" id="run" ${d.can_lookthrough ? "" : "disabled"}>
+        Look through these funds</button>
+      <button class="pdfbtn" id="pdf" style="margin-left:8px"
+              title="Save this portfolio as a PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true">
+          <path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/>
+        </svg>Save as PDF</button>
+      ${d.can_lookthrough ? "" : `<span class="sub" style="margin-left:12px">
+        <!-- NAMES the funds rather than counting them. "Add an amount
+             for 1 more fund" on a list of eleven is a search task, and
+             it is worse now that each row also has a "Each month" box
+             in its since-panel: someone who filled that in reasonably
+             assumes the amount is done. Those are different figures --
+             the monthly instalment, and what the holding is worth
+             today -- and only the second one can be exploded into
+             shares. So say which fund, by name. -->
+        ${missing === funds.length ? "Add the amount held in each fund"
+          : "Add the amount held in <b>" + funds.filter(f => f.amount == null)
+              .slice(0, 3).map(f => esc(f.scheme_name)).join("</b>, <b>")
+            + "</b>" + (missing > 3 ? ` and ${missing - 3} more` : "")}
+        to open these up into the shares underneath. That is what the
+        holding is worth <b>today</b> &mdash; not the monthly SIP
+        amount.</span>`}
+    </p>
+
+    <div class="printonly pfoot">
+      <p style="margin:0 0 6px"><b>About this report.</b> It sets out publicly
+         disclosed scheme holdings and past returns for the funds listed above.
+         It is information, not a recommendation, and nothing in it is advice
+         to buy, sell or hold any scheme.</p>
+      <p style="margin:0 0 6px">Returns are past performance and do not
+         indicate future results.${off ? "" : ` The rising / sideways / falling
+         split is a reading of how the shares each fund last disclosed have
+         been trading; it describes price behaviour that has already happened
+         and does not forecast anything.`} Holdings are as disclosed at month
+         end and the manager may have bought or sold since.</p>
+      <p style="margin:0">Mutual fund investments are subject to market risks.
+         Read all scheme related documents carefully.</p>
+    </div></div>`;
+
+  app().innerHTML = html;
+  wireDetail();
+}
+
+/* ---- tracking ---------------------------------------------------
+   Two returns are shown side by side and never merged: what the money
+   still to come has to earn, and what the money already in has earned.
+   The comparison between them IS the judgement, and showing both lets a
+   reader check it rather than take a verdict on trust.                */
+/* ---- from a plan to a tracked portfolio ---------------------------
+
+   A locked plan records an intention. Nothing has been bought, no fund
+   carries a start date, and so nothing can be valued -- the report shows
+   dashes where the money should be.
+
+   Everything needed to value it already exists. invest_value.py grows
+   each instalment from its OWN date against that fund's NAV history, so
+   10,000 put in today and worth 10,100 next month is read as 10,100, not
+   as the 10,000 that was typed. It has simply never been given a date to
+   start from.
+
+   This is that date, asked once for the whole portfolio rather than three
+   fields per fund -- which is four funds times three boxes for somebody
+   who made a single decision on a single day.
+
+   The per-fund split comes from the amounts already stored, so the
+   proportions the reader chose in the planner are the proportions that
+   get tracked. Equal split only when there is nothing to go on.
+
+   WHAT IT CANNOT DO, STATED RATHER THAN HIDDEN: a holding carries one
+   mode, so a plan that is part lump sum and part SIP records the SIP.
+   The lump stays on the goal. Saying so is better than quietly halving
+   somebody's recorded investment. */
+function startShares(funds) {
+  const amts = funds.map(f => Number(f.amount) || 0);
+  const total = amts.reduce((a, b) => a + b, 0);
+  return total > 0 ? amts.map(a => a / total)
+                   : funds.map(() => 1 / funds.length);
+}
+
+function startBox(d, g) {
+  const funds = d.funds || [];
+  if (!funds.length) return "";
+  // Already started: at least one fund knows when the money went in.
+  if (funds.some(f => f.invested_on)) return "";
+  const per = Number(g.sip_amount) > 0 ? Number(g.sip_amount)
+            : Number(g.lumpsum_amount) || 0;
+  if (!(per > 0)) return "";
+  const sip = Number(g.sip_amount) > 0;
+  const both = sip && Number(g.lumpsum_amount) > 0;
+
+  return `<div class="track" style="margin-top:14px;border-left:3px solid var(--brand)">
+    <h3 style="margin:0">Have you placed this yet?</h3>
+    <p class="note" style="margin:4px 0 0;max-width:62ch">
+      Nothing here is valued, because no fund has a start date. Tell it when
+      the money went in and it will price every fund from its own NAV
+      history from that day &mdash; ${sip
+        ? `each instalment grown from the month it was paid`
+        : `the lump grown from the day it was placed`}, so what you see is
+      what it is worth, not what you put in.</p>
+    <div class="sincebox" style="margin-top:12px">
+      <label>Started on
+        <input type="date" id="startOn" max="${TODAY_ISO}"
+               value="${TODAY_ISO}"></label>
+      <label>How
+        <input type="text" value="${sip ? "Monthly SIP" : "One lump sum"}"
+               disabled style="max-width:150px"></label>
+      <label>${sip ? "Each month" : "Amount"}
+        <input type="text" value="${rupee(per)}" disabled
+               style="max-width:130px"></label>
+      <button class="go" id="startGo">Start tracking</button>
+    </div>
+    <p class="sincenote">Split across the ${funds.length} funds in the
+      proportions you already set. You can change any fund&rsquo;s date or
+      amount afterwards from its own row.${both
+      ? ` This records the monthly SIP; the lump sum stays on the plan,
+          because a holding can carry one or the other, not both.` : ""}</p>
+  </div>`;
+}
+
+function wireStart(d, g) {
+  const go = document.getElementById("startGo");
+  if (!go) return;
+  go.addEventListener("click", async () => {
+    const on = document.getElementById("startOn").value;
+    if (!on) { alert("Pick the date the money went in."); return; }
+    const funds = d.funds || [];
+    const per = Number(g.sip_amount) > 0 ? Number(g.sip_amount)
+              : Number(g.lumpsum_amount) || 0;
+    const mode = Number(g.sip_amount) > 0 ? "sip" : "lumpsum";
+    const share = startShares(funds);
+
+    // Rounded per fund, and never to zero -- a fund allotted 400 rupees of
+    // a 25,000 SIP still gets a real instalment, because the server
+    // refuses an amount of zero and would drop the fund silently.
+    const payload = funds.map((f, i) => ({
+      scheme_code: String(f.scheme_code),
+      invested_on: on,
+      invest_mode: mode,
+      invest_amount: Math.max(1, Math.round(per * share[i])),
+    }));
+
+    go.disabled = true;
+    try {
+      await api(`/${d.portfolio_id}/funds`, {
+        method: "POST", body: JSON.stringify({funds: payload})});
+      // Re-fetch the whole portfolio rather than patch the page: the
+      // valuation, the progress figures and every fund row all change at
+      // once, and re-rendering from the server is the only version of
+      // "after" that cannot disagree with itself.
+      await openPortfolio(d.portfolio_id);
+    } catch (e) { fail(e); go.disabled = false; }
+  });
+}
+
+const pctFmt = v => v == null ? "\u2014" : (v * 100).toFixed(1) + "%";
+
+async function loadTrack(d) {
+  const box = document.getElementById("trackbox");
+  if (!box) return;
+  let t;
+  try { t = await api(`/${d.portfolio_id}/goal`); }
+  catch { box.innerHTML = ""; return; }   // tracking is an extra, not the page
+  renderTrack(d, t);
+}
+
+function renderTrack(d, t) {
+  const box = document.getElementById("trackbox");
+
+  if (!t.tracking) {
+    box.innerHTML = `<div class="track">
+      <h3>Track this portfolio</h3>
+      <p class="note" style="margin:4px 0 0">Set what you are aiming at and
+         what you are putting in, and this will tell you whether the plan is
+         holding up.</p>
+      <p style="margin:12px 0 0"><button class="go" id="tstart">Set a target</button></p>
+    </div>`;
+    document.getElementById("tstart")
+      .addEventListener("click", () => trackForm(d, null));
+    return;
+  }
+
+  const p = t.progress, g = t.goal;
+  const need = p.required_from_here, got = p.achieved_so_far;
+
+  let verdict, cls;
+  if (p.current_value == null) {
+    cls = "";
+    verdict = `We cannot value this yet, so all that can be said is what has
+      gone in. That happens when NAV history does not reach back to the date
+      you started &mdash; entering the figure from your statement fills the
+      gap.`;
+  } else if (p.gap == null) {
+    cls = "";
+    verdict = `It is early &mdash; under three months of history is noise
+      rather than a trend, so no rate is worth quoting yet.`;
+  } else if (p.gap >= 0) {
+    cls = "good";
+    verdict = `<b>On track.</b> At the ${pctFmt(got)} a year this has returned
+      so far, continuing the same SIP lands at about
+      <b>${rupee(p.projected)}</b> &mdash; ${rupee(Math.abs(p.gap))} above the
+      ${rupee(p.target_amount)} target.`;
+  } else {
+    cls = "bad";
+    verdict = `<b>Behind.</b> At the ${pctFmt(got)} a year this has returned
+      so far, continuing the same SIP lands at about
+      <b>${rupee(p.projected)}</b> &mdash; ${rupee(Math.abs(p.gap))} short of
+      ${rupee(p.target_amount)}. Closing that means more each month, more
+      time, or accepting a smaller target.`;
+  }
+
+  box.innerHTML = `<div class="track">
+    <h3>Target: ${rupee(p.target_amount)} by ${esc(p.target_date)}</h3>
+    <p class="note" style="margin:4px 0 0">${rupee(g.sip_amount)} a month${
+      g.lumpsum_amount > 0 ? ` plus ${rupee(g.lumpsum_amount)} at the start` : ""},
+      running since ${esc(g.started_on)}.
+      ${p.overdue ? "<b>The target date has passed.</b>" : ""}</p>
+
+    <div class="tgrid">
+      <div><b>${rupee(p.invested_so_far)}</b><span>put in so far</span></div>
+      <div><b>${p.current_value != null ? rupee(p.current_value) : "\u2014"}</b>
+        <span>${p.value_source === "nav"
+          ? "worth at NAV " + esc(p.valued_on)
+          : p.valued_on ? "you entered, " + esc(p.valued_on) : "\u2014"}</span></div>
+      <div><b class="${got == null ? "" : need != null && got >= need ? "up" : "down"}">${
+        pctFmt(got)}</b><span>returned so far</span></div>
+      <div><b>${pctFmt(need)}</b><span>needed from here</span></div>
+    </div>
+
+    <p class="verdictline ${cls}">${verdict}</p>
+
+    <p class="foot">${p.value_source === "nav"
+      ? (p.contributions_from === "holdings"
+        // Taken from each fund's own dates, so there is no split to
+        // apologise for -- the old sentence admitted to an assumption
+        // this path does not make, and leaving it there would have been
+        // a caveat about something that is no longer happening.
+        ? `Valued from NAV history: each instalment bought units at that
+           day&rsquo;s NAV, priced across ${p.priced_instalments} of
+           ${p.instalments_due} instalments, and valued at the latest NAV
+           we hold. Taken from ${esc(p.split_by || "")}${
+             p.funds_total && p.funds_priced < p.funds_total
+             ? ` &mdash; ${p.funds_priced} of ${p.funds_total} funds could be
+                priced, so the rest are not counted here`
+             : ""}. These are the same figures as the full analysis.`
+        : `Valued from NAV history: each instalment bought units at that
+           day&rsquo;s NAV, priced across ${p.priced_instalments} of
+           ${p.instalments_due} instalments, and valued at the latest NAV we
+           hold. The monthly amount is split across your funds by
+           ${esc(p.split_by || "")} &mdash; the plan records one SIP for the
+           portfolio, not one per fund, so that split is an assumption.
+           Enter a start date and amount against each fund and this stops
+           being a guess.`)
+      : p.value_note
+        ? `<b>Cannot value this from NAV yet &mdash; ${esc(p.value_note)}.</b>
+           Enter the figure from your statement instead.`
+        : ""}
+      ${need != null && got != null
+      ? `The plan needed ${pctFmt(p.required_at_start)} a year when you set it;
+         from today it needs ${pctFmt(need)}.` : ""}
+      Projections assume the same steady return and the same SIP, which is a
+      conditional rather than a forecast &mdash; the same average delivered in
+      a different order gives a different answer, and markets do not repeat
+      to order.</p>
+
+    <div id="allocbox"></div>
+
+    ${startBox(d, g)}
+
+    <p style="margin:14px 0 0">
+      <button class="go" id="tedit">Change the plan</button>
+      ${p.value_source === "nav" ? "" :
+        `<button class="ghost" id="tvalue" style="margin-left:8px">Enter what it is
+          worth</button>`}
+      <button class="link" id="tstop" style="margin-left:8px">Stop tracking</button>
+    </p>
+  </div>`;
+
+  suggestAllocation(g, p);
+  wireStart(d, g);
+
+  const tv = document.getElementById("tvalue");
+  if (tv) tv.addEventListener("click", () => trackForm(d, g, true));
+  document.getElementById("tedit")
+    .addEventListener("click", () => trackForm(d, g));
+  document.getElementById("tstop").addEventListener("click", async () => {
+    if (!confirm("Stop tracking this portfolio? The target and the value you entered are deleted.")) return;
+    try { await api(`/${d.portfolio_id}/goal`, {method: "DELETE"}); await loadTrack(d); }
+    catch (e) { fail(e); }
+  });
+}
+
+/* The allocation this goal implies, as the distributor sees it.
+   Reads the same endpoint the rules editor does, so what shows here and
+   what is set there cannot drift. Base, tilt and final are all shown: a
+   single number would hide whether an allocation came from the rules or
+   from a market view. */
+const BUCKET_COLOUR = {large: "#1d6b4f", mid: "#e0a33c", small: "#b4472f",
+                       debt: "#5b6b63", gold: "#c9a227",
+                       international: "#7a8b9c"};
+
+// Fund categories are coloured by ASSET CLASS, not one colour each.
+// Thirty distinct colours would be a code nobody can read; four groups
+// are legible at a glance, which is all a bar is for.
+const CLASS_COLOUR = {equity: "#1d6b4f", hybrid: "#e0a33c", debt: "#5b6b63",
+                      gold: "#c9a227", international: "#7a8b9c"};
+
+async function suggestAllocation(g, p) {
+  const box = document.getElementById("allocbox");
+  if (!box) return;
+
+  if (!g.purpose || !g.risk_band) {
+    box.innerHTML = `<p class="foot" style="margin-top:14px">Set what this
+      money is for and the risk appetite for this goal, under
+      &ldquo;Change the plan&rdquo;, and the target allocation appears
+      here.</p>`;
+    return;
+  }
+
+  const years = p.years_remaining ?? 0;
+  let a;
+  try {
+    const r = await fetch(`/api/distributor/allocation?purpose=${
+      encodeURIComponent(g.purpose)}&years=${years}&risk=${
+      encodeURIComponent(g.risk_band)}`);
+    if (!r.ok) throw new Error(String(r.status));
+    a = await r.json();
+  } catch { box.innerHTML = ""; return; }
+
+  const shown = a.buckets.filter(b => b.final_pct > 0 || b.tilt_pct);
+  const cats = (a.fund_categories || []).filter(c => c.target_pct > 0);
+
+  // THE CHOOSER FIRST, THE RULEBOOK FOLDED AWAY.
+  //
+  // This page is used with a client sitting there. What it has to answer
+  // is "which fund, and how much" -- not "here are two tables of
+  // percentages and a market-view line". The reasoning is still one
+  // click away, and still in full, because a number you cannot open up
+  // is worse than one you can; it is just no longer the first thing
+  // anybody has to read.
+  box.innerHTML = `
+    ${cats.length ? `<div class="track" style="margin-top:22px">
+      <h3>Choose the funds</h3>
+      <p class="note">The planner does this properly &mdash; the goal, what
+         it needs each month, the funds that reach it, and what the choice
+         actually amounts to. It saves straight back into this portfolio.</p>
+      <p><a class="go" style="text-decoration:none"
+         href="/plan?portfolio=${state.detail.portfolio_id}">Plan this
+         portfolio &rarr;</a></p>
+    </div>` : ""}
+    <details class="imp" style="margin-top:26px">
+    <summary>Why these &mdash; the plan behind the choices</summary>
+    <p class="note" style="margin:22px 0 6px">Target allocation &mdash;
+       ${esc(a.purpose)}, ${a.horizon_band} years, ${esc(a.risk_band)}
+       ${a.view ? `\u00b7 <b>${esc(a.view.label)}</b> in force` : ""}</p>
+
+    ${cats.length ? `
+    <p class="note" style="margin:16px 0 6px"><b>What to buy</b></p>
+    <div class="tbar" style="height:22px;margin-bottom:10px">
+      ${cats.map(c => `<i style="width:${c.target_pct}%;background:${
+          CLASS_COLOUR[c.asset_class] || "#c9c3b6"}"></i>`).join("")}
+    </div>
+    <table><thead><tr><th>Fund category</th><th>Target</th>
+      <th style="width:44%">Why</th></tr></thead><tbody>
+      ${cats.map(c => `<tr>
+        <td>${esc(c.label)}
+          ${c.available === 0
+            ? `<span class="sub down">no funds match this category</span>`
+            : `<span class="sub">${c.available} to choose from</span>`}</td>
+        <td class="num">${c.target_pct}%</td>
+        <td class="sub">${esc(c.rationale || "")}</td></tr>`).join("")}
+    </tbody></table>
+    ${a.fund_complete ? "" : `<p class="foot"><b>These add to ${
+       a.fund_total_pct}%, not 100.</b> Fix the profile under Allocation
+       rules before using it.</p>`}
+    ${a.view ? `<p class="foot">The market view moves the exposure below,
+       not these categories.</p>` : ""}
+
+    <p class="note" style="margin:26px 0 6px"><b>Where that should end
+       up</b> &mdash; information, not a second instruction</p>`
+    : ""}
+
+    <div class="tbar" style="height:22px;margin-bottom:10px">
+      ${shown.map(b => b.final_pct > 0
+        ? `<i style="width:${b.final_pct}%;background:${
+            BUCKET_COLOUR[b.bucket] || "#c9c3b6"}"></i>` : "").join("")}
+    </div>
+
+    <table><thead><tr><th>Bucket</th><th>Target</th>
+      ${a.view ? "<th>View</th><th>Final</th>" : ""}
+      <th style="width:44%">Why</th></tr></thead><tbody>
+      ${shown.map(b => `<tr>
+        <td style="text-transform:capitalize">${esc(b.bucket)}</td>
+        <td class="num">${b.target_pct}%</td>
+        ${a.view ? `<td class="num ${b.tilt_pct > 0 ? "up"
+            : b.tilt_pct < 0 ? "down" : "muted"}">${
+            b.tilt_pct ? (b.tilt_pct > 0 ? "+" : "") + b.tilt_pct : "\u2014"}</td>
+          <td class="num"><b>${b.final_pct}%</b></td>` : ""}
+        <td class="sub">${esc(b.rationale || "")}</td></tr>`).join("")}
+    </tbody></table>
+
+    ${a.blocked.length ? `<p class="foot"><b>Held back by your own limits:</b>
+       ${a.blocked.map(x => `${esc(x.bucket)} wanted ${x.wanted}% but the
+       ${x.limit} allows ${x.allowed}%`).join("; ")}.</p>` : ""}
+
+    <p class="foot">Percentages are of the whole pot, measured through to
+       the shares underneath &mdash; not a list of funds to buy. A 40% mid
+       cap target can be met by one mid cap fund or by two funds holding mid
+       caps between them.
+       ${a.all_seeded ? "<b>These are still the shipped defaults; nobody has "
+         + "reviewed them yet.</b>" : ""}</p>
+    </details>`;
+
+}
+
+/* ---- which funds, for each prescribed category -------------------
+   The step where typing a fund name by hand meant FinChaya added nothing.
+
+   TWO CALLS, NOT TWENTY. /suggest gives the ranked codes per category;
+   /fund-cards assembles returns, benchmark excess, rank and the rising
+   split for every code at once. Asking per fund would be a round trip
+   each, on a page that already waited for the allocation.
+
+   The list is an OPENING, not an answer: it is ordered on one stated
+   past measure, every column that could contradict it is shown beside
+   it, and the count says how much of the category it is a slice of. */
+const SUG_PER_CATEGORY = 5;
+
+/* ---- one step at a time -----------------------------------------
+   The earlier version put the whole rulebook on this page: two tables
+   of percentages, a market-view line, a blocked-by-your-own-limits
+   note, then five funds per category all at once. It was accurate and
+   nobody could use it.
+
+   This shows ONE category, with the money already worked out, and asks
+   one question: which of these. Everything else -- the other categories,
+   the percentages, the exposure the funds add up to -- is either a
+   one-line summary or not on this page at all. The rules belong to
+   whoever writes them, not to whoever is sitting with a client. */
+function trackForm(d, g, valueOnly) {
+  const box = document.getElementById("trackbox");
+  const today = new Date().toISOString().slice(0, 10);
+  const v = (x, fb) => (x == null || x === "") ? fb : x;
+
+  box.innerHTML = `<div class="track">
+    <h3>${valueOnly ? "What is it worth today?" : g ? "Change the plan" : "Set a target"}</h3>
+    ${valueOnly ? `<p class="note" style="margin:4px 0 0">Take the figure from
+       your statement or your AMC app. The date matters &mdash; a value with
+       no date quietly ages into a wrong one.</p>` : ""}
+    <div class="tform">
+      ${valueOnly ? "" : `
+      <div><label>Target amount</label>${amtBox("g_target", g && g.target_amount, "50")}</div>
+      <div><label>Reach it by</label>
+        <div class="amtrow">
+          <input type="number" id="g_years" min="0" max="720" step="1"
+                 placeholder="15" inputmode="numeric">
+          <select id="g_yearsUnit" aria-label="Years or months">
+            <option value="years" selected>years</option>
+            <option value="months">months</option>
+          </select>
+        </div>
+        <div style="margin-top:8px">
+          <input type="date" id="g_date" value="${v(g && g.target_date, "")}">
+        </div>
+        <span class="sub amtecho" id="g_yearsEcho"></span></div>
+      <div><label>Monthly SIP</label>${amtBox("g_sip", g && g.sip_amount, "0")}</div>
+      <div><label>Lump sum already in</label>${amtBox("g_lump", g && g.lumpsum_amount, "0")}</div>
+      <div><label>Investing since</label>
+        <input type="date" id="g_start" value="${v(g && g.started_on, today)}"></div>
+      <div><label>What the money is for</label>
+        <select id="g_purpose">
+          <option value="">Not set</option>
+          <option value="appreciation"${g && g.purpose === "appreciation" ? " selected" : ""}>Capital appreciation</option>
+          <option value="preservation"${g && g.purpose === "preservation" ? " selected" : ""}>Capital preservation</option>
+          <option value="income"${g && g.purpose === "income" ? " selected" : ""}>Regular income</option>
+        </select></div>
+      <div><label>Risk appetite for THIS goal</label>
+        <select id="g_risk">
+          <option value="">Not set</option>
+          <option value="conservative"${g && g.risk_band === "conservative" ? " selected" : ""}>Conservative</option>
+          <option value="moderate"${g && g.risk_band === "moderate" ? " selected" : ""}>Moderate</option>
+          <option value="aggressive"${g && g.risk_band === "aggressive" ? " selected" : ""}>Aggressive</option>
+        </select>
+        <span class="sub">Set per goal, not per person &mdash; the same client
+          can be cautious about one and bold about another.</span></div>`}
+      ${valueOnly || (g && g.current_value != null) ? `
+      <div><label>Worth today (₹)</label>
+        <input type="number" id="g_value" min="0" step="1000"
+               value="${v(g && g.current_value, "")}"></div>
+      <div><label>Valued on</label>
+        <input type="date" id="g_valdate" value="${v(g && g.valued_on, today)}"></div>`
+      : ""}
+    </div>
+    ${valueOnly ? "" : `<p class="foot" style="margin-top:10px">What it is
+       worth is worked out from NAV history &mdash; each instalment at that
+       day&rsquo;s NAV &mdash; so there is nothing to type. A box appears here
+       only if we cannot price your funds back to the start date.</p>`}
+    <p style="margin:14px 0 0">
+      <button class="go" id="gsave">Save</button>
+      <button class="ghost" id="gcancel" style="margin-left:8px">Cancel</button>
+    </p>
+    <div id="gerr"></div>
+  </div>`;
+
+  document.getElementById("gcancel")
+    .addEventListener("click", () => loadTrack(d));
+
+  wireAmounts(["g_target", "g_sip", "g_lump"]);
+  wireYears(g && g.target_date);
+  wireRiskDefault(g && g.risk_band);
+
+  document.getElementById("gsave").addEventListener("click", async () => {
+    const n = id => {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      const x = Number(el.value);
+      return el.value === "" ? null : (Number.isFinite(x) ? x : null);
+    };
+    // Every amount goes through here, so none of them can forget the
+    // multiplier sitting on its own <select>. A goal saved in "lakh" and
+    // read back in rupees is a hundred-fold error that looks plausible.
+    const amt = id => {
+      const raw = n(id);
+      return raw == null ? null : Math.round(raw * unitOf(id));
+    };
+    const s = id => {
+      const el = document.getElementById(id);
+      return el && el.value ? el.value : null;
+    };
+
+    const value = n("g_value");
+    const body = {
+      target_amount: valueOnly ? g.target_amount : amt("g_target"),
+      target_date:   valueOnly ? g.target_date   : s("g_date"),
+      sip_amount:    valueOnly ? g.sip_amount    : (amt("g_sip") || 0),
+      lumpsum_amount: valueOnly ? g.lumpsum_amount : (amt("g_lump") || 0),
+      started_on:    valueOnly ? g.started_on    : s("g_start"),
+      purpose:       valueOnly ? g.purpose       : s("g_purpose"),
+      risk_band:     valueOnly ? g.risk_band     : s("g_risk"),
+      current_value: value,
+      // The server rejects a value without a date, so never send one.
+      valued_on:     value == null ? null : s("g_valdate"),
+    };
+    if (!body.target_amount || !body.target_date) {
+      document.getElementById("gerr").innerHTML =
+        `<div class="err">Enter a target amount and a date.</div>`;
+      return;
+    }
+    try {
+      await api(`/${d.portfolio_id}/goal`,
+                {method: "PUT", body: JSON.stringify(body)});
+      await loadTrack(d);
+    } catch (e) {
+      document.getElementById("gerr").innerHTML =
+        `<div class="err">${esc(e.message || "Could not save.")}</div>`;
+    }
+  });
+}
+
+/* ---- CSV / paste import ----------------------------------------
+   Two steps on purpose. "HDFC Mid Cap" can match several schemes, and
+   quietly picking one puts a fund in a portfolio nobody chose -- which
+   might not be noticed until a report reaches a client. So: parse here,
+   match on the server, show what it found, let the person fix it, and
+   only then write.                                                     */
+
+/* One line -> {name, amount}.
+   Handles what people actually paste: quoted fields with commas inside,
+   tab-separated from a spreadsheet, "Rs." and rupee signs, thousands
+   separators, Indian lakh formatting, and a trailing % or unit column
+   that is simply ignored. */
+function parseImportLine(line) {
+  // Strip thousands separators BEFORE splitting.
+  //
+  // "ICICI Pru Value Fund, Rs. 1,25,000" otherwise splits into four cells
+  // and the first numeric one is "1" -- a 1,25,000 holding imported as
+  // one rupee, with nothing on screen looking wrong. Only commas sitting
+  // BETWEEN two digits are removed, so "Fund, 60000" is untouched.
+  line = line.replace(/(\d),(?=\d)/g, "$1");
+
+  // Split on commas or tabs, respecting double quotes.
+  const cells = [];
+  let cur = "", quoted = false;
+  for (const ch of line) {
+    if (ch === '"') { quoted = !quoted; continue; }
+    if (!quoted && (ch === "," || ch === "\t")) { cells.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  cells.push(cur);
+
+  const name = (cells[0] || "").trim();
+  if (!name) return null;
+
+  // The amount is the first remaining cell that parses as a number.
+  // Taking cells[1] blindly breaks on "Fund, Equity, 50000".
+  let amount = null;
+  for (let i = 1; i < cells.length; i++) {
+    const raw = cells[i].replace(/[₹,\s]/g, "").replace(/^rs\.?/i, "");
+    if (!raw || /%$/.test(cells[i].trim())) continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) { amount = n; break; }
+  }
+  return {name, amount};
+}
+
+function parseImportText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rows = [];
+  lines.forEach((line, i) => {
+    const row = parseImportLine(line);
+    if (!row) return;
+    // A first line whose name cell looks like a header and which carries
+    // no amount is a header, not a fund.
+    if (i === 0 && row.amount === null &&
+        /^(fund|scheme|name|fund ?name|scheme ?name)$/i.test(row.name)) return;
+    rows.push(row);
+  });
+  return rows;
+}
+
+function wireImport(d) {
+  const box = document.getElementById("imppreview");
+  const paste = document.getElementById("paste");
+  const file = document.getElementById("impfile");
+  const go = document.getElementById("impgo");
+  if (!box || !paste || !go) return;
+
+  file.addEventListener("change", () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    document.getElementById("impfilename").textContent = f.name;
+    const reader = new FileReader();
+    // Read into the SAME textarea rather than importing straight from the
+    // file: the person sees exactly what was read before anything is
+    // matched, and can correct a stray column by hand.
+    reader.onload = () => { paste.value = reader.result; };
+    reader.onerror = () => { box.innerHTML =
+      `<div class="err">Could not read that file.</div>`; };
+    reader.readAsText(f);
+  });
+
+  go.addEventListener("click", async () => {
+    const rows = parseImportText(paste.value || "");
+    if (!rows.length) {
+      box.innerHTML = `<div class="err">No rows found. One fund per line,
+        name first.</div>`;
+      return;
+    }
+    box.innerHTML = `<p class="empty">Matching ${rows.length}
+      row${rows.length === 1 ? "" : "s"}&hellip;</p>`;
+    let out;
+    try {
+      out = await api(`/${d.portfolio_id}/import/preview`,
+        {method: "POST", body: JSON.stringify({rows})});
+    } catch (e) { box.innerHTML = ""; return fail(e); }
+    renderPreview(d, out, box);
+  });
+}
+
+function renderPreview(d, out, box) {
+  const rows = [...out.matched, ...out.ambiguous];
+  let html = `<div class="prev">`;
+
+  if (rows.length) {
+    html += `<h3>Found ${rows.length} fund${rows.length === 1 ? "" : "s"}</h3>
+      <p class="note">Check each match before adding. Rows with a choice
+         matched more than one fund.</p>
+      <table><thead><tr>
+        <th>From your file</th><th>Matched to</th><th>Amount</th><th></th>
+      </tr></thead><tbody>`;
+    rows.forEach((r, i) => {
+      const alt = r.alternatives;
+      html += `<tr data-imp="${i}">
+        <td>${esc(r.name)}</td>
+        <td>${alt
+          ? `<select data-code>${alt.map(a =>
+              `<option value="${esc(a.scheme_code)}"${
+                a.scheme_code === r.scheme_code ? " selected" : ""}>${
+                esc(a.scheme_name)}</option>`).join("")}</select>`
+          : `${esc(r.scheme_name)}<span class="sub" style="display:block">${
+              esc(r.amc_name || "")}</span>
+             <input type="hidden" data-code value="${esc(r.scheme_code)}">`}</td>
+        <td><input type="number" data-amt min="1" step="1000"
+             value="${r.amount ?? ""}" placeholder="optional"></td>
+        <td class="sub">${r.already_in_portfolio ? "already in this portfolio"
+            : r.duplicate_in_file ? "repeated in your file" : ""}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  // Failures are shown, never dropped quietly. An import that silently
+  // loses three of sixteen funds produces a confident report about the
+  // wrong portfolio.
+  if (out.unmatched.length) {
+    html += `<div class="badbox"><b>${out.unmatched.length}
+      row${out.unmatched.length === 1 ? "" : "s"} could not be matched.</b>
+      Add ${out.unmatched.length === 1 ? "it" : "them"} with the search box
+      above, or correct the name and check again.
+      <ul style="margin:8px 0 0;padding-left:18px">${out.unmatched.map(u =>
+        `<li>${esc(u.name)} <span class="sub">&mdash; ${esc(u.why)}</span></li>`
+      ).join("")}</ul></div>`;
+  }
+
+  if (!rows.length) {
+    html += `</div>`;
+    box.innerHTML = html;
+    return;
+  }
+
+  if (rows.length > out.room) {
+    html += `<div class="badbox">This portfolio has room for
+      <b>${out.room}</b> more fund${out.room === 1 ? "" : "s"}. Remove some
+      first, or import fewer.</div>`;
+  }
+
+  html += `<p style="margin:14px 0 0">
+      <button class="go" id="impsave">Add ${rows.length} fund${
+        rows.length === 1 ? "" : "s"} to this portfolio</button>
+      <button class="ghost" id="impcancel" style="margin-left:8px">Cancel</button>
+    </p></div>`;
+  box.innerHTML = html;
+
+  document.getElementById("impcancel").addEventListener("click",
+    () => { box.innerHTML = ""; });
+
+  document.getElementById("impsave").addEventListener("click", async () => {
+    const funds = [...box.querySelectorAll("tr[data-imp]")].map(tr => {
+      const code = tr.querySelector("[data-code]").value;
+      const amt = Number(tr.querySelector("[data-amt]").value);
+      return {scheme_code: code,
+              amount: Number.isFinite(amt) && amt > 0 ? amt : null};
+    });
+    try {
+      // The ordinary add endpoint does the writing -- same validation,
+      // same cap, same COALESCE on amounts as adding one by hand.
+      const res = await api(`/${d.portfolio_id}/funds`,
+        {method: "POST", body: JSON.stringify({funds})});
+      if (res.skipped && res.skipped.length) {
+        alert(res.skipped.map(s => `${s.scheme_code}: ${s.why}`).join("\n"));
+      }
+      await openPortfolio(d.portfolio_id);
+    } catch (e) { fail(e); }
+  });
+}
+
+/* ---- cell renderers -------------------------------------------- */
+function seg(p, colour) {
+  return p > 0 ? `<i style="width:${p}%;background:${colour}"></i>` : "";
+}
+
+function splitCell(f) {
+  const t = f.split;
+  if (!t) return `<span class="sub">no portfolio loaded</span>`;
+  if (!t.up && !t.down && !t.sideways)
+    return `<span class="sub">no current readings</span>`;
+  return `<div class="tbar">
+      ${seg(t.up_pct, "#1d6b4f")}${seg(t.sideways_pct, "#b8b2a4")}
+      ${seg(t.down_pct, "#b4472f")}${seg(t.unscored_pct, "#e3ded2")}</div>
+    <div class="splitnums">
+      <span class="tup">${rupee100(t.up_pct)}</span>
+      <span class="tsw">${rupee100(t.sideways_pct)}</span>
+      <span class="tdn">${rupee100(t.down_pct)}</span></div>`;
+}
+
+/* rank_meaningful false -- Sectoral/Thematic, ETFs, index funds -- shows the
+   size of the group and withholds the placing. "of 210" with nothing before
+   it reads as a number that failed to load. */
+function placing(f) {
+  const r = row(f);
+  if (!r || !r.category_count) return `<span class="muted">\u2014</span>`;
+  if (!r.rank_meaningful || !r.category_rank)
+    return `<span class="sub">${r.category_count} funds</span>`;
+  return `${r.category_rank} <span class="sub">of ${r.category_count}</span>`;
+}
+
+/* The fund's own CAGR, coloured by whether it beat its benchmark. Colour is
+   never alone -- the margin is in the tooltip and the number is right there. */
+/* The fund's own return. NOT coloured: a return is neither good nor bad on
+   its own, and the comparison that would justify a colour lives in the
+   next column where it can be read. */
+function retCell(f) {
+  const r = row(f);
+  if (!r || r.fund_cagr == null)
+    return `<span class="muted" title="No ${PERIODS[state.period]} record">\u2014</span>`;
+  const label = state.period === "1Y" ? "over the year" : "a year";
+  return `${r.fund_cagr.toFixed(1)}% <span class="sub">${label}</span>`;
+}
+
+/* The margin over the benchmark, which IS directional, so this is the cell
+   that carries colour -- and the sign is printed, so the colour is never
+   the only thing saying which way it went. */
+function vsCell(f) {
+  const r = row(f);
+  if (!r || r.excess_cagr == null)
+    return `<span class="muted" title="No benchmark mapped">\u2014</span>`;
+  const ex = r.excess_cagr;
+  return `<span class="${ex > 0 ? "up" : "down"}"
+    title="${esc(r.benchmark_name || "its benchmark")} over ${PERIODS[state.period]}">${
+    ex > 0 ? "+" : ""}${ex.toFixed(1)}</span>`;
+}
+
+/* ---- wiring ---------------------------------------------------- */
+/* One place decides which pane is open.
+   The attribute is toggled, never a class, and the CSS below states
+   `[data-ptab][hidden]{display:none}` on its own -- any class rule
+   carrying `display` would beat the browser's default for [hidden] and
+   the pane would stay visible with nothing saying why. That trap has
+   cost this codebase four separate afternoons. */
+function showPTab(name) {
+  document.querySelectorAll("[data-ptab]").forEach(p =>
+    p.hidden = p.dataset.ptab !== name);
+  document.querySelectorAll("[data-ptabgo]").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.ptabgo === name)));
+  state.ptab = name;
+}
+
+function wireDetail() {
+  const d = state.detail;
+
+  document.querySelectorAll("[data-ptabgo]").forEach(b =>
+    b.addEventListener("click", () => showPTab(b.dataset.ptabgo)));
+  // Survives a redraw: adding a fund re-renders the whole detail, and
+  // being thrown back to the first tab each time would make adding three
+  // funds three trips.
+  showPTab(state.ptab && document.querySelector(`[data-ptab="${state.ptab}"]`)
+    ? state.ptab : (d.funds && d.funds.length ? "plan" : "add"));
+
+  document.getElementById("back").addEventListener("click",
+    () => location.hash = "#/");
+
+  document.getElementById("delete").addEventListener("click", async () => {
+    if (!confirm(`Delete "${d.name}"? The funds in it go too.`)) return;
+    try {
+      await api("/" + d.portfolio_id, {method: "DELETE"});
+      location.hash = "#/";
+      showList();
+    } catch (e) { fail(e); }
+  });
+
+  /* picker -- same endpoint and same 180ms debounce as portfolio.html */
+  const q = document.getElementById("q");
+  const results = document.getElementById("results");
+  let timer;
+  q.addEventListener("input", () => {
+    clearTimeout(timer);
+    const term = q.value.trim();
+    if (term.length < 2) { results.hidden = true; return; }
+    timer = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/portfolio/search?q=" + encodeURIComponent(term));
+        if (!r.ok) {
+          // Say what happened. A hidden dropdown looks exactly like "no
+          // matches", which sends someone hunting for a better search term
+          // when the search itself is down.
+          results.innerHTML = `<div class="muted">Search returned an error
+            (${r.status}).</div>`;
+          results.hidden = false; return;
+        }
+        const rows = await r.json();
+        results.innerHTML = rows.length
+          ? rows.map(f => `<div data-code="${esc(f.scheme_code)}">
+              ${esc(f.scheme_name)}<small>${esc(f.amc_name || "")}${
+              f.category ? " \u00b7 " + esc(f.category) : ""}</small></div>`).join("")
+          : '<div class="muted">No fund by that name has a portfolio we hold yet.</div>';
+        results.hidden = false;
+      } catch {
+        results.innerHTML = '<div class="muted">Could not reach the search.</div>';
+        results.hidden = false;
+      }
+    }, 180);
+  });
+
+  results.addEventListener("click", async e => {
+    const row = e.target.closest("div[data-code]");
+    if (!row) return;
+    q.value = ""; results.hidden = true;
+    try {
+      const out = await api(`/${d.portfolio_id}/funds`, {method: "POST",
+        body: JSON.stringify({funds: [{scheme_code: row.dataset.code}]})});
+      if (out.skipped && out.skipped.length) {
+        // Rejections are reported, not swallowed. A fund that silently does
+        // not appear looks like a click that missed.
+        alert(out.skipped.map(s => `${s.scheme_code}: ${s.why}`).join("\n"));
+      }
+      await openPortfolio(d.portfolio_id);
+      document.getElementById("q").focus();
+    } catch (err) { fail(err); }
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".search")) results.hidden = true;
+  });
+
+  const period = document.getElementById("period");
+  if (period) period.addEventListener("change", () => {
+    state.period = period.value;
+    // Re-render from data already in hand. Every period came down in the
+    // first response, so switching costs nothing and never shows a fund
+    // whose numbers are from one window and placing from another.
+    renderDetail();
+  });
+
+  const pdf = document.getElementById("pdf");
+  if (pdf) pdf.addEventListener("click", () => window.print());
+
+  document.querySelectorAll("th[data-sort]").forEach(h =>
+    h.addEventListener("click", () => {
+      const key = h.dataset.sort;
+      state.sort = state.sort.key === key
+        ? {key, asc: !state.sort.asc}
+        // Text ascending, numbers descending: A-Z is the useful first look
+        // at a name, and biggest-first is the useful one for a return.
+        : {key, asc: key === "name" || key === "cat"};
+      renderDetail();
+    }));
+
+  document.querySelectorAll("[data-remove]").forEach(b =>
+    b.addEventListener("click", async () => {
+      try {
+        await api(`/${d.portfolio_id}/funds/${encodeURIComponent(b.dataset.remove)}`,
+          {method: "DELETE"});
+        await openPortfolio(d.portfolio_id);
+      } catch (e) { fail(e); }
+    }));
+
+  /* Amounts save on blur, not on every keystroke: a four-digit amount typed
+     into a live field is four writes and three of them are wrong. */
+  document.querySelectorAll("[data-amount]").forEach(input => {
+    const original = input.value;
+    input.addEventListener("blur", async () => {
+      if (input.value === original) return;
+      const amount = Number(input.value);
+      if (!amount || amount <= 0) { input.value = original; return; }
+      try {
+        await api(`/${d.portfolio_id}/funds`, {method: "POST",
+          body: JSON.stringify({funds: [
+            {scheme_code: input.dataset.amount, amount}]})});
+        await openPortfolio(d.portfolio_id);
+      } catch (e) { fail(e); }
+    });
+    input.addEventListener("keydown", e => { if (e.key === "Enter") input.blur(); });
+  });
+
+  /* ---- the "since" panel -------------------------------------------
+     Opening one is local -- no request, no reload, so sorting or
+     switching period does not lose it. Saving goes through the same
+     /funds endpoint as the amount, with invest_given set so the server
+     knows these three fields are being SPOKEN ABOUT rather than simply
+     absent. That distinction is what lets Clear actually clear. */
+  document.querySelectorAll("[data-since]").forEach(b =>
+    b.addEventListener("click", () => {
+      const code = b.dataset.since;
+      if (state.openSince.has(code)) state.openSince.delete(code);
+      else state.openSince.add(code);
+      renderDetail();
+    }));
+
+  const sinceSave = async (code, on, mode, amt) => {
+    // Nothing is sent until the set is complete or completely empty.
+    // A half-filled panel is somebody mid-typing, not an instruction,
+    // and the server would reject it anyway.
+    const empty = !on && !mode && !amt;
+    if (!empty && !(on && mode && amt > 0)) return;
+    try {
+      await api(`/${d.portfolio_id}/funds`, {method: "POST",
+        body: JSON.stringify({funds: [{
+          scheme_code: code, invest_given: true,
+          invested_on: on || null, invest_mode: mode || null,
+          invest_amount: amt || null}]})});
+      const keep = new Set(state.openSince);
+      await openPortfolio(d.portfolio_id);
+      state.openSince = keep;
+      renderDetail();
+    } catch (e) { fail(e); }
+  };
+
+  const panelValues = code => {
+    const q = s => document.querySelector(`[${s}="${CSS.escape(code)}"]`);
+    return [q("data-sd") ? q("data-sd").value : "",
+            q("data-sm") ? q("data-sm").value : "",
+            q("data-sa") ? Number(q("data-sa").value) || 0 : 0];
+  };
+
+  document.querySelectorAll("[data-sd],[data-sa]").forEach(el =>
+    el.addEventListener("change", () => {
+      const code = el.dataset.sd || el.dataset.sa;
+      sinceSave(code, ...panelValues(code));
+    }));
+
+  // The mode redraws as well as saves: the third box reads "Each month"
+  // for a SIP and "Amount put in" for a lump sum, and the same box
+  // meaning two things has to say which.
+  document.querySelectorAll("[data-sm]").forEach(el =>
+    el.addEventListener("change", () => {
+      const code = el.dataset.sm;
+      const [on, , amt] = panelValues(code);
+      if (on && el.value && amt > 0) return sinceSave(code, on, el.value, amt);
+
+      // Not saveable yet, but the panel still has to redraw, because the
+      // third box reads "Each month" for a SIP and "Amount put in" for a
+      // lump sum. renderDetail() rebuilds it from d.funds -- so anything
+      // already typed must be copied there FIRST or the redraw throws it
+      // away. Losing a date the moment you pick the mode is the exact
+      // order most people fill this in.
+      const f = (d.funds || []).find(x => x.scheme_code === code);
+      if (f) {
+        f.invest_mode = el.value || null;
+        f.invested_on = on || null;
+        f.invest_amount = amt || null;
+      }
+      renderDetail();
+    }));
+
+  document.querySelectorAll("[data-sclear]").forEach(b =>
+    b.addEventListener("click", () => sinceSave(b.dataset.sclear, "", "", 0)));
+
+  wireImport(d);
+  loadTrack(d);
+
+  const run = document.getElementById("run");
+  if (run && !run.disabled) {
+    // Hand off to the existing look-through page rather than re-render the
+    // whole report here. That render() is three hundred lines and two copies
+    // of it would drift apart within a session.
+    run.addEventListener("click", () => {
+      location.href = "/portfolio#saved=" + d.portfolio_id;
+    });
+  }
+}
+</script>
+</body>
+</html>

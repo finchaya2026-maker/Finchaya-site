@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allocation rules — FinChaya</title>
+<style>
+  :root{
+    --ground:#efece3; --card:#ffffff;
+    --ink:#123027; --ink-soft:#5b6b63; --rule:#ddd8cc;
+    --bench:#e0a33c; --up:#1d6b4f; --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:16px/1.55 var(--font)}
+  .wrap{max-width:1000px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+    text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:64ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    padding:26px 28px;margin-bottom:22px}
+  h2{font-size:21px;font-weight:600;margin:0 0 4px}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 18px}
+  .foot{color:var(--ink-soft);font-size:13px;margin:14px 0 0;line-height:1.55}
+  .sub{font-size:12.5px;color:var(--ink-soft)}
+  .up{color:var(--up)} .down{color:var(--down)}
+
+  label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;margin-bottom:5px}
+  input,select,textarea,button{font:inherit}
+  input[type=number],select,textarea{width:100%;padding:9px 10px;
+    border:1px solid var(--rule);border-radius:3px;background:#fdfcfa;
+    color:var(--ink)}
+  textarea{resize:vertical;font-size:14px;line-height:1.5}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--bench);
+    outline-offset:1px}
+  .pick{display:grid;gap:14px;grid-template-columns:repeat(3,1fr)}
+  @media (max-width:700px){.pick{grid-template-columns:1fr}}
+
+  .go{background:var(--ink);color:#f6f3ea;border:none;padding:11px 22px;
+    border-radius:3px;cursor:pointer}
+  .go:disabled{opacity:.45;cursor:default}
+  .ghost{background:none;border:1px solid var(--rule);color:var(--ink);
+    padding:10px 18px;border-radius:3px;cursor:pointer}
+  .ghost:hover{border-color:var(--bench)}
+
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th{font-size:11.5px;letter-spacing:.05em;color:var(--ink-soft);font-weight:600;
+    text-align:left;padding:0 8px 8px;border-bottom:1px solid var(--rule)}
+  td{padding:12px 8px;border-bottom:1px solid #f0ece2;vertical-align:top}
+  td:first-child,th:first-child{padding-left:0}
+  .bk{font-weight:600;font-size:16px;text-transform:capitalize}
+  .num{width:82px}
+  .edited{color:var(--bench);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;display:block;margin-top:3px}
+
+  /* The running total. This is the number that decides whether the profile
+     is usable, so it is the loudest thing on the page. */
+  .total{display:flex;align-items:baseline;gap:12px;margin-top:18px;
+    padding:14px 16px;border-radius:3px;background:#fbfaf6;
+    border:1px solid var(--rule)}
+  .total b{font-size:30px;font-variant-numeric:tabular-nums;line-height:1}
+  .total.bad{border-color:#e6c8bd;background:#fbf0ec}
+  .total.bad b{color:var(--down)}
+  .total.ok b{color:var(--up)}
+
+  /* Equity across all four horizons, so the step between bands is visible
+     while editing rather than discovered by a client. */
+  .glide{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:8px}
+  .gcell{border:1px solid var(--rule);border-radius:3px;padding:12px 14px;
+    background:#fbfaf6;text-align:center}
+  .gcell b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+  .gcell span{display:block;font-size:11.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--ink-soft);margin-top:3px}
+  .gcell.here{border-color:var(--bench);background:#fdf7ea}
+
+  .views{margin-top:6px}
+  .vrow{display:flex;justify-content:space-between;gap:14px;align-items:center;
+    padding:13px 16px;border:1px solid var(--rule);border-radius:3px;
+    background:#fbfaf6;margin-bottom:9px}
+  .vrow.on{border-color:var(--up);background:#f4f8f4}
+  .vrow b{display:block;font-size:16px}
+  .tag{display:inline-block;font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;padding:2px 8px;border-radius:2px;
+    background:#f0ece2;color:var(--ink-soft);margin-left:8px}
+  .tag.on{background:var(--up);color:#f2efe6}
+  .tag.due{background:#fdf0d6;color:#8a6a1e}
+  .tiltgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;
+    margin-top:12px}
+  @media (max-width:700px){.tiltgrid{grid-template-columns:repeat(3,1fr)}}
+  .tiltgrid label{text-align:center}
+  .tiltgrid input{text-align:center}
+  .netline{margin-top:12px;font-size:15px}
+  .netline b{font-variant-numeric:tabular-nums}
+  .blocked{background:#fdf7ea;border:1px solid #e8d6ab;padding:10px 13px;
+    border-radius:3px;margin-top:12px;font-size:14px}
+
+  .err{background:#fbf0ec;border:1px solid #e6c8bd;color:var(--down);
+    padding:12px 14px;border-radius:3px;margin-bottom:16px}
+  .okline{color:var(--up);font-size:14px;margin:12px 0 0}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Distributor</p>
+  <h1>Allocation rules</h1>
+  <p class="lede">For each combination of purpose, horizon and risk appetite:
+     where the money should end up, measured through to the shares underneath
+     rather than by what a fund is called. These are your rules &mdash; the
+     shipped numbers are a starting point to be argued with.</p>
+  <div id="app"><p class="sub">Loading&hellip;</p></div>
+</div>
+
+<script>
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const app = () => document.getElementById("app");
+
+const PURPOSES = [
+  ["appreciation", "Capital appreciation"],
+  ["preservation", "Capital preservation"],
+  ["income", "Regular income"],
+];
+const HORIZONS = ["<3", "3-7", "7-15", "15+"];
+const RISKS = ["conservative", "moderate", "aggressive"];
+const EQUITY = ["large", "mid", "small"];
+
+let sel = {purpose: "appreciation", horizon: "15+", risk: "moderate"};
+let rows = [];
+
+async function api(path, opts) {
+  const r = await fetch("/api/distributor" + path, Object.assign(
+    {headers: {"Content-Type": "application/json"}}, opts || {}));
+  if (r.status === 401) throw {signin: true};
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch {}
+  if (!r.ok) {
+    let d = body && body.detail;
+    if (Array.isArray(d)) d = d.map(x => x.msg || "").join("; ");
+    throw {message: d ? `${d} (${r.status})` : `The server returned ${r.status}.`};
+  }
+  return body;
+}
+
+function fail(e) {
+  if (e && e.signin) {
+    app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
+      <p class="note">These rules are edited from your account.</p>
+      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
+         and sign in</a></p></div>`;
+    return;
+  }
+  const box = document.createElement("div");
+  box.className = "err";
+  box.textContent = (e && e.message) || "Could not reach the server.";
+  app().prepend(box);
+}
+
+start();
+
+async function start() {
+  // Ask first. Showing the form to someone whose save will be refused
+  // wastes their time and teaches them the controls are decorative.
+  let me;
+  try { me = await api("/me"); } catch (e) { return fail(e); }
+  if (!me.admin) {
+    app().innerHTML = `<div class="panel">
+      <h2>You cannot edit these</h2>
+      <p class="note">The allocation rules apply to everyone using
+         FinChaya, so only an administrator can change them.</p>
+      <p class="foot">If that should be you, it is granted from the server
+         rather than from any page here &mdash; a screen that hands out
+         privileges is a screen that can be tricked into handing them
+         out.</p></div>`;
+    return;
+  }
+  load();
+}
+
+async function load() {
+  try {
+    rows = await api(`/rules?purpose=${sel.purpose}` +
+      `&horizon_band=${encodeURIComponent(sel.horizon)}&risk_band=${sel.risk}`);
+  } catch (e) { return fail(e); }
+  draw();
+  glide();      // fetched separately; the table should not wait on it
+}
+
+function draw() {
+  let html = `<div class="panel">
+    <h2>Choose a profile</h2>
+    <p class="note">36 profiles in all: three purposes, four horizons, three
+       risk appetites.</p>
+    <div class="pick">
+      <div><label>Purpose</label><select id="s_purpose">
+        ${PURPOSES.map(([v, t]) => `<option value="${v}"${
+          v === sel.purpose ? " selected" : ""}>${t}</option>`).join("")}
+      </select></div>
+      <div><label>Years to the goal</label><select id="s_horizon">
+        ${HORIZONS.map(h => `<option${h === sel.horizon ? " selected" : ""}>${
+          h}</option>`).join("")}
+      </select></div>
+      <div><label>Risk appetite</label><select id="s_risk">
+        ${RISKS.map(r => `<option${r === sel.risk ? " selected" : ""}>${
+          r}</option>`).join("")}
+      </select></div>
+    </div>
+    <div id="glidebox"></div>
+  </div>
+
+  <div class="panel" id="viewpanel"></div>
+
+  <div class="panel">
+    <h2>Where the money should end up</h2>
+    <p class="note">Percentages of the whole pot, measured through to the
+       shares underneath. A 40% mid cap target can be met by one mid cap fund
+       or by two funds that hold mid caps between them &mdash; this says the
+       destination, not the route.</p>
+    <table><thead><tr>
+      <th style="width:22%">Bucket</th><th>Target %</th><th>Floor %</th>
+      <th>Ceiling %</th><th style="width:42%">Why &mdash; in your words</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr data-id="${r.rule_id}">
+      <td><span class="bk">${esc(r.bucket)}</span>
+        ${r.seeded ? `<span class="sub">not yet reviewed</span>`
+                   : `<span class="edited">yours</span>`}</td>
+      <td><input type="number" class="num" data-f="target" min="0" max="100"
+           step="1" value="${r.target_pct}"></td>
+      <td><input type="number" class="num" data-f="min" min="0" max="100"
+           step="1" value="${r.min_pct ?? ""}"></td>
+      <td><input type="number" class="num" data-f="max" min="0" max="100"
+           step="1" value="${r.max_pct ?? ""}"></td>
+      <td><textarea rows="3" data-f="why">${esc(r.rationale || "")}</textarea></td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+    <div id="effect"></div>
+    <div class="total" id="total"></div>
+    <p style="margin:18px 0 0">
+      <button class="go" id="save">Save this profile</button>
+      <button class="ghost" id="revert" style="margin-left:8px">Undo my changes</button>
+    </p>
+    <div id="saved"></div>
+    <p class="foot">The text you write here is what appears beside the
+       allocation when you explain it to someone. The shipped wording is a
+       placeholder &mdash; it is not advice, and it is not yours until you
+       have rewritten it.</p>
+  </div>`;
+
+  app().innerHTML = html;
+
+  ["purpose", "horizon", "risk"].forEach(k =>
+    document.getElementById("s_" + k).addEventListener("change", e => {
+      sel[k] = e.target.value;
+      load();
+    }));
+
+  // The total updates as you type, not on save. Discovering a profile sums
+  // to 94 after saving it is finding out too late.
+  app().querySelectorAll("input[data-f=target]").forEach(i =>
+    i.addEventListener("input", tally));
+  document.getElementById("save").addEventListener("click", save);
+  document.getElementById("revert").addEventListener("click", load);
+  tally();
+  effect();
+  views();
+}
+
+function tally() {
+  let total = 0;
+  app().querySelectorAll("input[data-f=target]").forEach(i => {
+    const v = Number(i.value);
+    if (Number.isFinite(v)) total += v;
+  });
+  const ok = Math.abs(total - 100) < 0.01;
+  const box = document.getElementById("total");
+  box.className = "total " + (ok ? "ok" : "bad");
+  box.innerHTML = `<b>${total.toFixed(0)}%</b>
+    <span>${ok ? "adds up. This profile is usable."
+      : total > 100
+        ? `that is ${(total - 100).toFixed(0)} too much &mdash; a profile has to
+           add to 100 or the allocation it produces is not a whole portfolio.`
+        : `${(100 - total).toFixed(0)}% is unaccounted for &mdash; a profile has
+           to add to 100 or the allocation it produces is not a whole
+           portfolio.`}</span>`;
+  document.getElementById("save").disabled = !ok;
+  return ok;
+}
+
+async function save() {
+  if (!tally()) return;
+  const btn = document.getElementById("save");
+  btn.disabled = true;
+  const out = document.getElementById("saved");
+  out.innerHTML = `<p class="sub" style="margin:12px 0 0">Saving&hellip;</p>`;
+
+  const trs = [...app().querySelectorAll("tr[data-id]")];
+  try {
+    for (const tr of trs) {
+      const get = f => tr.querySelector(`[data-f=${f}]`).value;
+      const num = f => get(f) === "" ? null : Number(get(f));
+      const before = rows.find(r => String(r.rule_id) === tr.dataset.id);
+      const body = {target_pct: Number(get("target")), min_pct: num("min"),
+                    max_pct: num("max"), rationale: get("why").trim() || null};
+      // Only rows that actually changed. Sending all six would mark every
+      // one as edited, and "yours" would stop meaning anything.
+      const same = before
+        && Number(before.target_pct) === body.target_pct
+        && (before.min_pct ?? null) === body.min_pct
+        && (before.max_pct ?? null) === body.max_pct
+        && (before.rationale || null) === body.rationale;
+      if (same) continue;
+      await api(`/rules/${tr.dataset.id}`,
+                {method: "PUT", body: JSON.stringify(body)});
+    }
+    out.innerHTML = `<p class="okline">Saved.</p>`;
+    await load();
+  } catch (e) {
+    out.innerHTML = "";
+    fail(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---- market views ------------------------------------------------
+   The tactical layer. Tilts sit beside the rules, never inside them, so
+   what was thought and when survives the view being stood down -- which
+   is the only way to find out later whether the calls were any good. */
+const BUCKETS = ["large", "mid", "small", "debt", "gold", "international"];
+
+async function views() {
+  const box = document.getElementById("viewpanel");
+  if (!box) return;
+  let vs;
+  try { vs = await api("/views"); } catch { box.innerHTML = ""; return; }
+
+  const active = vs.find(v => v.status === "active");
+  let html = `<h2>Market view</h2>
+    <p class="note">A dated set of tilts applied on top of the rules above.
+       It never edits them, so when a view is stood down the allocation
+       returns to the rules by itself &mdash; and the record of what you
+       thought, and when, survives.</p>`;
+
+  html += active
+    ? `<div class="vrow on">
+        <span><b>${esc(active.label)}<span class="tag on">in force</span>${
+          active.overdue ? `<span class="tag due">review overdue</span>` : ""}</b>
+          <span class="sub">${Object.entries(active.tilts).map(([b, p]) =>
+            `${esc(b)} ${p > 0 ? "+" : ""}${p}`).join(", ")}${
+            active.review_by ? " \u00b7 review by " + esc(active.review_by) : ""}</span>
+          ${active.rationale ? `<span class="sub">${esc(active.rationale)}</span>` : ""}
+        </span>
+        <button class="ghost" data-retire="${active.view_id}">Stand down</button>
+      </div>`
+    : `<p class="sub" style="margin:0 0 14px">No view in force. Allocations
+        are the rules exactly as written &mdash; which is a position, not an
+        absence of one.</p>`;
+
+  const others = vs.filter(v => v.status !== "active");
+  if (others.length) {
+    html += `<p class="note" style="margin:18px 0 8px">Drafts and past views</p>`;
+    html += others.slice(0, 8).map(v => `<div class="vrow">
+        <span><b>${esc(v.label)}<span class="tag">${v.status}</span></b>
+          <span class="sub">${Object.entries(v.tilts).map(([b, p]) =>
+            `${esc(b)} ${p > 0 ? "+" : ""}${p}`).join(", ") || "no tilts"}${
+            v.retired_at ? " \u00b7 stood down " + esc(v.retired_at) : ""}</span></span>
+        <span>${v.status === "draft"
+          ? `<button class="go" data-activate="${v.view_id}">Put in force</button>
+             <button class="ghost" data-drop="${v.view_id}" style="margin-left:6px">Delete</button>`
+          : `<span class="sub">kept as a record</span>`}</span>
+      </div>`).join("");
+  }
+
+  html += `<div style="margin-top:20px;border-top:1px solid var(--rule);
+      padding-top:18px">
+    <h2 style="font-size:17px">Write a new view</h2>
+    <div class="pick" style="margin-top:12px">
+      <div><label>Label</label>
+        <input type="text" id="v_label" placeholder="Mid caps over large, H1 2027"
+          style="width:100%;padding:9px 10px;border:1px solid var(--rule);
+          border-radius:3px;background:#fdfcfa"></div>
+      <div><label>In force from</label><input type="date" id="v_from"
+        style="width:100%;padding:9px 10px;border:1px solid var(--rule);
+        border-radius:3px;background:#fdfcfa"></div>
+      <div><label>Review by</label><input type="date" id="v_review"
+        style="width:100%;padding:9px 10px;border:1px solid var(--rule);
+        border-radius:3px;background:#fdfcfa"></div>
+    </div>
+    <div class="tiltgrid">
+      ${BUCKETS.map(b => `<div><label>${b}</label>
+        <input type="number" data-tilt="${b}" step="1" value="0"
+          style="width:100%;padding:9px 6px;border:1px solid var(--rule);
+          border-radius:3px;background:#fdfcfa"></div>`).join("")}
+    </div>
+    <div class="netline" id="net"></div>
+    <div style="margin-top:12px"><label>Why &mdash; you will read this back
+      in a year</label>
+      <textarea id="v_why" rows="3"></textarea></div>
+    <p style="margin:14px 0 0"><button class="go" id="v_save">Save as draft</button></p>
+    <p class="foot">A draft changes nothing. Putting it in force is a
+       separate step, and that is where the tilts are checked: they must add
+       to zero, and move no more than 15 points in total.</p>
+    <div id="v_err"></div>
+  </div>`;
+
+  box.innerHTML = html;
+
+  box.querySelectorAll("input[data-tilt]").forEach(i =>
+    i.addEventListener("input", net));
+  net();
+
+  const act = async (path, id, method) => {
+    try { await api(`/views/${id}${path}`, {method: method || "POST"});
+          await views(); await effect(); }
+    catch (e) { fail(e); }
+  };
+  box.querySelectorAll("[data-retire]").forEach(b =>
+    b.addEventListener("click", () => act("/retire", b.dataset.retire)));
+  box.querySelectorAll("[data-activate]").forEach(b =>
+    b.addEventListener("click", () => act("/activate", b.dataset.activate)));
+  box.querySelectorAll("[data-drop]").forEach(b =>
+    b.addEventListener("click", () => act("", b.dataset.drop, "DELETE")));
+
+  document.getElementById("v_save").addEventListener("click", saveView);
+}
+
+/* The net has to be zero, and the page says so while you type rather than
+   at the moment you try to put the view in force. "More mid cap" is not a
+   view; "more mid cap, funded from large cap" is. */
+function net() {
+  const box = document.getElementById("net");
+  if (!box) return;
+  let sum = 0, gross = 0;
+  document.querySelectorAll("input[data-tilt]").forEach(i => {
+    const v = Number(i.value) || 0;
+    sum += v; gross += Math.abs(v);
+  });
+  gross = gross / 2;
+  const ok = Math.abs(sum) < 0.01;
+  box.innerHTML = ok
+    ? (gross === 0
+        ? `<span class="sub">No tilts yet.</span>`
+        : `<span class="up"><b>Balanced</b> &mdash; moving ${gross.toFixed(0)}
+           points${gross > 15 ? `, which is over the 15 point limit` : ""}.</span>`)
+    : `<span class="down"><b>${sum > 0 ? "+" : ""}${sum.toFixed(0)}</b> &mdash;
+       tilts have to add to zero. Say where the ${sum > 0 ? "extra" : "shortfall"}
+       comes from.</span>`;
+}
+
+async function saveView() {
+  const tilts = {};
+  document.querySelectorAll("input[data-tilt]").forEach(i => {
+    const v = Number(i.value) || 0;
+    if (v) tilts[i.dataset.tilt] = v;
+  });
+  const label = document.getElementById("v_label").value.trim();
+  const err = document.getElementById("v_err");
+  if (!label) { err.innerHTML = `<div class="err">Give the view a label.</div>`; return; }
+  if (!Object.keys(tilts).length) {
+    err.innerHTML = `<div class="err">Set at least one tilt.</div>`; return;
+  }
+  try {
+    await api("/views", {method: "POST", body: JSON.stringify({
+      label, rationale: document.getElementById("v_why").value.trim() || null,
+      effective_from: document.getElementById("v_from").value || null,
+      review_by: document.getElementById("v_review").value || null,
+      tilts})});
+    err.innerHTML = "";
+    await views();
+  } catch (e) { err.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+/* What the active view does to THIS profile.
+   Shown beneath the rules it modifies, so base, tilt and final sit on one
+   screen -- a single final number would hide whether an allocation came
+   from the rule or from an opinion. */
+async function effect() {
+  const box = document.getElementById("effect");
+  if (!box) return;
+  const years = {"<3": 2, "3-7": 5, "7-15": 10, "15+": 20}[sel.horizon];
+  let a;
+  try {
+    a = await api(`/allocation?purpose=${sel.purpose}&years=${years}&risk=${sel.risk}`);
+  } catch { box.innerHTML = ""; return; }
+  if (!a.view) { box.innerHTML = ""; return; }
+
+  const moved = a.buckets.filter(b => b.tilt_pct);
+  box.innerHTML = `<div class="blocked" style="background:#f4f8f4;
+      border-color:#cfded3">
+      <b>${esc(a.view.label)}</b> is in force, so what a client actually gets
+      is not the table above:
+      ${moved.map(b => `${esc(b.bucket)} ${b.target_pct}
+        <b>&rarr; ${b.final_pct}</b>`).join(", ")}.
+      ${a.blocked.length
+        ? `<br><br><b>Held back by your own limits:</b> ${a.blocked.map(x =>
+            `${esc(x.bucket)} wanted ${x.wanted}% but the ${x.limit} allows
+             ${x.allowed}%`).join("; ")}. That is the ${
+             a.blocked[0].limit} doing its job &mdash; a view should not be
+             able to override a limit you set deliberately.`
+        : ""}
+    </div>`;
+}
+
+/* Equity share across all four horizons for the chosen purpose and risk.
+   The bands are step functions -- a goal crossing from 7-15 into 3-7 moves
+   overnight. Showing all four while editing makes the size of that step
+   visible here rather than to a client whose allocation just changed. */
+async function glide() {
+  const box = document.getElementById("glidebox");
+  if (!box) return;
+  const years = {"<3": 2, "3-7": 5, "7-15": 10, "15+": 20};
+  try {
+    const all = await Promise.all(HORIZONS.map(h =>
+      api(`/allocation?purpose=${sel.purpose}&years=${years[h]}&risk=${sel.risk}`)
+        .catch(() => null)));
+    box.innerHTML = `<p class="note" style="margin:20px 0 6px">Equity share
+        across the four horizons, at this purpose and appetite. The bands are
+        steps, not a glide &mdash; a goal crossing a boundary moves by the
+        gap you see here.</p>
+      <div class="glide">${all.map((a, i) => `
+        <div class="gcell ${HORIZONS[i] === sel.horizon ? "here" : ""}">
+          <b>${a ? a.equity_pct.toFixed(0) + "%" : "\u2014"}</b>
+          <span>${HORIZONS[i]} years</span>
+        </div>`).join("")}</div>`;
+  } catch { box.innerHTML = ""; }
+}
+</script>
+</body>
+</html>

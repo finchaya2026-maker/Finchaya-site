@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Across the site — FinChaya</title>
+<style>
+  :root{
+    --ground:#efece3; --card:#ffffff;
+    --ink:#123027; --ink-soft:#5b6b63; --rule:#ddd8cc;
+    --bench:#e0a33c; --up:#1d6b4f; --down:#b4472f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:16px/1.55 var(--font)}
+  .wrap{max-width:1080px;margin:0 auto;padding:38px 22px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;color:var(--bench);
+    text-transform:uppercase;margin:0 0 6px}
+  h1{font-size:34px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{color:var(--ink-soft);max-width:66ch;margin:0 0 26px}
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    padding:24px 26px;margin-bottom:22px}
+  h2{font-size:20px;font-weight:600;margin:0 0 4px}
+  .note{color:var(--ink-soft);font-size:14px;margin:0 0 18px;max-width:70ch}
+  .foot{color:var(--ink-soft);font-size:13px;margin:14px 0 0;max-width:72ch}
+  .muted{color:var(--ink-soft)}
+  .empty{color:var(--ink-soft)}
+
+  /* headline counts */
+  .tiles{display:grid;gap:1px;background:var(--rule);
+    grid-template-columns:repeat(4,1fr);border:1px solid var(--rule)}
+  .tile{background:var(--card);padding:16px 18px}
+  .tile b{display:block;font-size:27px;font-weight:600;letter-spacing:-.01em}
+  .tile span{display:block;font-size:11px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-soft);margin-top:3px}
+  @media (max-width:760px){.tiles{grid-template-columns:repeat(2,1fr)}}
+
+  /* the measurable fraction */
+  .meter{height:26px;display:flex;border:1px solid var(--rule);
+    border-radius:2px;overflow:hidden;margin:6px 0 10px}
+  .meter i{display:block;font-style:normal}
+  .m-full{background:var(--up)}
+  .m-part{background:var(--bench)}
+  .m-none{background:#cfc8b8}
+  .key{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;
+    color:var(--ink-soft)}
+  .key s{width:10px;height:10px;display:inline-block;margin-right:6px;
+    text-decoration:none;vertical-align:-1px}
+
+  /* fund spread */
+  .spread{margin:0}
+  .spread .row{display:flex;align-items:center;gap:10px;margin-bottom:5px;
+    font-size:13.5px}
+  .spread .lab{width:74px;color:var(--ink-soft);text-align:right}
+  .spread .bar{height:13px;background:var(--up);opacity:.75;border-radius:2px}
+  .spread .n{color:var(--ink-soft)}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;padding:0 10px 8px;
+    border-bottom:1px solid var(--rule)}
+  th.num,td.num{text-align:right}
+  td{padding:11px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#faf8f3}
+  .who b{font-weight:600}
+  .pill{display:inline-block;font-size:10.5px;letter-spacing:.06em;
+    text-transform:uppercase;border:1px solid var(--rule);border-radius:2px;
+    padding:1px 6px;color:var(--ink-soft);margin-left:6px}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .dash{color:#a8a294}
+
+  details{border-top:1px solid var(--rule);margin-top:18px;padding-top:14px}
+  summary{cursor:pointer;font-size:14px;font-weight:600}
+  .log{font-size:13px;margin-top:12px}
+  .log td{padding:7px 10px}
+
+  dialog{border:1px solid var(--rule);border-radius:3px;padding:0;
+    max-width:720px;width:calc(100% - 36px);background:var(--card)}
+  dialog::backdrop{background:rgba(18,48,39,.36)}
+  .dlg{padding:24px 26px}
+  .dlg h3{margin:0 0 2px;font-size:20px;font-weight:600}
+  .x{float:right;border:0;background:none;font-size:22px;line-height:1;
+    cursor:pointer;color:var(--ink-soft)}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Administrator</p>
+  <h1>Across the site</h1>
+  <p class="lede">Every portfolio anyone has built here, and whether the
+     thing is doing them any good. Opening one records who looked and
+     when.</p>
+  <div id="app"><p class="empty">Loading&hellip;</p></div>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+
+<script>
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const app = () => document.getElementById("app");
+const rupee = n => n == null ? null
+  : "₹" + Math.round(n).toLocaleString("en-IN");
+const pct = r => r == null ? null : (100 * r).toFixed(1) + "%";
+const dash = '<span class="dash">&mdash;</span>';
+
+async function api(path) {
+  const r = await fetch("/api/admin" + path);
+  if (r.status === 401) throw {msg: "Sign in first."};
+  if (r.status === 403) throw {msg: "This page is for administrators."};
+  const text = await r.text();
+  if (!r.ok) throw {msg: text.slice(0, 300)};
+  return JSON.parse(text);
+}
+
+/* ----------------------------------------------------------------
+   THE MEASURABLE FRACTION LEADS, and it is not decoration.
+
+   Every other number here -- value, return, whether a goal is on
+   track -- can only be computed for portfolios whose funds carry
+   dates. So that share is the ceiling on everything else this page
+   can ever say, and it is the one thing the product can actually
+   move. Returns mostly measure the market.
+   ---------------------------------------------------------------- */
+function measurable(o) {
+  const base = o.with_funds || 0;
+  if (!base) return "";
+  const p = n => (100 * n / base).toFixed(0);
+  const share = p(o.fully_dated);
+  return `
+  <div class="panel">
+    <h2>How much of this can we actually measure?</h2>
+    <p class="note">A portfolio whose funds have no start date cannot be
+      valued, rated or compared &mdash; only totalled. This share is the
+      ceiling on every other number on this page.</p>
+    <div class="meter">
+      <i class="m-full" style="width:${p(o.fully_dated)}%"></i>
+      <i class="m-part" style="width:${p(o.partly_dated)}%"></i>
+      <i class="m-none" style="width:${p(o.no_dates)}%"></i>
+    </div>
+    <div class="key">
+      <span><s class="m-full"></s>${o.fully_dated} every fund dated</span>
+      <span><s class="m-part"></s>${o.partly_dated} some funds dated</span>
+      <span><s class="m-none"></s>${o.no_dates} amounts only</span>
+    </div>
+    <p class="foot"><b>${share}%</b> of portfolios with funds in them are
+      fully measurable. If this sits low, the fix is making a date easier
+      to enter &mdash; not more charts.</p>
+  </div>`;
+}
+
+function spread(o) {
+  if (!o.fund_spread || !o.fund_spread.length) return "";
+  const max = Math.max(...o.fund_spread.map(s => s.portfolios));
+  return `
+  <div class="panel">
+    <h2>How many funds people hold</h2>
+    <p class="note">A property of the portfolio rather than of the market,
+      which is what makes it worth tracking over time.</p>
+    <div class="spread">
+      ${o.fund_spread.map(s => `
+        <div class="row">
+          <span class="lab">${s.funds} fund${s.funds === 1 ? "" : "s"}</span>
+          <span class="bar" style="width:${Math.max(2, 320 * s.portfolios / max)}px"></span>
+          <span class="n">${s.portfolios}</span>
+        </div>`).join("")}
+    </div>
+    ${o.avg_funds ? `<p class="foot">Average ${o.avg_funds} funds per
+      portfolio.</p>` : ""}
+  </div>`;
+}
+
+function table(list) {
+  if (!list.rows.length) return `<div class="panel"><p class="empty">
+    No portfolios yet.</p></div>`;
+  return `
+  <div class="panel">
+    <h2>Every portfolio</h2>
+    <p class="note">Click a row to see the funds inside it. That opens
+      somebody&rsquo;s holdings, so it is recorded in the access log
+      below.</p>
+    <table><thead><tr>
+      <th>Whose</th><th>Name</th>
+      <th class="num">Funds</th><th class="num">Put in / planned</th>
+      <th class="num">Worth now</th><th class="num">Return</th>
+      <th class="num">Updated</th>
+    </tr></thead><tbody>
+    ${list.rows.map(r => {
+      const v = r.valued;
+      /* A portfolio with typed amounts and no dates has a size but no
+         return. Showing the size and dashing the rest is more useful than
+         dashing the whole row, and more honest than inventing a start
+         date to compute from.
+
+         BUT IT MUST NOT BE CALLED "PUT IN".
+         Nothing has been put in. A locked plan records what somebody
+         INTENDS to invest -- the lock dialogue says in as many words that
+         FinChaya buys nothing and they have to place it themselves. A
+         confident rupee figure under a column headed "Put in", against a
+         portfolio where not one holding carries a start date, states the
+         opposite of what the product just told them.
+
+         So the figure stays and the label changes: "planned" when nothing
+         has started, the real total when it has. */
+      const started = r.funds_dated > 0;
+      const put = v ? rupee(v.invested)
+                    : (r.typed_total != null ? rupee(r.typed_total) : null);
+      const gainUp = v && v.gain >= 0;
+      return `<tr onclick="openOne(${r.portfolio_id})">
+        <td class="who"><b>${esc(r.client_name || r.owner)}</b>${
+          r.is_client ? '<span class="pill">client</span>' : ""}
+          ${r.email && !r.client_name
+            ? `<div class="muted" style="font-size:12px">${esc(r.email)}</div>`
+            : ""}</td>
+        <td>${esc(r.name || "")}${r.has_goal
+          ? '<span class="pill">goal</span>' : ""}</td>
+        <td class="num">${r.funds}${r.funds && r.funds_dated < r.funds
+          ? `<div class="muted" style="font-size:11.5px">${r.funds_dated} dated</div>`
+          : ""}</td>
+        <td class="num">${put
+          ? (started ? put
+             : `${put}<div class="muted" style="font-size:11.5px">planned,
+                  not started</div>`)
+          : dash}</td>
+        <td class="num">${v ? rupee(v.value) : dash}</td>
+        <td class="num ${v && v.xirr != null ? (gainUp ? "up" : "down") : ""}">${
+          v && v.xirr != null ? pct(v.xirr) : dash}</td>
+        <td class="num muted">${esc(r.updated)}</td>
+      </tr>`;
+    }).join("")}
+    </tbody></table>
+    ${list.shown < list.total ? `<p class="foot">Showing ${list.shown} of
+      ${list.total}.</p>` : ""}
+    <p class="foot">A return is only shown where every fund carries a start
+      date and an amount. Nothing here is annualised below three months of
+      history.</p>
+  </div>`;
+}
+
+function logPanel(log) {
+  if (!log.enabled) return `<div class="panel"><h2>Access log</h2>
+    <p class="note">Not set up. Run <code>create_admin_log.py --admin
+    doadmin</code> on the server &mdash; until then the drill-down is
+    disabled, because reading somebody&rsquo;s holdings without recording
+    it is not something this page should do.</p></div>`;
+  return `
+  <div class="panel">
+    <details>
+      <summary>Access log &mdash; who opened whose portfolio</summary>
+      <p class="foot">Kept so that reading a user&rsquo;s finances is never
+        invisible, including when it is you doing the reading.</p>
+      ${log.rows.length ? `<table class="log"><thead><tr>
+        <th>When</th><th>Who looked</th><th>Portfolio</th><th>Whose</th>
+      </tr></thead><tbody>
+      ${log.rows.map(r => `<tr style="cursor:default">
+        <td class="muted">${esc(r.at)}</td>
+        <td>${esc(r.admin || "?")}</td>
+        <td>#${r.portfolio_id}</td>
+        <td class="muted">${esc(r.owner || "?")}</td>
+      </tr>`).join("")}</tbody></table>`
+        : `<p class="empty" style="margin-top:10px">Nothing yet.</p>`}
+    </details>
+  </div>`;
+}
+
+async function openOne(id) {
+  const dlg = document.getElementById("dlg");
+  const body = document.getElementById("dlgBody");
+  body.innerHTML = `<p class="empty">Loading&hellip;</p>`;
+  dlg.showModal();
+  try {
+    const d = await api("/portfolios/" + id);
+    const v = d.valued;
+    body.innerHTML = `
+      <button class="x" onclick="document.getElementById('dlg').close()">&times;</button>
+      <h3>${esc(d.name || "Portfolio " + id)}</h3>
+      <p class="note">${esc(d.client_name || d.owner)}${
+        d.email ? " &middot; " + esc(d.email) : ""}</p>
+      ${v ? `<div class="tiles" style="margin-bottom:16px">
+        <div class="tile"><b>${rupee(v.invested)}</b><span>put in</span></div>
+        <div class="tile"><b>${rupee(v.value)}</b><span>worth now</span></div>
+        <div class="tile"><b class="${v.gain >= 0 ? "up" : "down"}">${
+          rupee(v.gain)}</b><span>gain</span></div>
+        <div class="tile"><b>${v.xirr != null ? pct(v.xirr) : "&mdash;"}</b>
+          <span>a year</span></div>
+      </div>` : `<p class="note">No dates on these funds, so nothing can be
+        priced from NAV.</p>`}
+      <table><thead><tr>
+        <th>Fund</th><th>Since</th><th class="num">Amount</th><th>Plan</th>
+      </tr></thead><tbody>
+      ${d.holdings.map(h => `<tr style="cursor:default">
+        <td>${esc(h.name)}${h.amc
+          ? `<div class="muted" style="font-size:12px">${esc(h.amc)}</div>`
+          : ""}</td>
+        <td>${h.invested_on ? esc(h.invested_on) : dash}
+          ${h.invest_mode ? `<div class="muted" style="font-size:12px">${
+            esc(h.invest_mode)}</div>` : ""}</td>
+        <td class="num">${h.invest_amount != null ? rupee(h.invest_amount)
+          : (h.amount != null ? rupee(h.amount) : dash)}</td>
+        <td class="muted">${h.plan ? esc(h.plan) : "by rule"}</td>
+      </tr>`).join("")}
+      </tbody></table>
+      <p class="foot">This view was recorded in the access log.</p>`;
+  } catch (e) {
+    body.innerHTML = `<button class="x"
+      onclick="document.getElementById('dlg').close()">&times;</button>
+      <p class="empty">${esc(e.msg || "Could not load that portfolio.")}</p>`;
+  }
+}
+
+(async function () {
+  try {
+    // Fetched together rather than one after another: three small
+    // queries in sequence is three round trips of latency for no reason.
+    const [o, list, log] = await Promise.all([
+      api("/overview"), api("/portfolios"), api("/access-log?limit=50"),
+    ]);
+    app().innerHTML = `
+      <div class="panel">
+        <div class="tiles">
+          <div class="tile"><b>${o.portfolios}</b><span>portfolios</span></div>
+          <div class="tile"><b>${o.users_with_portfolio}</b>
+            <span>of ${o.users_total} users</span></div>
+          <div class="tile"><b>${o.for_clients}</b><span>for clients</span></div>
+          <div class="tile"><b>${o.revisited}</b><span>came back</span></div>
+        </div>
+        <p class="foot">&ldquo;Came back&rdquo; means revised after the day
+          it was created. A portfolio entered once and never touched again
+          is a visitor; one revised later is a user.</p>
+      </div>
+      ${measurable(o)}
+      ${spread(o)}
+      ${table(list)}
+      ${logPanel(log)}`;
+  } catch (e) {
+    app().innerHTML = `<div class="panel"><p class="empty">${
+      esc(e.msg || "Could not load.")}</p></div>`;
+  }
+})();
+</script>
+</body>
+</html>
