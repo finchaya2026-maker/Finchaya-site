@@ -1,0 +1,33 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+zerodha_token.json
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime output, caches and checkpoints
+logs/
+*.log
+kite_instruments.json
+fetch_checkpoint.json
+
+# Data that must never be committed: database dumps, archives, source
+# spreadsheets and exports (AMC portfolio files, CRISIL sheets, CAS PDFs)
+*.dump
+*.sql.gz
+*.zip
+*.xls
+*.xlsx
+*.csv
+*.docx
+*.pdf
+
+# Editor / tool folders
+.claude/
+.vscode/
+.idea/
