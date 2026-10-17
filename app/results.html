@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quarterly results &mdash; FinChaya</title>
+<meta name="description" content="Company results as they are filed: sales, operating profit, net profit and EPS against the
+  last quarter and a year ago, with market cap, P/E and PEG and which way they moved. This week, last week and what is due next.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  results.html -- quarterly results, week by week.
+  ======================================================================
+  WHAT IT IS
+      Three views, Monday to Sunday: this week (filed so far, and who is still due), last week, and what is due in the
+      weeks after. A card per company that has filed, in the layout investors already know: Sales, Operating profit,
+      Net profit and EPS, each for the quarter just reported, the quarter before and the same quarter a year ago,
+      with the change against each. Beside the name: market cap, P/E and PEG with an arrow for which way they moved.
+
+  WHAT THE ARROWS MEAN
+      Growth arrows: up or down against the earlier quarter (green up, red down, as everywhere on the site; the
+      arrow and the sign carry it as well, so colour is never the only signal). P/E and PEG arrows are neutral:
+      they compare the ratio NOW with the ratio BEFORE these results, both at today's price, so they move only
+      because earnings changed. A P/E going up is not good or bad. Nothing here is a recommendation; the words are
+      "up", "down", "little changed".
+
+  WHAT IT TELLS THE TRUTH ABOUT
+      A figure we do not have is a dash, never a zero. A change across a loss is a short word ("back in profit",
+      "loss widened"), not a percentage. EPS is not compared across a bonus issue or split. Operating profit is
+      not worked out for banks, finance companies and insurers (their main cost is interest or claims); the row is
+      "Profit before tax" for them. Dates for results still to come are the exchanges' board-meeting notices.
+
+  DATA
+      GET /api/results?view=this_week|last_week|upcoming (results_api.py) and GET /api/results/access, which the page asks
+      FIRST. For Stocks subscribers and administrators: the server checks every call (stock_access.py), and the page only
+      avoids drawing an empty screen: signed out gets a sign-in notice, a member without the plan gets the site's subscribe
+      card (window.fcLocked). The page asks nothing else of the server.
+-->
+<style>
+  /* Every class is prefixed rs-: finchaya.css owns .panel, .chip, .tabs, .note and more and loads after this block. */
+  .rs-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid var(--line-firm);margin:18px 0 6px}
+  .rs-tab{appearance:none;border:0;background:none;cursor:pointer;padding:11px 16px;font-size:15.5px;font-weight:600;
+    color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1.5px}
+  .rs-tab:hover{color:var(--ink)}
+  .rs-tab[aria-selected=true]{color:var(--brand-dark);border-bottom-color:var(--brand)}
+  .rs-badge{display:inline-block;min-width:22px;padding:0 7px;margin-left:7px;border-radius:999px;background:var(--surface-2);
+    color:var(--ink-2);font-size:12.5px;font-weight:700;text-align:center}
+  .rs-tab[aria-selected=true] .rs-badge{background:var(--brand-wash);color:var(--brand-dark)}
+  .rs-window{color:var(--muted);font-size:14px;margin:10px 0 0}
+
+  .rs-strip{display:flex;flex-wrap:wrap;gap:8px 22px;margin:14px 0 0;padding:12px 16px;background:var(--card);
+    border-radius:var(--r);box-shadow:var(--shadow);font-size:14.5px;color:var(--ink-2)}
+  .rs-strip b{color:var(--ink);font-size:17px;font-variant-numeric:tabular-nums}
+  .rs-strip[hidden]{display:none}
+
+  .rs-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0 4px}
+  .rs-controls[hidden],.rs-notes[hidden]{display:none}
+  .rs-controls input[type=search],.rs-controls select{padding:9px 12px;font-size:15px;border:1.5px solid var(--line-firm);
+    border-radius:var(--r);background:var(--card);color:var(--ink);min-width:0}
+  .rs-controls input[type=search]{flex:1 1 220px}
+  .rs-controls select{flex:0 1 190px}
+  .rs-caps{display:flex;gap:6px;flex-wrap:wrap}
+  .rs-cap{appearance:none;cursor:pointer;border:1.5px solid var(--line-firm);background:var(--card);border-radius:999px;
+    padding:7px 14px;font-size:14px;font-weight:600;color:var(--ink-2)}
+  .rs-cap:hover{border-color:var(--brand)}
+  .rs-cap[aria-pressed=true]{background:var(--brand-wash);border-color:var(--brand);color:var(--brand-dark)}
+  .rs-count{color:var(--muted);font-size:13.5px;margin:6px 0 0}
+
+  /* ---- one company --------------------------------------------------- */
+  .rs-card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:18px 20px 16px;margin:14px 0 0}
+  .rs-head{display:flex;justify-content:space-between;gap:10px 24px;flex-wrap:wrap;align-items:flex-start}
+  .rs-name{margin:0;font-size:19px;line-height:1.25;font-weight:700;letter-spacing:-.01em}
+  .rs-name a{color:var(--ink);text-decoration:none}
+  @media (max-width:700px){ .rs-name a{display:inline-block;padding:8px 0} }
+  .rs-name a:hover{color:var(--brand-dark);text-decoration:underline}
+  .rs-meta{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:center;margin:6px 0 0;font-size:13px;color:var(--muted)}
+  .rs-tag{display:inline-block;padding:1px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:600}
+  .rs-tag.new,.rs-tag.late{background:var(--note-wash);color:#9a5d0b}
+  .rs-tag.cap{background:var(--brand-wash);color:var(--brand-dark)}
+  .rs-vals{display:flex;gap:6px 22px;flex-wrap:wrap;align-items:flex-start;text-align:right}
+  .rs-val{min-width:0}
+  .rs-val small{display:block;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+  .rs-val b{font-size:19px;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .rs-val .rs-was{display:block;font-size:12px;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+  .rs-arrow{font-size:.78em;margin-left:3px;vertical-align:.08em}
+  .rs-arrow.flat{color:var(--muted)}
+  .rs-arrow.n-up,.rs-arrow.n-down{color:var(--ink-2)}                  /* valuation arrows: direction only, no verdict colour */
+  .rs-up{color:var(--brand-dark)}
+  .rs-down{color:var(--neg)}
+  .rs-flat,.rs-na{color:var(--muted)}
+
+  .rs-line{margin:12px 0 0;font-size:14.5px;color:var(--ink-2);max-width:90ch}
+
+  .rs-tbl{width:100%;border-collapse:collapse;margin:12px 0 0;font-variant-numeric:tabular-nums}
+  .rs-tbl th,.rs-tbl td{padding:9px 10px;text-align:right;font-size:15px;white-space:nowrap;border:0}   /* finchaya.css gives every th/td a bottom rule; the row owns it here */
+  .rs-tbl tbody tr{border-top:1px solid var(--line)}
+  .rs-tbl thead th{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.02em;background:var(--surface);padding:8px 10px}
+  .rs-tbl th:first-child,.rs-tbl td:first-child{text-align:left}
+  .rs-tbl thead th:first-child{border-radius:var(--r) 0 0 0}
+  .rs-tbl thead th:last-child{border-radius:0 var(--r) 0 0}
+  .rs-tbl tbody th{font-weight:700;color:var(--ink)}
+  .rs-tbl td.rs-g{font-weight:600}
+  .rs-tbl .rs-note{font-size:12px;font-weight:600;display:block;white-space:normal;line-height:1.25}
+  .rs-tbl .rs-sub{display:none}
+  .rs-tbl .rs-short{display:none}
+  .rs-margins{margin:10px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .rs-margins > span{display:block}
+  .rs-empty-op{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+  .rs-work{margin:10px 0 0;font-size:13px;color:var(--muted)}
+  .rs-work summary{cursor:pointer;color:var(--brand-dark);font-weight:600;width:max-content}
+  .rs-work p{margin:6px 0 0;max-width:90ch}
+
+  /* ---- phones: the two older quarters go under the current figure, so nothing scrolls sideways ---------- */
+  @media (max-width:700px){
+    .rs-card{padding:16px 14px 14px}
+    .rs-vals{text-align:left;width:100%;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:6px 10px}
+    .rs-val b{font-size:17px}
+    .rs-tbl{table-layout:fixed}
+    .rs-tbl th,.rs-tbl td{padding:8px 3px;font-size:14px;white-space:normal;overflow-wrap:anywhere}
+    .rs-tbl th:first-child{width:25%}
+    .rs-tbl .rs-c-prev,.rs-tbl .rs-c-ya{display:none}
+    .rs-tbl .rs-long{display:none}
+    .rs-tbl .rs-short{display:inline}
+    .rs-tbl .rs-sub{display:block;font-size:11.5px;font-weight:500;color:var(--muted);line-height:1.35;margin-top:2px}
+    .rs-tbl .rs-sub span{display:block}
+    .rs-tbl .rs-note{font-size:11px}
+  }
+
+  /* ---- upcoming list ---------------------------------------------------- */
+  .rs-day{margin:26px 0 8px;font-size:16px;font-weight:700;display:flex;gap:10px;align-items:baseline}
+  .rs-day small{font-size:13.5px;font-weight:500;color:var(--muted)}
+  .rs-list{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden}
+  .rs-row{display:grid;grid-template-columns:minmax(150px,2.2fr) 1fr 1fr 1.8fr;gap:6px 14px;padding:12px 18px;border-top:1px solid var(--line);align-items:center}
+  .rs-row:first-child{border-top:0}
+  .rs-row .rs-who a{font-weight:650;color:var(--ink);text-decoration:none;font-size:15px}
+  .rs-row .rs-who a:hover{color:var(--brand-dark);text-decoration:underline}
+  .rs-row .rs-who span{display:block;font-size:12.5px;color:var(--muted)}
+  .rs-row .rs-k{font-size:11.5px;font-weight:700;color:var(--muted);display:block;letter-spacing:.02em}
+  .rs-row .rs-v{font-variant-numeric:tabular-nums;font-size:15px;font-weight:600}
+  .rs-last{font-size:13.5px;color:var(--ink-2);display:block}
+  .rs-last .rs-note{display:inline;margin-left:4px}
+  @media (max-width:700px){.rs-row{grid-template-columns:1fr 1fr;padding:12px 14px}.rs-row .rs-who{grid-column:1 / -1}.rs-row .rs-lastcol{grid-column:1 / -1}.rs-row .rs-who a{display:inline-block;padding:6px 0}}
+
+  .rs-section{margin:30px 0 0}
+  .rs-section h2{font-size:20px;margin:0 0 2px}
+  .rs-section > .rs-sub2{color:var(--muted);font-size:14px;margin:0 0 6px}
+  .rs-await{margin:22px 0 0;background:var(--note-wash);border:1px solid #f0d6a6;border-radius:var(--r);padding:10px 14px;font-size:14px;color:var(--ink-2)}
+  .rs-await summary{cursor:pointer;font-weight:600}
+  .rs-await ul{margin:8px 0 0;padding:0 0 0 18px;columns:2;column-gap:28px}
+  @media (max-width:700px){.rs-await ul{columns:1}}
+
+  .rs-more{display:block;margin:18px auto 0;appearance:none;border:1.5px solid var(--line-firm);background:var(--card);color:var(--brand-dark);
+    font-size:15px;font-weight:600;padding:11px 22px;border-radius:var(--r);cursor:pointer}
+  .rs-more:hover{border-color:var(--brand);background:var(--brand-wash)}
+  .rs-more[hidden]{display:none}
+  .rs-busy,.rs-none{color:var(--muted);padding:26px 4px;font-size:15.5px}
+  .rs-err{background:var(--neg-wash);border:1px solid #f2c4c4;border-radius:var(--r);padding:12px 16px;color:#8a2323;margin:18px 0 0}
+  .rs-err button{margin-left:10px}
+  .rs-notes{margin:34px 0 0;padding:16px 20px;background:var(--card);border-radius:var(--r);box-shadow:var(--shadow)}
+  .rs-notes h3{margin:0 0 6px;font-size:15px}
+  .rs-notes ul{margin:0;padding:0 0 0 18px;color:var(--ink-2);font-size:13.5px;line-height:1.6}
+  .rs-notes li{margin:0 0 4px}
+  .rs-sr{position:absolute;left:-9999px}
+  #rsApp[hidden]{display:none}
+  .rs-lock{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 20px;margin:6px 0 16px}
+  .rs-lock h3{margin:0 0 6px;font-size:1.05rem;color:var(--ink)}
+  .rs-lock p{margin:6px 0;color:var(--ink-2);line-height:1.5}
+  .rs-lock .rs-sign{margin-top:10px;padding:9px 18px;border:0;border-radius:var(--r);background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  .rs-lock .rs-sign:hover{background:var(--brand-dark)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <p class="eyebrow">Quarterly results</p>
+  <h1 id="rsTitle">Results, week by week</h1>
+  <p class="note">Company results as they are filed: sales, operating profit, net profit and EPS against the last quarter
+    and a year ago, with market cap, P/E and PEG and which way they moved.</p>
+
+  <div id="rsLock"></div>
+  <div id="rsApp" hidden>
+  <div class="rs-tabs" role="tablist" id="rsTabs">
+    <button type="button" class="rs-tab" role="tab" data-view="this_week" aria-selected="true">This week<span class="rs-badge" id="rsB1">&ndash;</span></button>
+    <button type="button" class="rs-tab" role="tab" data-view="last_week" aria-selected="false">Last week<span class="rs-badge" id="rsB2">&ndash;</span></button>
+    <button type="button" class="rs-tab" role="tab" data-view="upcoming" aria-selected="false">Upcoming<span class="rs-badge" id="rsB3">&ndash;</span></button>
+  </div>
+  <p class="rs-window" id="rsWindow" aria-live="polite"></p>
+
+  <div class="rs-strip" id="rsStrip" hidden></div>
+
+  <div class="rs-controls" id="rsControls" hidden>
+    <input type="search" id="rsSearch" placeholder="Search a company or symbol" aria-label="Search a company or symbol" autocomplete="off">
+    <select id="rsSector" aria-label="Sector"><option value="">All sectors</option></select>
+    <select id="rsSort" aria-label="Sort by"></select>
+    <div class="rs-caps" id="rsCaps" role="group" aria-label="Company size">
+      <button type="button" class="rs-cap" data-cap="" aria-pressed="true">All</button>
+      <button type="button" class="rs-cap" data-cap="Large" aria-pressed="false">Large cap</button>
+      <button type="button" class="rs-cap" data-cap="Mid" aria-pressed="false">Mid cap</button>
+      <button type="button" class="rs-cap" data-cap="Small" aria-pressed="false">Small cap</button>
+    </div>
+  </div>
+  <p class="rs-count" id="rsCount" aria-live="polite"></p>
+
+  <div id="rsOut"><p class="rs-busy">Loading results&hellip;</p></div>
+
+  <div class="rs-notes" id="rsNotes" hidden>
+    <h3>How to read this page</h3>
+    <ul id="rsNoteList"></ul>
+  </div>
+  </div>
+  <p class="foot">FinChaya is not a SEBI-registered Research Analyst or Investment Adviser. This page reports what companies
+    filed with the stock exchange and does arithmetic on it. It does not recommend buying or selling anything.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const UP = "▲", DOWN = "▼", FLAT = "▬";
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const TITLES = {this_week: "Results this week", last_week: "Results last week", upcoming: "Results coming up"};
+  const HASH = {"#this-week": "this_week", "#last-week": "last_week", "#upcoming": "upcoming"};
+  const PAGE = 20;
+  const SORTS = {
+    this_week: [["filed", "Latest filed first"], ["mcap", "Largest market cap"], ["sales", "Sales growth (year on year)"],
+                ["profit", "Net profit growth (year on year)"], ["eps", "EPS growth (year on year)"], ["pe", "Lowest P/E"]],
+    upcoming: [["date", "Soonest first"], ["mcap", "Largest market cap"]],
+  };
+  SORTS.last_week = SORTS.this_week;
+
+  const state = {view: "this_week", data: null, cap: "", sector: "", q: "", sort: "filed", shown: PAGE, loading: 0, tabs: {}};
+
+  // ------------------------------------------------------------ formatting
+  const inr = (v, dp) => v == null ? "–" : Number(v).toLocaleString("en-IN", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+  function crore(v) {
+    if (v == null) return "–";
+    const a = Math.abs(v), dp = a >= 1000 ? 0 : a >= 100 ? 1 : 2;
+    return inr(v, dp);
+  }
+  const eps = v => v == null ? "–" : inr(v, 2);
+  function ymd(s) { const p = String(s || "").split("-"); return p.length === 3 ? new Date(+p[0], +p[1] - 1, +p[2]) : null; }
+  function monthYear(s) { const d = ymd(s); return d ? MONTHS[d.getMonth()] + " " + d.getFullYear() : ""; }
+  function monthShort(s) { const d = ymd(s); return d ? MONTHS[d.getMonth()] + " ’" + String(d.getFullYear()).slice(2) : ""; }
+  function longDate(s) { const d = ymd(s); return d ? d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() : ""; }
+  function dayHead(s) { const d = ymd(s); return d ? DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] : ""; }
+  const pctText = p => (p > 0 ? "+" : p < 0 ? "−" : "") + Math.abs(p).toFixed(1) + "%";
+
+  // a growth object -> a cell. Colour is never the only signal: the arrow and the sign say it too.
+  function growthCell(g) {
+    if (!g || g.dir == null) return g && g.note ? '<span class="rs-na rs-note">' + esc(g.note) + "</span>" : '<span class="rs-na">–</span>';
+    const cls = g.dir === "up" ? "rs-up" : g.dir === "down" ? "rs-down" : "rs-flat";
+    const arrow = g.dir === "up" ? UP : g.dir === "down" ? DOWN : FLAT;
+    if (g.pct == null) return '<span class="' + cls + ' rs-note">' + arrow + " " + esc(g.note || "") + "</span>";
+    const spoken = (g.dir === "flat" ? "little changed, " : g.dir + " ") + Math.abs(g.pct).toFixed(1) + " per cent";
+    return '<span class="' + cls + '" aria-label="' + spoken + '">' + arrow + " " + Math.abs(g.pct).toFixed(1) + "%" +
+           (g.note ? '<span class="rs-note">' + esc(g.note) + "</span>" : "") + "</span>";
+  }
+  function trendArrow(t) {
+    if (!t || !t.dir) return "";
+    const word = t.dir === "flat" ? "little changed" : t.dir;
+    return '<span class="rs-arrow n-' + t.dir + (t.dir === "flat" ? " flat" : "") + '" aria-label="' + word + '">' +
+           (t.dir === "up" ? UP : t.dir === "down" ? DOWN : FLAT) + "</span>";
+  }
+
+  // ------------------------------------------------------------ one company
+  function ratioBlock(label, t) {
+    if (!t || t.value == null) {
+      const why = t && t.reason ? ' title="' + esc(t.reason) + '"' : "";
+      return '<div class="rs-val"><small>' + label + '</small><b class="rs-na"' + why + ">–</b></div>";
+    }
+    const was = t.before != null && t.dir
+      ? '<span class="rs-was">was ' + (label === "PEG" ? Number(t.before).toFixed(2) : Number(t.before).toFixed(1)) + " before</span>" : "";
+    const v = label === "PEG" ? Number(t.value).toFixed(2) : Number(t.value).toFixed(1);
+    return '<div class="rs-val"><small>' + label + '</small><b title="' + esc(t.detail || "") + '">' + v + trendArrow(t) + "</b>" + was + "</div>";
+  }
+
+  function metricRow(m, c) {
+    const unit = m.unit === "rs" ? eps : crore;
+    const sub = m.prev != null || m.year_ago != null
+      ? '<span class="rs-sub">' + (m.prev != null ? "<span>" + monthShort(c.prev_end) + " " + unit(m.prev) + "</span>" : "") +
+        (m.year_ago != null ? "<span>" + monthShort(c.year_ago_end) + " " + unit(m.year_ago) + "</span>" : "") + "</span>" : "";
+    return "<tr><th scope='row'>" + esc(m.label) + '</th><td class="rs-g">' + growthCell(m.yoy) + '</td><td class="rs-g">' + growthCell(m.qoq) +
+           "</td><td>" + unit(m.now) + sub + '</td><td class="rs-c-prev">' + unit(m.prev) + '</td><td class="rs-c-ya">' + unit(m.year_ago) + "</td></tr>";
+  }
+  function marginLine(c) {
+    if (!c.margins) return "";
+    const one = (label, x) => {
+      if (!x || x.now == null) return "";
+      const ch = x.change_pp == null ? "" : x.change_pp === 0
+        ? ' <span class="rs-flat">' + FLAT + " little changed</span> from " + x.year_ago.toFixed(1) + "% a year ago"
+        : ' <span class="' + (x.change_pp > 0 ? "rs-up" : "rs-down") + '" aria-label="' + (x.change_pp > 0 ? "up " : "down ") + Math.abs(x.change_pp).toFixed(1) + ' percentage points">' +
+          (x.change_pp > 0 ? UP : DOWN) + " " + Math.abs(x.change_pp).toFixed(1) + " pts</span> from " + x.year_ago.toFixed(1) + "% a year ago";
+      return "<span>" + label + " <b>" + x.now.toFixed(1) + "%</b>" + ch + "</span>";
+    };
+    const parts = [one("Operating margin", c.margins.operating), one("Net margin", c.margins.net)].filter(Boolean);
+    return parts.length ? '<p class="rs-margins">' + parts.join("") + "</p>" : "";
+  }
+
+  function card(c) {
+    const filed = c.days_since_filed == null ? "" : c.days_since_filed <= 0 ? "Filed today" : c.days_since_filed === 1 ? "Filed yesterday" : "Filed " + longDate(c.filed_on);
+    const newTag = c.days_since_filed != null && c.days_since_filed <= 1 ? '<span class="rs-tag new">New</span>' : "";
+    // a quarter's result is due within 45 days (60 for the March quarter); one filed after 75 days is flagged as a plain fact
+    const lateTag = c.days_after_quarter != null && c.days_after_quarter > 75
+      ? '<span class="rs-tag late" title="The company filed this result long after the quarter ended.">Filed ' + c.days_after_quarter + " days after the quarter ended</span>" : "";
+    const mcap = c.market_cap_cr != null
+      ? '<div class="rs-val"><small>M CAP</small><b title="' + esc(c.market_cap_note || "") + '">₹' + inr(c.market_cap_cr, 0) + ' Cr</b></div>'
+      : '<div class="rs-val"><small>M CAP</small><b class="rs-na">–</b></div>';
+    const op = c.metrics.find(m => m.key === "operating");
+    const opEmpty = op && op.now == null && op.prev == null && op.year_ago == null;
+    const working = [c.ratios.pe, c.ratios.peg, c.ratios.eps_ttm].filter(x => x && x.detail).map(x => x === c.ratios.pe ? "P/E: " + x.detail : x === c.ratios.peg ? "PEG: " + x.detail : "").filter(Boolean);
+    const trend = [];
+    if (c.ratios.pe && c.ratios.pe.before != null && c.ratios.pe.value != null)
+      trend.push("P/E is " + Number(c.ratios.pe.value).toFixed(1) + ", against " + Number(c.ratios.pe.before).toFixed(1) + " before these results, at the same price (" + (c.price ? "₹" + inr(c.price.close, 2) + " on " + longDate(c.price.date) : "latest close") + "). It moves only because earnings changed.");
+    if (c.ratios.eps_ttm && c.ratios.eps_ttm.before != null && c.ratios.eps_ttm.value != null)
+      trend.push("Earnings per share over twelve months: ₹" + Number(c.ratios.eps_ttm.value).toFixed(2) + ", against ₹" + Number(c.ratios.eps_ttm.before).toFixed(2) + " before.");
+    const sector = c.sector ? '<span>' + esc(c.sector) + "</span>" : "";
+    return '<article class="rs-card" data-isin="' + esc(c.isin) + '">' +
+      '<div class="rs-head"><div>' +
+        '<h3 class="rs-name"><a href="/#/stock/' + encodeURIComponent(c.isin) + '">' + esc(c.name || c.symbol) + "</a></h3>" +
+        '<div class="rs-meta">' + newTag + (filed ? '<span class="rs-tag">' + esc(filed) + "</span>" : "") + lateTag +
+          '<span class="rs-tag">' + esc(c.period_label) + " · " + esc(c.basis) + "</span>" +
+          (c.cap ? '<span class="rs-tag cap">' + esc(c.cap) + " cap</span>" : "") + (c.symbol ? "<span>" + esc(c.symbol) + "</span>" : "") + sector + "</div>" +
+      '</div><div class="rs-vals">' + mcap + ratioBlock("P/E", c.ratios.pe) + ratioBlock("PEG", c.ratios.peg) + "</div></div>" +
+      (c.headline ? '<p class="rs-line">' + esc(c.headline) + ".</p>" : "") +
+      '<table class="rs-tbl"><thead><tr><th>(In ₹ Cr.)</th><th><span class="rs-long">YoY growth</span><span class="rs-short">YoY</span></th><th><span class="rs-long">QoQ growth</span><span class="rs-short">QoQ</span></th><th>' + esc(monthYear(c.period_end)) +
+        '</th><th class="rs-c-prev">' + esc(c.prev_end ? monthYear(c.prev_end) : "Quarter before") + '</th><th class="rs-c-ya">' +
+        esc(c.year_ago_end ? monthYear(c.year_ago_end) : "Year ago") + "</th></tr></thead><tbody>" +
+        c.metrics.map(m => metricRow(m, c)).join("") + "</tbody></table>" + marginLine(c) +
+      (opEmpty ? '<p class="rs-empty-op">' + (c.operating_kind === "pbt" ? "Profit before tax" : "Operating profit") + " is not on file for this result yet.</p>" : "") +
+      (trend.length || working.length ? '<details class="rs-work"><summary>How P/E and PEG are worked out</summary>' +
+        trend.concat(working).map(t => "<p>" + esc(t) + "</p>").join("") + "</details>" : "") +
+      "</article>";
+  }
+
+  function upcomingRow(s) {
+    const last = s.last
+      ? '<span class="rs-k">LAST REPORTED · ' + esc(s.last.label) + ' · CHANGE ON A YEAR EARLIER</span>' +
+        '<span class="rs-last">Sales ₹' + crore(s.last.sales_cr) + " Cr &nbsp;" + growthCell(s.last.sales_yoy) + "</span>" +
+        '<span class="rs-last">Net profit ₹' + crore(s.last.profit_cr) + " Cr &nbsp;" + growthCell(s.last.profit_yoy) + "</span>"
+      : '<span class="rs-k">LAST REPORTED</span><span class="rs-last rs-na">no results on file</span>';
+    return '<div class="rs-row"><div class="rs-who"><a href="/#/stock/' + encodeURIComponent(s.isin) + '">' + esc(s.name || s.symbol) + "</a><span>" +
+      esc([s.symbol, s.sector, s.cap ? s.cap + " cap" : ""].filter(Boolean).join(" · ")) + '</span></div>' +
+      '<div><span class="rs-k">M CAP</span><span class="rs-v">' + (s.market_cap_cr != null ? "₹" + inr(s.market_cap_cr, 0) + " Cr" : "–") + "</span></div>" +
+      '<div><span class="rs-k">P/E</span><span class="rs-v">' + (s.pe != null ? Number(s.pe).toFixed(1) : "–") + '</span></div><div class="rs-lastcol">' + last + "</div></div>";
+  }
+
+  // ------------------------------------------------------------ filtering and sorting
+  const growthKey = (c, key) => { const m = c.metrics.find(x => x.key === key); return m && m.yoy && m.yoy.pct != null ? m.yoy.pct : null; };
+  function visible(items, isCard) {
+    const q = state.q.trim().toLowerCase();
+    return items.filter(x =>
+      (!state.cap || x.cap === state.cap) && (!state.sector || x.sector === state.sector) &&
+      (!q || (x.name || "").toLowerCase().includes(q) || (x.symbol || "").toLowerCase().includes(q)));
+  }
+  function sortCards(list) {
+    const s = state.sort, a = list.slice();
+    const num = (x, dflt) => x == null ? dflt : x;
+    if (s === "mcap") a.sort((x, y) => num(y.market_cap_cr, -1) - num(x.market_cap_cr, -1));
+    else if (s === "sales" || s === "profit" || s === "eps") a.sort((x, y) => num(growthKey(y, s), -1e9) - num(growthKey(x, s), -1e9));
+    else if (s === "pe") a.sort((x, y) => num(x.ratios.pe.value, 1e9) - num(y.ratios.pe.value, 1e9));
+    else a.sort((x, y) => (y.filed_on || "").localeCompare(x.filed_on || "") || num(y.market_cap_cr, -1) - num(x.market_cap_cr, -1));
+    return a;
+  }
+
+  // ------------------------------------------------------------ drawing
+  function draw() {
+    const d = state.data, out = $("rsOut");
+    if (!d) return;
+    $("rsTitle").textContent = TITLES[state.view];
+    $("rsWindow").textContent = (d.window ? d.window.label : "") + (d.capped ? " (the first " + d.published.length + " are shown)" : "");
+    const isUp = state.view === "upcoming";
+    $("rsControls").hidden = false;
+    const sel = $("rsSort"), opts = SORTS[state.view];
+    if (sel.dataset.view !== state.view) {
+      sel.innerHTML = opts.map(o => '<option value="' + o[0] + '">' + o[1] + "</option>").join("");
+      state.sort = opts[0][0]; sel.value = state.sort; sel.dataset.view = state.view;
+    }
+    const sec = $("rsSector");
+    if (sec.dataset.n !== String((d.sectors || []).length) + state.view) {
+      sec.innerHTML = '<option value="">All sectors</option>' + (d.sectors || []).map(s => '<option value="' + esc(s) + '">' + esc(s) + "</option>").join("");
+      sec.dataset.n = String((d.sectors || []).length) + state.view; sec.value = state.sector;
+    }
+    for (const [i, v] of [["rsB1", "this_week"], ["rsB2", "last_week"], ["rsB3", "upcoming"]]) {
+      const n = d.tabs ? d.tabs[v] : null; $(i).textContent = n == null ? "–" : n;
+    }
+    const strip = $("rsStrip");
+    if (d.summary && d.summary.total) {
+      const s = d.summary;
+      strip.innerHTML = "<span><b>" + s.total + "</b> " + (s.total === 1 ? "company has" : "companies have") + " filed</span>" +
+        (s.sales_compared ? "<span>Sales up in <b>" + s.sales_up + "</b> of " + s.sales_compared + " compared with a year ago</span>" : "") +
+        (s.profit_compared ? "<span>Net profit up in <b>" + s.profit_up + "</b> of " + s.profit_compared + "</span>" : "");
+      strip.hidden = false;
+    } else strip.hidden = true;
+
+    let html = "", total = 0, shown = 0;
+    if (!isUp) {
+      const all = d.published || [], list = sortCards(visible(all));
+      total = all.length; shown = list.length;
+      if (!all.length) {
+        html += '<p class="rs-none">' + (state.view === "this_week"
+          ? "No results have been filed yet this week. Companies due later this week are listed below."
+          : "No results were filed in this window.") + "</p>";
+      } else if (!list.length) html += '<p class="rs-none">No company matches those filters.</p>';
+      html += list.slice(0, state.shown).map(card).join("");
+      if (list.length > state.shown) html += '<button type="button" class="rs-more" id="rsMore">Show ' + Math.min(PAGE, list.length - state.shown) + " more (" + (list.length - state.shown) + " left)</button>";
+    }
+    const sched = visible(d.scheduled || []);
+    if (state.view === "this_week" && sched.length) {
+      html += '<div class="rs-section"><h2>Still to come this week</h2><p class="rs-sub2">Board meetings to consider results, from the exchanges’ notices.</p></div>' + schedule(sched);
+    }
+    if (isUp) {
+      const all = d.scheduled || [];
+      total = all.length; shown = sched.length;
+      html += all.length ? (sched.length ? schedule(sched) : '<p class="rs-none">No company matches those filters.</p>')
+                         : '<p class="rs-none">No results dates are on file for these weeks yet. Companies announce them about a week before the board meeting.</p>';
+    }
+    const aw = d.awaited || [];
+    if (aw.length) {
+      html += '<details class="rs-await"><summary>' + aw.length + " compan" + (aw.length === 1 ? "y" : "ies") + " held a results meeting earlier, but no figures are on file yet</summary><ul>" +
+        aw.map(a => '<li><a href="/#/stock/' + encodeURIComponent(a.isin) + '">' + esc(a.name || a.symbol) + "</a> · " + esc(dayHead(a.event_date)) + "</li>").join("") + "</ul></details>";
+    }
+    out.innerHTML = html;
+    const noun = isUp ? (total === 1 ? " company due" : " companies due") : (total === 1 ? " result" : " results");
+    $("rsCount").textContent = !total ? "" : shown === total ? total + noun : shown + " of " + total + noun;
+    const more = $("rsMore"); if (more) more.onclick = () => { state.shown += PAGE; draw(); };
+    const notes = d.notes || [];
+    $("rsNoteList").innerHTML = notes.map(n => "<li>" + esc(n) + "</li>").join(""); $("rsNotes").hidden = !notes.length;
+  }
+
+  function schedule(list) {
+    const byDay = {};
+    const ordered = state.sort === "mcap" ? list.slice().sort((a, b) => (b.market_cap_cr == null ? -1 : b.market_cap_cr) - (a.market_cap_cr == null ? -1 : a.market_cap_cr)) : list;
+    if (state.sort === "mcap") return '<div class="rs-list">' + ordered.map(upcomingRow).join("") + "</div>";
+    ordered.forEach(s => (byDay[s.event_date] = byDay[s.event_date] || []).push(s));
+    return Object.keys(byDay).sort().map(day => '<div class="rs-day">' + esc(dayHead(day)) + "<small>" + byDay[day].length + " compan" + (byDay[day].length === 1 ? "y" : "ies") + "</small></div>" +
+      '<div class="rs-list">' + byDay[day].sort((a, b) => (b.market_cap_cr == null ? -1 : b.market_cap_cr) - (a.market_cap_cr == null ? -1 : a.market_cap_cr)).map(upcomingRow).join("") + "</div>").join("");
+  }
+
+  // ------------------------------------------------------------ loading
+  async function load(view) {
+    const mine = ++state.loading;
+    state.view = view; state.shown = PAGE;
+    document.querySelectorAll(".rs-tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.view === view)));
+    $("rsOut").innerHTML = '<p class="rs-busy">Loading results…</p>';
+    $("rsStrip").hidden = true; $("rsCount").textContent = "";
+    try {
+      const r = await fetch("/api/results?view=" + encodeURIComponent(view), {headers: {Accept: "application/json"}});
+      if (r.status === 401 || r.status === 403) { window.rsRelock(); return; }
+      if (!r.ok) {
+        let why = "";
+        try { why = (await r.json()).detail || ""; } catch (e) { /* not json */ }
+        throw new Error(why || "The server answered " + r.status);
+      }
+      const data = await r.json();
+      if (mine !== state.loading) return;                         // a newer click has taken over
+      state.data = data; draw();
+    } catch (e) {
+      if (mine !== state.loading) return;
+      $("rsOut").innerHTML = '<div class="rs-err" role="alert">Results could not be loaded. ' + esc(e.message) + ' <button type="button" class="rs-more" style="display:inline-block;margin:0 0 0 8px;padding:6px 14px" id="rsRetry">Try again</button></div>';
+      const b = $("rsRetry"); if (b) b.onclick = () => load(state.view);
+    }
+  }
+
+  function fromHash() { return HASH[location.hash] || "this_week"; }
+  document.querySelectorAll(".rs-tab").forEach(t => t.addEventListener("click", () => {
+    const v = t.dataset.view;
+    history.replaceState(null, "", v === "this_week" ? location.pathname : "#" + v.replace("_", "-"));
+    load(v);
+  }));
+  $("rsSearch").addEventListener("input", e => { state.q = e.target.value; state.shown = PAGE; draw(); });
+  $("rsSector").addEventListener("change", e => { state.sector = e.target.value; state.shown = PAGE; draw(); });
+  $("rsSort").addEventListener("change", e => { state.sort = e.target.value; state.shown = PAGE; draw(); });
+  $("rsCaps").addEventListener("click", e => {
+    const b = e.target.closest(".rs-cap"); if (!b) return;
+    state.cap = b.dataset.cap; state.shown = PAGE;
+    document.querySelectorAll(".rs-cap").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  });
+  window.addEventListener("hashchange", () => { const v = fromHash(); if (v !== state.view && !$("rsApp").hidden) load(v); });
+
+  // ------------------------------------------------------------ the gate
+  // The server decides (every call is checked); this only avoids drawing a page that would be empty. It asks
+  // /api/results/access itself, so it works however old the site-wide script on the server is.
+  const INTRO = "Company results as they are filed: sales, operating profit, net profit and EPS against the last quarter " +
+                "and a year ago, with market cap, P/E and PEG.";
+  function authReady() {
+    return new Promise(res => {
+      if (window.fcAuthState && window.fcAuthState.ready) return res();
+      const f = () => res();
+      document.addEventListener("fc-auth", f, {once: true});
+      setTimeout(f, 4000);
+    });
+  }
+  async function lock(a) {
+    a = a || {};
+    $("rsApp").hidden = true;
+    const host = $("rsLock");
+    const box = (title, msg, extra) => '<div class="rs-lock"><h3>' + esc(title) + "</h3><p>" + esc(msg) + "</p>" + (extra || "") + "</div>";
+    if (a.enabled === false) {
+      host.innerHTML = box("Quarterly results is switched off", "It is not available at the moment.");
+    } else if (a.signed_in === false) {
+      host.innerHTML = box("Quarterly results is part of the Stocks plan", INTRO + " Sign in with an account on that plan to see it.",
+        '<button type="button" class="rs-sign" id="rsSign">Sign in</button>');
+      $("rsSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+    } else if (a.audience === "premium" && window.fcLocked) {
+      await authReady();
+      window.fcLocked(host, "Quarterly results", INTRO, "stocks");
+    } else {
+      host.innerHTML = box("Quarterly results is not open to your account",
+        "It is available to " + (a.who || "subscribers") + ". " + INTRO);
+    }
+  }
+  async function relock() {                        // a 401/403 from the data: ask again, show the right notice
+    try { await lock(await (await fetch("/api/results/access")).json()); } catch (e) { await lock({}); }
+  }
+  async function boot() {
+    let a;
+    try {
+      a = await (await fetch("/api/results/access", {headers: {Accept: "application/json"}})).json();
+    } catch (e) {
+      $("rsLock").innerHTML = '<div class="rs-err" role="alert">Could not reach FinChaya. Check your connection and reload the page.</div>';
+      return;
+    }
+    if (!a.allowed) { await lock(a); return; }
+    $("rsLock").innerHTML = ""; $("rsApp").hidden = false;
+    load(fromHash());
+  }
+  window.rsRelock = relock;
+  if (document.readyState === "complete") boot(); else window.addEventListener("load", boot);
+})();
+</script>
+</body>
+</html>

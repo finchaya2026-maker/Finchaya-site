@@ -602,11 +602,10 @@
     .capring{print-color-adjust:exact;-webkit-print-color-adjust:exact} }
 
   /* ---- alerts ------------------------------------------------------
-     Switches that record a request. Nothing sends anything yet, and the
-     panel says so at the top in the same weight as everything else --
-     not in grey six-point type at the bottom. A control labelled "alert
-     me" that quietly does nothing converts somebody's attention into a
-     false sense of being watched over, which is worse than no control. */
+     The monthly check and the three alerts. Whether anything is actually
+     being sent is said at the top of the panel, in the same weight as the
+     rest, from what the server measures -- not assumed here. A control
+     that says "alert me" and quietly does nothing is worse than no control. */
   .alerthead{display:flex;align-items:baseline;justify-content:space-between;
     gap:var(--s2);flex-wrap:wrap}
   .agrp{margin-top:var(--s3)}
@@ -1134,9 +1133,11 @@ function portfolioGate() {
   const whofor = document.getElementById("whofor");
   if (whofor) whofor.hidden = !st.distributor;
 
-  // `subscribed`, not `score_access`: scores can be switched off for
-  // everyone, and that must not lock paying users out of the look-through.
-  if (st.subscribed) return;
+  // `mf` (the mutual-fund tier), not `score_access`: scores can be switched
+  // off for everyone, and that must not lock paying users out of the
+  // look-through. An older server that sends no tier falls back to
+  // `subscribed`.
+  if (st.mf === undefined ? st.subscribed : st.mf) return;
   const entry = document.getElementById("entry");
   if (!entry || entry.dataset.locked) return;
   entry.dataset.locked = "1";
@@ -1146,7 +1147,7 @@ function portfolioGate() {
     window.fcLocked(host, "Looking through a portfolio",
       "It explodes every fund you hold down to the individual companies, "
       + "adds up what you really own, and shows where two funds are buying "
-      + "you the same thing twice. That is the part that is paid for.");
+      + "you the same thing twice. That is the part that is paid for.", "mf");
   const run = document.getElementById("run");
   if (run) run.disabled = true;
 }
@@ -2707,24 +2708,22 @@ function overlapPicture(d) {
 // would drift from this within a session.
 initImport();
 
-/* ---- alerts -------------------------------------------------------
-
+/* ---- the monthly check and the alerts ------------------------------
    What the holder has asked to be told about. Attached to a SAVED
    portfolio, because a one-off look-through has nothing to attach to.
 
-   THE NOTICE AT THE TOP IS NOT A DISCLAIMER, IT IS THE FIRST FACT.
-   Nothing in this product sends anything yet. Putting that in small grey
-   type under a row of live-looking switches would be a design that tells
-   the truth in a place nobody reads it -- and somebody who ticks these
-   and then stops checking their portfolio would be worse off than before
-   they found the panel.
+   WHAT IS SENT (portfolio_monitor.py, on the schedule in DEPLOY_ALERTS.md)
+     A monthly check, once, between the 11th and 15th.
+     An alert when a fund trails its benchmark, or sits in the lower part of
+     its category, at three month ends in a row, or when two funds overlap by
+     more than the line below. Each is told once, when it starts.
 
-   EACH RULE SAYS WHAT ITS DATA CAN SUPPORT, measured by the server on
-   every load rather than hard-coded here. "Accruing" means the history it
-   reads has only just started being kept and it will begin working on its
-   own; "missing" means nothing currently computes what it needs. Both can
-   still be switched on -- the choice is recorded and honoured the day the
-   data arrives, which is a promise that can be kept. */
+   THE STATUS LINE AT THE TOP IS MEASURED BY THE SERVER, NOT ASSUMED HERE.
+   delivery_live is true only when email is set up on this server and the
+   checker has run recently without error. If it is not, the panel says so
+   in words and says why, because a switch that looks live and is not is
+   worse than no switch. The choices are saved either way and start working
+   the day sending is on. */
 let ALERTS = null;
 
 async function loadAlerts() {
@@ -2749,42 +2748,63 @@ function drawAlerts() {
     g.rules.push(r);
   });
 
-  const tag = r => r.status === "ready" ? ""
-    : `<span class="atag ${r.status}">${
-        r.status === "accruing" ? "not yet — see below" : "needs data we don't keep"
-      }</span>`;
-
   const rule = r => `<label class="arule">
       <input type="checkbox" data-rule="${r.key}" ${r.enabled ? "checked" : ""}>
       <span class="abody">
-        <b>${esc(r.name)}${tag(r)}</b>
+        <b>${esc(r.name)}</b>
         <span class="awhat">${esc(r.what)}</span>
         <span class="awhy">${esc(r.why)}</span>
-        ${r.unit ? `<span class="athresh">Tell me when it passes
+        ${r.unit ? `<span class="athresh">${esc(r.pre || "Tell me when it passes")}
           <input type="number" data-thresh="${r.key}" value="${r.threshold}"
-                 min="${r.min}" max="${r.max}" step="1"> ${esc(r.unit)}</span>`
+                 min="${r.min}" max="${r.max}" step="1"> ${esc(r.post || r.unit)}</span>`
         : ""}
         ${r.note ? `<span class="anote">${esc(r.note)}</span>` : ""}
       </span>
     </label>`;
 
+  const mon = ALERTS.monthly || {};
+  const monthName = m => {
+    try { return new Date(m + "T00:00:00").toLocaleString("en-GB", {month: "long", year: "numeric"}); }
+    catch { return m; }
+  };
+  const status = ALERTS.delivery_live
+    ? `<div class="flag" style="margin-top:var(--s2);background:var(--wash,#eef5f1);border-color:var(--brand)">
+         <b>Switched on.</b> Emails for this plan go to ${esc(ALERTS.email_to || "your account's address")}.
+         ${mon.last ? `The last monthly check was for ${esc(monthName(mon.last.month))}.` : "The first monthly check comes between the 11th and 15th of next month."}
+       </div>`
+    : `<div class="flag" style="margin-top:var(--s2)">
+         <b>Not sending yet.</b> ${esc(ALERTS.delivery_why || "")}
+         Your choices below are saved, and start working the day sending is switched on.
+       </div>`;
+
+  const open = (ALERTS.open_alerts || []).length
+    ? `<div class="agrp">
+         <h3>Open now</h3>
+         ${ALERTS.open_alerts.map(a => `<p class="awhat" style="margin:6px 0 0">${esc(a.sentence)}
+            <span class="sub">Since ${esc(a.since)}.</span></p>`).join("")}
+       </div>`
+    : "";
+
   host.innerHTML = `<div class="panel" id="sec-alerts">
     <div class="alerthead">
-      <h2 style="margin:0">Tell me when something changes</h2>
+      <h2 style="margin:0">Your monthly check and alerts</h2>
     </div>
-    <p class="sub" style="margin:6px 0 0;max-width:72ch">Everything below is
-       measured <b>from the day you invested in each fund</b> &mdash; not
-       from last month, and not from a calendar window you were not
-       invested for. A fund added recently is judged from its own start
-       date even if the rest have been held for years.</p>
+    <p class="sub" style="margin:6px 0 0;max-width:72ch">FinChaya emails you about this
+       plan in two ways: a check once a month, and an alert when something crosses a
+       line you can set below. Everything is measured on month-end figures, from the
+       funds' own returns, their benchmarks and what they have published.</p>
+    ${status}
+    ${open}
 
-    <div class="flag" style="margin-top:var(--s2)">
-      <b>Nothing is being sent yet.</b> These switches record what you want
-      to be told about. FinChaya does not currently send email, WhatsApp or
-      notifications of any kind &mdash; you still have to come and look.
-      Your choices are saved so that when sending is built, it already
-      knows what to send you; until then, treat this as a note to us rather
-      than as cover.
+    <div class="agrp">
+      <h3>Once a month</h3>
+      <label class="arule">
+        <input type="checkbox" data-monthly ${mon.enabled === false ? "" : "checked"}>
+        <span class="abody">
+          <b>${esc(mon.name || "A monthly check by email")}</b>
+          <span class="awhat">${esc(mon.what || "")}</span>
+        </span>
+      </label>
     </div>
 
     ${groups.map(g => `<div class="agrp">
@@ -2793,15 +2813,17 @@ function drawAlerts() {
     </div>`).join("")}
 
     <div class="agrp">
-      <h3>How you would want to hear</h3>
-      <p class="sub" style="margin:0">None of these work yet. Choosing one
-         says which you would prefer.</p>
+      <h3>How you hear</h3>
       <div class="achans">
         ${ALERTS.channels.map(c => `<label class="achan">
           <input type="checkbox" data-chan="${c.key}" ${c.enabled ? "checked" : ""}>
           <span>${esc(c.name)}</span></label>`).join("")}
       </div>
     </div>
+
+    <p class="sub" style="margin:var(--s2) 0 0;max-width:72ch">These are records of what
+       has happened, not signals to buy, sell or switch, and not a forecast. Whether to
+       change anything stays with you.</p>
 
     <div class="asave">
       <button class="go" id="alertsave">Save these</button>
@@ -2839,11 +2861,12 @@ async function saveAlerts() {
     channels[box.dataset.chan] = box.checked;
   });
 
+  const mbox = host.querySelector("[data-monthly]");
   btn.disabled = true;
   try {
     const r = await fetch(`/api/portfolio/saved/${savedId}/alerts`, {
       method: "PUT", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({rules, channels})});
+      body: JSON.stringify({rules, channels, monthly: mbox ? mbox.checked : null})});
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || "Could not save.");
     ok.hidden = false;

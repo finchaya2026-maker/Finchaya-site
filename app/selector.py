@@ -632,7 +632,7 @@ def suggest(body: SelectRequest, request: Request):
         # scores switched off it is not read at all: no rising shares, no
         # category yardstick, no rising floor and a zero weight below. The
         # other three components rank the funds exactly as before.
-        scores_on = _scores_on()
+        scores_on = _scores_on(request)
         grouped = {}
         if scores_on:
             for r in _q(cur, TREND_BATCH, {"codes": pool_codes}):
@@ -1036,7 +1036,7 @@ def overlap(body: OverlapRequest, request: Request):
     """
     _user_id(request)
     from portfolio_api import _require_subscription
-    _require_subscription(request)
+    _require_subscription(request, "mf")
     if len(body.funds) < 2:
         raise HTTPException(400, "Overlap needs at least two funds.")
     if len(body.funds) > 20:
@@ -1116,7 +1116,7 @@ def review(body: ReviewRequest, request: Request):
     # a signed-in subscriber to sign in again.
     _user_id(request)
     from portfolio_api import _require_subscription
-    _require_subscription(request)
+    _require_subscription(request, "mf")
     if not body.funds:
         raise HTTPException(400, "No funds to review.")
     if len(body.funds) > 20:
@@ -1163,7 +1163,7 @@ def review(body: ReviewRequest, request: Request):
         # Everything else in a verdict is returns, overlap or holdings.
         grouped = {}
         cat_rising = {}
-        if _scores_on():
+        if _scores_on(request):
             for r in _q(cur, TREND_BATCH, {"codes": codes}):
                 grouped.setdefault(str(r["scheme_code"]), []).append(r)
             cat_rising = {r["category"]: float(r["up_pct"])

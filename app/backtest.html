@@ -1,0 +1,1794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Back-test your rules &mdash; FinChaya</title>
+<meta name="description" content="Describe when you would get into a stock and when you would
+  get out, using prices and indicators joined with AND / OR, and see what those rules would have
+  done over up to ten years of daily prices.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  backtest.html -- describe the rules, then see what they would have done.
+  ======================================================================
+  THE BUILDER
+      Conditions are  [thing] [comparison] [thing]  -- "5-day EMA crosses above
+      50-day EMA", "Close is above High, 1 day ago", "Volume is above 1.5 x
+      20-day SMA of volume". Any condition can be "true at any point in the
+      last N days", which is how two crossovers that never fall on the same
+      day are combined. Conditions sit in groups that must ALL be true or
+      need ANY to be true, and groups nest.
+
+      The page never builds its own wording: the "Reads as" text under each
+      rule comes from the server (/api/rule-backtest/describe), the same words the
+      result repeats, so what the person sees is what was tested.
+
+  WHAT IT DELIBERATELY DOES NOT DO
+      It does not rate the rules, call them good or bad, or say what to do.
+      The summary reports what happened and puts holding the stock beside it,
+      because a rule that earns less than doing nothing is the most useful
+      thing a back-test can show. FinChaya is not a SEBI-registered Research
+      Analyst or Investment Adviser.
+
+  WHO SEES IT
+      Premium members and admins. This page is plain HTML and shows a notice
+      to anyone else; /api/rule-backtest refuses them on its own.
+-->
+<style>
+  /* Every class here is prefixed bt-. finchaya.css owns .panel, .tile, .note
+     and others and loads after this block, so an unprefixed name can lose the
+     cascade to an unrelated rule. */
+  .bt-form{padding:22px 24px}
+  .bt-step{display:block;font-size:15px;font-weight:650;color:var(--ink);margin:0 0 4px}
+  .bt-step small{font-weight:400;color:var(--muted);font-size:13.5px;margin-left:6px}
+  .bt-block{margin:0 0 26px}
+  .bt-block:last-of-type{margin-bottom:0}
+  .bt-help{font-size:13.5px;color:var(--muted);margin:0 0 10px;max-width:70ch}
+
+  /* ---- examples ---------------------------------------------------- */
+  .bt-ex{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;align-items:center}
+  .bt-ex > span{font-size:13.5px;color:var(--muted);margin-right:2px}
+  .bt-chipb{appearance:none;cursor:pointer;background:var(--card);color:var(--ink-2);
+    border:1.5px solid var(--line-firm);border-radius:999px;padding:6px 13px;font:inherit;
+    font-size:13.5px}
+  .bt-chipb:hover{border-color:var(--brand);color:var(--brand-dark)}
+
+  /* ---- stock picker ------------------------------------------------ */
+  .bt-pick{position:relative;max-width:520px}
+  .bt-hits{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--card);
+    border:1px solid var(--line-firm);border-radius:var(--r);box-shadow:0 10px 30px rgba(11,31,25,.13);
+    max-height:320px;overflow:auto}
+  .bt-hits[hidden]{display:none}
+  .bt-hit{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;
+    padding:10px 13px;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer;
+    font:inherit;font-size:14.5px;line-height:1.35;color:var(--ink)}
+  .bt-hit:last-child{border-bottom:0}
+  .bt-hit:hover,.bt-hit.on{background:var(--brand-wash)}
+  .bt-hit small{display:block;color:var(--muted);font-size:12.5px}
+  .bt-none{padding:12px 14px;color:var(--muted);font-size:14px}
+  .bt-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .bt-chip{display:inline-flex;align-items:center;gap:8px;background:var(--brand-wash);
+    border:1px solid var(--brand);border-radius:999px;padding:5px 6px 5px 12px;font-size:14px}
+  .bt-chip b{font-weight:650}
+  .bt-chip button{appearance:none;border:0;background:none;cursor:pointer;color:var(--brand-dark);
+    font-size:16px;line-height:1;padding:2px 6px;border-radius:50%}
+  .bt-chip button:hover{background:#fff}
+  .bt-count{font-size:13px;color:var(--muted);margin-top:6px}
+  .bt-groups{margin:16px 0 0}
+  .bt-gl{display:block;font-size:13.5px;color:var(--muted);margin:0 0 8px}
+  .bt-gbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .bt-chipb small{font-size:12px;color:var(--muted);margin-left:4px}
+  .bt-chipb.on{background:var(--brand-wash);border-color:var(--brand);color:var(--brand-dark);font-weight:650}
+  .bt-chipb:disabled{opacity:.5;cursor:not-allowed}
+  .bt-gchosen{margin:12px 0 0;padding:12px 14px;background:var(--brand-wash);border:1px solid var(--brand);
+    border-radius:var(--r);max-width:620px}
+  .bt-gchosen[hidden]{display:none}
+  .bt-gchosen b{font-size:15.5px}
+  .bt-gchosen span{color:var(--ink-2);font-size:14px;margin-left:8px}
+  .bt-gchosen button{float:right;appearance:none;border:0;background:none;cursor:pointer;
+    color:var(--brand-dark);font-size:13.5px;text-decoration:underline}
+  .bt-gchosen p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.5}
+  .bt-tbl th[data-sort]{cursor:pointer;user-select:none}
+  .bt-stockcsv{margin:10px 0 0}
+  .bt-tbl th[data-sort]:hover{color:var(--brand-dark)}
+  .bt-tbl th .ar{font-size:10px;margin-left:3px;color:var(--brand-dark)}
+  .bt-noteslist{margin:8px 0 0;padding:0 0 0 18px;font-size:13.5px;color:var(--ink-2)}
+  .bt-noteslist li{margin:0 0 5px}
+
+  /* ---- the rule builder -------------------------------------------- */
+  .bt-group{border:1.5px solid var(--line-firm);border-radius:var(--r);padding:12px 14px;
+    background:var(--surface)}
+  .bt-group .bt-group{background:var(--card);margin:2px 0}
+  .bt-ghead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14.5px;
+    font-weight:600;margin:0 0 10px}
+  .bt-ghead select{font-weight:650}
+  .bt-ghead .bt-x{margin-left:auto}
+  .bt-join{font-size:11.5px;font-weight:700;letter-spacing:.07em;color:var(--brand-dark);
+    margin:7px 0 7px 4px}
+  .bt-cond{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:11px 12px}
+  .bt-group .bt-group .bt-cond{background:var(--surface)}
+  .bt-sides{display:flex;gap:10px 14px;flex-wrap:wrap;align-items:flex-start}
+  .bt-op{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:center;
+    padding:6px 8px;border-radius:8px;background:var(--surface);border:1px solid var(--line)}
+  .bt-group .bt-group .bt-op{background:var(--card)}
+  .bt-cmp{align-self:center}
+  /* finchaya.css makes every input and select full width with generous padding.
+     These are deliberately more specific than that, so the builder's compact
+     controls cannot be stretched by it. */
+  .bt-form .bt-p{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);
+    margin:0;font-weight:400}
+  .bt-form .bt-p input[type=number]{width:70px}
+  .bt-form .bt-p input.wide{width:92px}
+  .bt-form .bt-p select{width:auto;max-width:100px}
+  .bt-form .bt-p select.bt-wide{max-width:178px}
+  .bt-step-box{margin:16px 0 0;padding:12px 14px;border:1.5px dashed var(--line-firm);border-radius:var(--r);
+    background:var(--surface)}
+  .bt-stephead{font-size:14.5px;font-weight:650}
+  .bt-stephead small{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}
+  .bt-tfhelp{margin:6px 0 10px}
+  .bt-tfhelp > summary{font-size:13.5px;font-weight:600;color:var(--brand-dark);cursor:pointer}
+  .bt-tfhelp ul{font-size:13.5px}
+  .bt-mod{padding-left:8px;border-left:1px solid var(--line-firm)}
+  .bt-extra{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;margin-top:9px;
+    font-size:13px;color:var(--muted)}
+  .bt-form .bt-extra label{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0;
+    font-size:13px;font-weight:400;color:var(--muted)}
+  .bt-form .bt-extra input[type=number]{width:60px}
+  .bt-extra .bt-x{margin-left:auto}
+  .bt-gadd{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .bt-sighead{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px;font-size:14px}
+  .bt-sighead b{color:var(--brand-dark)}
+  .bt-form .bt-sighead select{max-width:100%;min-width:0;font-weight:650}
+  .bt-sigops{display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--line)}
+  .bt-group .bt-group .bt-sigops{background:var(--card)}
+  .bt-sigops .bt-p select{max-width:230px}
+  .bt-sigwhat{margin:8px 0 0;font-size:13px;color:var(--muted);line-height:1.5}
+  .bt-from{margin:14px 0 0;padding:11px 14px;border:1.5px solid var(--brand);border-radius:var(--r);background:var(--brand-wash);font-size:14px;line-height:1.55;color:var(--ink-2)}
+  .bt-from b{color:var(--brand-dark)}
+  .bt-from[hidden]{display:none}
+  .bt-form select,.bt-form input[type=number],.bt-form input[type=text]{
+    font:inherit;font-size:14.5px;color:var(--ink);background:var(--card);width:auto;
+    border:1.5px solid var(--line-firm);border-radius:8px;padding:6px 8px;min-height:36px}
+  .bt-form input[type=text]{width:100%;padding:9px 12px;min-height:42px;font-size:15px}
+  .bt-form select:focus,.bt-form input:focus{outline:2px solid var(--brand);outline-offset:1px;
+    border-color:var(--brand);box-shadow:none}
+  .bt-sm{appearance:none;cursor:pointer;background:var(--card);color:var(--brand-dark);
+    border:1.5px solid var(--line-firm);border-radius:8px;padding:6px 12px;font:inherit;
+    font-size:13.5px;font-weight:600}
+  .bt-sm:hover:not(:disabled){border-color:var(--brand)}
+  .bt-sm:disabled{color:var(--muted);cursor:not-allowed;opacity:.6}
+  .bt-x{appearance:none;cursor:pointer;background:none;border:0;color:var(--muted);
+    font:inherit;font-size:13px;text-decoration:underline;padding:4px}
+  .bt-x:hover{color:var(--neg)}
+  .bt-reads{margin:10px 0 0;padding:9px 12px;border-radius:var(--r);background:var(--brand-wash);
+    font-size:14px;color:var(--ink-2);line-height:1.5}
+  .bt-reads b{color:var(--brand-dark);font-weight:650}
+  .bt-reads .j{font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--brand-dark);
+    margin:0 6px}
+  .bt-reads[hidden]{display:none}
+
+  .bt-exits{display:grid;gap:12px 16px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    margin:14px 0 0}
+  .bt-form .bt-field label{display:block;font-size:13.5px;font-weight:600;color:var(--ink-2);margin:0 0 4px}
+  .bt-field label small{font-weight:400;color:var(--muted)}
+  .bt-form .bt-field input[type=number],.bt-form .bt-field select{width:100%;padding:8px 10px;min-height:40px}
+  .bt-opts{display:grid;gap:14px 16px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .bt-seg{display:flex;gap:0}
+  .bt-seg button{flex:1;appearance:none;cursor:pointer;font:inherit;font-size:14.5px;padding:8px 12px;
+    background:var(--card);color:var(--ink-2);border:1.5px solid var(--line-firm);min-height:38px}
+  .bt-seg button:first-child{border-radius:8px 0 0 8px}
+  .bt-seg button:last-child{border-radius:0 8px 8px 0;border-left:0}
+  .bt-seg button[aria-pressed=true]{background:var(--brand-wash);border-color:var(--brand);
+    color:var(--brand-dark);font-weight:650}
+  .bt-seg button[aria-pressed=true] + button{border-left-color:var(--brand)}
+  .bt-check{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;color:var(--ink-2);
+    margin-top:14px;max-width:72ch}
+  .bt-check input{margin-top:3px;width:16px;height:16px;flex:none}
+
+  .bt-go{margin-top:22px;appearance:none;border:0;cursor:pointer;background:var(--brand);color:#fff;
+    font:inherit;font-size:16px;font-weight:650;padding:13px 28px;border-radius:var(--r)}
+  .bt-go:hover:not(:disabled){background:var(--brand-dark)}
+  .bt-go:disabled{background:var(--line-firm);cursor:not-allowed}
+  .bt-hint{font-size:13.5px;color:var(--muted);margin:10px 0 0;min-height:1.3em}
+  .bt-ask[hidden]{display:none}
+  .bt-askrow{display:flex;gap:10px;flex-wrap:wrap}
+  .bt-askrow input{flex:1 1 220px;min-width:0;padding:9px 12px;font-size:15px;border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink)}
+  .bt-askrow .bt-sm{flex:0 0 auto}
+  .bt-hint.warn{color:#9a5d0b}
+
+  /* ---- results ----------------------------------------------------- */
+  .bt-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .bt-head h2{margin:0 0 2px}
+  .bt-sub{font-size:14px;color:var(--ink-2);margin:0}
+  .bt-sum{font-size:16px;margin:14px 0 0;max-width:72ch;line-height:1.6}
+  .bt-sum b{font-variant-numeric:tabular-nums}
+  .bt-rules{margin:16px 0 0;padding:12px 14px;border-radius:var(--r);background:var(--surface);
+    font-size:14px;color:var(--ink-2)}
+  .bt-rules h4{margin:0 0 4px;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--muted)}
+  .bt-rules p{margin:0 0 10px}
+  .bt-rules p:last-child{margin:0}
+  .bt-rules .j{font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--brand-dark);
+    margin:0 5px}
+  .bt-tiles{margin:18px 0 0}
+  .bt-tiles .tile{box-shadow:none;border:1px solid var(--line)}
+  .bt-tiles .tile .v{font-size:23px}
+  .bt-h3{margin:30px 0 4px;font-size:18px}
+  .bt-note{font-size:13.5px;color:var(--muted);margin:0 0 12px;max-width:74ch}
+  .bt-notes{margin:14px 0 0;display:flex;flex-direction:column;gap:8px}
+  .bt-warn{background:var(--note-wash);border:1px solid #f0d6a6;border-radius:var(--r);
+    padding:9px 13px;font-size:14px;color:var(--ink-2)}
+  .bt-warn b{color:#9a5d0b}
+  .bt-same{background:var(--note-wash);border:1px solid #f0d6a6;border-radius:var(--r);
+    padding:8px 12px;margin:9px 0 0;font-size:13.5px;color:var(--ink-2)}
+  .bt-same b{color:#9a5d0b}
+
+  /* ---- the tabs (the strip itself is the site's .tabs, as on the stock page) ---- */
+  .tabs .tcount{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:999px;font-size:12px;
+    font-weight:700;background:var(--surface-2);color:var(--muted);font-variant-numeric:tabular-nums}
+  .tabs .tcount[hidden]{display:none}
+  .tabs button[aria-selected=true] .tcount{background:rgba(255,255,255,.18);color:#fff}
+  .bt-tabs[hidden]{display:none}
+  .bt-tabs{margin-bottom:14px}
+  .bt-pane[hidden]{display:none}
+  .bt-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:26px 0 0;padding:16px 0 0;
+    border-top:1px solid var(--line)}
+  .bt-bar .bt-spacer{flex:1}
+  .bt-bar .bt-go{margin:0}
+  .bt-bar .bt-nav{padding:10px 16px;font-size:14.5px}
+  .bt-bar .bt-nav[hidden]{display:none}
+  .tabs .tcount.warn{background:#f3d9a4;color:#7a4a00}
+  .tabs button[aria-selected=true] .tcount.warn{background:#ffd98a;color:#5c3700}
+
+  .bt-chart{position:relative;margin:8px 0 0}
+  .bt-chart svg{display:block;width:100%;height:auto;touch-action:pan-y}
+  .bt-read{font-size:14px;color:var(--ink-2);min-height:1.5em;margin:0 0 4px;
+    font-variant-numeric:tabular-nums}
+  .bt-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-2);margin:8px 0 0;
+    align-items:center}
+  .bt-legend i{display:inline-block;width:18px;height:3px;border-radius:2px;margin-right:6px;
+    vertical-align:middle}
+  .bt-legend label{margin-left:auto;display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+
+  .bt-scroll{overflow-x:auto;margin:6px 0 0}
+  .bt-tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+  .bt-tbl th,.bt-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;
+    white-space:nowrap}
+  .bt-tbl th:first-child,.bt-tbl td:first-child{text-align:left}
+  .bt-tbl thead th{font-size:12.5px;color:var(--muted);font-weight:600;vertical-align:bottom}
+  .bt-tbl td.l,.bt-tbl th.l{text-align:left}
+  .bt-tbl tr.aside td{color:var(--muted);text-decoration:line-through;text-decoration-color:#c9d3cf}
+  .bt-tbl tr.skip td{color:var(--muted)}
+  .bt-tbl td small{color:var(--muted);font-weight:400}
+  .bt-tag{display:inline-block;font-size:11.5px;font-weight:650;border-radius:6px;padding:1px 7px;
+    background:var(--note-wash);color:#9a5d0b;margin-left:6px;text-decoration:none}
+  .bt-more{margin:12px 0 0}
+  .bt-exitbar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--line);
+    margin:8px 0 6px}
+  .bt-exitbar i{display:block;height:100%}
+  .bt-exitkey{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-2)}
+  .bt-exitkey i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+  .bt-detail{margin:22px 0 0}
+  .bt-detail > summary{cursor:pointer;font-weight:650;font-size:15px;padding:6px 0}
+  .bt-detail ul{margin:6px 0 0;padding-left:20px;color:var(--ink-2);font-size:14px}
+  .bt-detail li{margin:0 0 6px}
+  .bt-busy{color:var(--muted);padding:18px 0}
+  .bt-err{color:#b3261e;margin:14px 0 0}
+  .bt-empty{padding:18px 4px;color:var(--ink-2);font-size:15.5px;max-width:64ch}
+
+  .bt-form .bt-op > select{max-width:100%;min-width:0}
+  .bt-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+  .bt-printhead,.bt-printonly{display:none}
+  @media (max-width:640px){
+    .bt-form{padding:18px 14px}
+    .bt-form .bt-op > select{width:100%}
+    .bt-op{width:100%}
+    .bt-cmp{width:100%}
+    .bt-cmp select{width:100%}
+    .bt-tiles .tile .v{font-size:20px}
+  }
+</style>
+<!-- THE PRINTED REPORT ("Save as PDF").
+     The PDF is made by the browser from this layout, so there is no PDF library on the site, the text stays
+     selectable and the charts stay sharp. Only the result is printed: the form, the menu and every button are
+     hidden. media="print" means it has no effect on the screen; to preview it on screen, set this element's
+     media to "all". -->
+<style id="btPrintCss" media="print">
+  @page{size:A4;margin:12mm 11mm}
+  html,body{background:#fff !important;font-size:11pt}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .wrap{max-width:none;padding:0}
+  .wrap > *:not(#btOut):not(.foot){display:none !important}
+  .fc-head,.bt-tabs,.bt-acts,.bt-sm,.bt-more,.bt-go,.bt-read,.bt-legend label,.bt-x,.bt-ask{display:none !important}
+  .bt-printhead{display:flex !important;justify-content:space-between;align-items:baseline;gap:12px;
+    border-bottom:2px solid #0f7a56;padding:0 0 6px;margin:0 0 12px;font-size:10pt;color:#3d4f49}
+  .bt-printhead b{font-size:15pt;color:#0b4f39;letter-spacing:-.01em}
+  .bt-printonly{display:block !important;font-size:9pt;color:#6b7d77;margin:4px 0 0}
+  .panel{box-shadow:none !important;padding:0 !important;margin:0 !important;border-radius:0 !important;background:#fff !important}
+  .bt-head h2{font-size:17pt}
+  .bt-sum{font-size:11pt;max-width:none}
+  .bt-rules{break-inside:avoid;border:1px solid #cbd8d3;background:#f4f8f6 !important}
+  .bt-warn{break-inside:avoid}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}
+  .tile{box-shadow:none !important;border:1px solid #cbd8d3 !important;border-radius:6px;padding:8px 10px;break-inside:avoid}
+  .tile .k{font-size:8.5pt}
+  .tile .v{font-size:15pt}
+  .tile .d{font-size:8pt}
+  .bt-h3{break-after:avoid;margin:16px 0 4px;font-size:12.5pt}
+  .bt-note{font-size:9pt}
+  .bt-chart,.bt-chart svg,svg{break-inside:avoid;max-width:100%;height:auto}
+  .bt-scroll{overflow:visible !important}
+  .bt-tbl{font-size:8.5pt}
+  .bt-tbl th,.bt-tbl td{padding:3px 5px;white-space:normal}
+  .bt-tbl thead{display:table-header-group}
+  .bt-tbl tr{break-inside:avoid}
+  .bt-tbl th .ar{display:none}
+  .bt-detail > summary{font-weight:700;list-style:none}
+  .bt-detail > summary::-webkit-details-marker{display:none}
+  .bt-detail ul{font-size:9pt}
+  .foot{font-size:8pt;max-width:none;margin-top:14px;border-top:1px solid #cbd8d3;padding-top:6px}
+  a{color:inherit;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <p class="eyebrow">Back-test</p>
+  <h1>Back-test your rules</h1>
+  <p class="note">Say when you would get into a stock and when you would get out &mdash; using
+    prices, averages, RSI, MACD and more, joined with AND / OR in any combination &mdash; and see
+    what those rules would have done over up to ten years of daily prices, next to simply holding.</p>
+
+  <div id="btLock"></div>
+  <div class="bt-from" id="btFrom" hidden></div>
+
+  <nav class="tabs bt-tabs" id="btTabs" role="tablist" aria-label="The steps of a back-test" hidden>
+    <button type="button" role="tab" id="btTab-stocks" data-tab="stocks" aria-selected="true" tabindex="0"><span class="step">1</span>Stocks<span class="tcount" id="btTc-stocks" hidden></span></button>
+    <button type="button" role="tab" id="btTab-entry" data-tab="entry" aria-selected="false" tabindex="-1"><span class="step">2</span>Entry<span class="tcount" id="btTc-entry" hidden></span></button>
+    <button type="button" role="tab" id="btTab-exit" data-tab="exit" aria-selected="false" tabindex="-1"><span class="step">3</span>Exit<span class="tcount" id="btTc-exit" hidden></span></button>
+    <button type="button" role="tab" id="btTab-money" data-tab="money" aria-selected="false" tabindex="-1"><span class="step">4</span>Capital &amp; settings<span class="tcount" id="btTc-money" hidden></span></button>
+    <button type="button" role="tab" id="btTab-results" data-tab="results" aria-selected="false" tabindex="-1"><span class="step">5</span>Results<span class="tcount" id="btTc-results" hidden></span></button>
+  </nav>
+
+  <section class="panel bt-form" id="btForm" role="tabpanel" hidden>
+
+    <div class="bt-pane" data-pane="stocks">
+    <div class="bt-block">
+      <label class="bt-step" for="btSearch">Which stocks? <small id="btStockHelp"></small></label>
+      <div class="bt-pick">
+        <input id="btSearch" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Search by company name or symbol, e.g. Infosys"
+               role="combobox" aria-expanded="false" aria-controls="btHits" aria-autocomplete="list">
+        <div class="bt-hits" id="btHits" role="listbox" hidden></div>
+      </div>
+      <div class="bt-chips" id="btChips"></div>
+      <div class="bt-count" id="btCount"></div>
+      <div class="bt-groups" id="btGroups" hidden>
+        <span class="bt-gl">Or test a whole group at once:</span>
+        <div class="bt-gbtns" id="btGroupBtns"></div>
+      </div>
+      <div class="bt-gchosen" id="btGroupChosen" hidden></div>
+    </div>
+    </div>
+
+    <div class="bt-pane" data-pane="entry" hidden>
+    <div class="bt-ex" id="btEx" aria-label="Examples"><span>Start from an example (fills in Entry, Exit and the stop settings):</span></div>
+    <div class="bt-block">
+      <span class="bt-step">Get in when&hellip;</span>
+      <p class="bt-help">The rule that starts a trade. It is judged on each day&rsquo;s close, and the trade is made
+        at the next day&rsquo;s open.</p>
+      <details class="bt-detail bt-tfhelp"><summary>Mixing daily, weekly and monthly candles</summary>
+        <ul>
+          <li>Each side of a condition has an <b>on</b> choice: <b>Daily</b>, <b>Weekly</b> or <b>Monthly</b>. You can mix them, for
+            example a daily 5 EMA crossing a daily 50 EMA <b>AND</b> a monthly MACD above its value a month ago.</li>
+          <li>For weekly and monthly there is a second choice, <b>uses</b>:
+            <b>Last finished candle</b> reads only the last completed week or month. It is steady, but it can be up to a week or a
+            month old, so it can miss a turn that has already begun.
+            <b>Candle in progress</b> reads this week or month as it stands at each day&rsquo;s close, so it is fresher, but it can
+            change from day to day and flip back before the week or month ends.</li>
+          <li>Neither looks ahead: a finished candle only counts from the day it finishes, and the one in progress uses only the days so far.
+            Counting back (&ldquo;weeks ago&rdquo;, &ldquo;months ago&rdquo;) goes in candles of that size: with <b>in progress</b>, 0 is the
+            current one and 1 the last finished one; with <b>finished</b>, 0 is the last finished one and 1 the one before.</li>
+          <li>Trades are still made on daily candles, and stops, targets and holding limits work on daily candles.</li>
+        </ul></details>
+      <div id="btEntry"></div>
+      <div class="bt-reads" id="btEntryReads" hidden></div>
+    </div>
+    </div>
+
+    <div class="bt-pane" data-pane="exit" hidden>
+    <div class="bt-block">
+      <span class="bt-step">Get out when&hellip; <small>pick at least one way out</small></span>
+      <p class="bt-help">A trade ends when any of these happens first.</p>
+      <div id="btExit"></div>
+      <div class="bt-reads" id="btExitReads" hidden></div>
+      <div class="bt-exits">
+        <div class="bt-field"><label for="btStop">Stop-loss <small>(% against you, from entry)</small></label>
+          <input id="btStop" type="number" min="0" max="90" step="any" inputmode="decimal" placeholder="off"></div>
+        <div class="bt-field"><label for="btTarget">Target <small>(% in your favour)</small></label>
+          <input id="btTarget" type="number" min="0" max="1000" step="any" inputmode="decimal" placeholder="off"></div>
+        <div class="bt-field"><label for="btTrail">Follow-the-high stop <small>(% below the highest point)</small></label>
+          <input id="btTrail" type="number" min="0" max="90" step="any" inputmode="decimal" placeholder="off"></div>
+        <div class="bt-field"><label for="btHold">Holding limit <small>(trading days)</small></label>
+          <input id="btHold" type="number" min="0" max="1000" step="1" inputmode="numeric" placeholder="off"></div>
+      </div>
+      <div class="bt-step-box">
+        <span class="bt-stephead">Stepped stop <small>(raises the stop-loss above as the price rises)</small></span>
+        <div class="bt-exits" style="margin-top:8px">
+          <div class="bt-field"><label for="btStepEvery">Each time the price rises another <small>(% above your entry)</small></label>
+            <input id="btStepEvery" type="number" min="0" max="1000" step="any" inputmode="decimal" placeholder="off"></div>
+          <div class="bt-field"><label for="btStepBy">move the stop up by <small>(% of your entry price)</small></label>
+            <input id="btStepBy" type="number" min="0" max="90" step="any" inputmode="decimal" placeholder="same as the stop-loss"></div>
+        </div>
+        <p class="bt-help" style="margin:8px 0 0">Example: stop-loss <b>5</b>, rises <b>10</b>, moves up <b>5</b>. The stop starts 5% below your
+          entry. Once the price is up 10% it moves to your entry price (no loss), at +20% it is 5% above your entry, at +30% 10% above, and
+          so on. It only ever moves up. This needs a stop-loss to start from. It is different from the <b>follow-the-high stop</b>, which
+          always sits a fixed distance below the highest price reached. If you use both, whichever is closer to the price applies.</p>
+      </div>
+    </div>
+    </div>
+
+    <div class="bt-pane" data-pane="money" hidden>
+    <div class="bt-block">
+      <span class="bt-step">Capital and how to test it</span>
+      <div class="bt-opts" style="margin-top:10px">
+        <div class="bt-field"><label for="btCapital">Money for each stock <small>(&#8377;)</small></label>
+          <input id="btCapital" type="number" min="1000" max="1000000000" step="1000" inputmode="numeric" value="100000"></div>
+        <div class="bt-field"><label for="btYears">Period</label>
+          <select id="btYears"></select></div>
+        <div class="bt-field"><label id="btDirL">Direction</label>
+          <div class="bt-seg" role="group" aria-labelledby="btDirL">
+            <button type="button" data-dir="long" aria-pressed="true">Long</button>
+            <button type="button" data-dir="short" aria-pressed="false">Short</button>
+          </div></div>
+        <div class="bt-field"><label for="btFill">Trades happen at</label>
+          <select id="btFill">
+            <option value="next_open">Next day&rsquo;s open (realistic)</option>
+            <option value="same_close">Same day&rsquo;s close (optimistic)</option>
+          </select></div>
+        <div class="bt-field"><label for="btCost">Cost on each side <small>(%)</small></label>
+          <input id="btCost" type="number" min="0" max="2" step="0.01" inputmode="decimal" value="0.1"></div>
+      </div>
+      <label class="bt-check"><input type="checkbox" id="btExclude" checked>
+        <span>Set aside any trade that crosses a one-day fall of 30% or more, or rise of 60% or more,
+        that no split or bonus explains. These are usually gaps in the data (an unrecorded split or
+        demerger), not real results, though now and then one is a real crash, so the number set aside
+        is always shown. They stay in the list, marked, but are not counted.</span></label>
+    </div>
+    </div>
+
+    <div class="bt-bar">
+      <button type="button" class="bt-sm bt-nav" id="btBack">&larr; Back</button>
+      <button type="button" class="bt-sm bt-nav" id="btNext">Next &rarr;</button>
+      <span class="bt-spacer"></span>
+      <button type="button" class="bt-go" id="btGo" disabled>Run the back-test</button>
+    </div>
+    <p class="bt-hint" id="btHint" role="status"></p>
+  </section>
+
+  <div id="btOut" aria-live="polite" hidden></div>
+
+  <section class="panel bt-ask" id="btAsk" hidden aria-labelledby="btAskH">
+    <h2 id="btAskH" style="margin:0 0 4px;font-size:1.05rem">Missing an indicator?</h2>
+    <p class="bt-hint" style="margin:0 0 10px;min-height:0">Tell us which indicator you would like to test with. The more people ask for the same one,
+      the sooner it moves up the list. (An indicator we already have is listed above; we will say so.)</p>
+    <div class="bt-askrow">
+      <input id="btAskName" type="text" maxlength="80" autocomplete="off" placeholder="For example: Stochastic, VWAP, Ichimoku Cloud" aria-label="Name of the indicator">
+      <input id="btAskDetails" type="text" maxlength="500" autocomplete="off" placeholder="How would you use it? (optional)" aria-label="How you would use it">
+      <button type="button" class="bt-sm" id="btAskGo">Send request</button>
+    </div>
+    <p class="bt-hint" id="btAskMsg" role="status"></p>
+  </section>
+
+  <p class="foot">A back-test shows what a set of rules would have done in the past, on the prices we
+    hold. It does not predict what they will do next, and it is not a recommendation to buy, sell or
+    hold anything. Results ignore tax, impact cost and dividends, assume every order is filled at the
+    price shown, and cover only stocks listed today, which flatters any rule tested across many
+    stocks. Educational content only, not investment advice. FinChaya is not currently registered with
+    SEBI as an Investment Adviser or Research Analyst. Your rules are not saved.</p>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const nf = (v, dp) => Number(v).toLocaleString("en-IN", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+const pct = (v, dp) => v == null ? "–" : (v > 0 ? "+" : "") + nf(v, dp == null ? 1 : dp) + "%";
+const plain = (v, dp) => v == null ? "–" : nf(v, dp == null ? 1 : dp) + "%";
+const sgn = v => v == null ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+const inr = v => v == null ? "–" : "₹" + Number(v).toLocaleString("en-IN", {maximumFractionDigits: 0});
+const money = v => v == null ? "" : "₹" + Number(v).toLocaleString("en-IN", {maximumFractionDigits: 2});
+const fdate = iso => {
+  if (!iso) return "";
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return isNaN(d) ? String(iso)
+    : d.toLocaleDateString("en-IN", {day: "numeric", month: "short", year: "numeric"});
+};
+const inrS = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + "₹" + Math.abs(Number(v)).toLocaleString("en-IN", {maximumFractionDigits: 0});
+const gl = v => v >= 0 ? "profit" : "loss";                // "a profit of" / "a loss of"
+const days = v => v == null ? "–" : v < 0.5 ? "Same day" : v < 10 ? nf(v, 1) + " days" : nf(v, 0) + " days";
+let CAP = 100000;                                       // the money per stock of the result on screen
+const compact = v => {                                  // ₹ amounts on a chart axis
+  const a = Math.abs(v);
+  if (a >= 1e7) return "₹" + (v / 1e7).toFixed(a >= 1e8 ? 0 : 1).replace(/\.0$/, "") + " Cr";
+  if (a >= 1e5) return "₹" + (v / 1e5).toFixed(a >= 1e6 ? 0 : 1).replace(/\.0$/, "") + " L";
+  return "₹" + Math.round(v).toLocaleString("en-IN");
+};
+
+let CAT = null, KIND = {}, CMP = {}, GROUPS = [];
+let S = null;                    // what the person has built
+let LAST = null;                 // the last answer
+let booted = false;
+
+/* ---- gate: the server decides, this only avoids showing a dead form ----
+   The page asks /api/rule-backtest/access itself rather than waiting on the site's shared
+   script, so it works however old that script on the server is. */
+const INTRO = "It replays rules you describe, built from prices and indicators, over up to ten years " +
+  "of daily prices and shows what they would have done.";
+function lock(a) {
+  a = a || {};
+  $("btForm").hidden = true; $("btTabs").hidden = true; $("btOut").hidden = true; $("btAsk").hidden = true;
+  const host = $("btLock");
+  const box = msg => '<section class="panel"><h2>Back-test your rules</h2><p class="bt-empty">' + msg + "</p>";
+  if (a.enabled === false) {
+    host.innerHTML = box("This tool is switched off for now.") + "</section>";
+  } else if (a.signed_in === false) {
+    host.innerHTML = box(INTRO + " Sign in to use it.") +
+      '<p><button type="button" class="bt-go" id="btSign" style="margin-top:4px">Sign in</button></p></section>';
+    $("btSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+  } else if (a.audience === "premium" && window.fcLocked) {
+    window.fcLocked(host, "Back-test your rules", "This tool is part of the Stocks plan. " + INTRO, "stocks");
+  } else {
+    host.innerHTML = box((a.audience === "admin"
+      ? "This tool is being tested and is open to administrators only for now. "
+      : "This tool is for premium members. ") + INTRO) + "</section>";
+  }
+}
+async function relock() {                  // a 401/403 from anywhere: ask again, show the right notice
+  try { lock(await (await fetch("/api/rule-backtest/access")).json()); } catch (e) { lock({}); }
+}
+
+async function boot() {
+  if (booted) return;
+  booted = true;
+  let a;
+  try {
+    a = await (await fetch("/api/rule-backtest/access")).json();
+  } catch (e) {
+    $("btLock").innerHTML = '<p class="bt-err">Could not reach FinChaya. Check your connection and reload the page.</p>';
+    return;
+  }
+  if (!a.allowed) { lock(a); return; }
+  try {
+    const [rc, rg] = await Promise.all([fetch("/api/rule-backtest/catalog"), fetch("/api/rule-backtest/groups")]);
+    if (rc.status === 401 || rc.status === 403) { lock(a); return; }
+    if (!rc.ok) throw new Error(String(rc.status));
+    CAT = await rc.json();
+    GROUPS = rg.ok ? ((await rg.json()).groups || []) : [];     // no groups is not a reason to stop
+  } catch (e) {
+    $("btLock").innerHTML = '<p class="bt-err">Could not load the tool just now. Try again in a moment.</p>';
+    return;
+  }
+  CAT.operands.forEach(o => KIND[o.kind] = o);
+  CAT.comparisons.forEach(c => CMP[c.key] = c.label);
+  $("btLock").innerHTML = "";
+  $("btTabs").hidden = false;
+  $("btAsk").hidden = false;
+  init();
+}
+
+/* ---- "Missing an indicator?" -- goes to the owner's list of what people want, counted by how many asked ---- */
+$("btAskGo").addEventListener("click", async () => {
+  const name = $("btAskName").value.trim(), msg = $("btAskMsg");
+  msg.className = "bt-hint";
+  if (name.length < 2) { msg.textContent = "Type the name of the indicator you would like."; msg.classList.add("warn"); return; }
+  $("btAskGo").disabled = true; msg.textContent = "Sending…";
+  try {
+    const r = await fetch("/api/rule-backtest/requests", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name, details: $("btAskDetails").value.trim()})});
+    let d = null; try { d = await r.json(); } catch (e) { /* not json */ }
+    if (r.status === 401 || r.status === 403) { relock(); return; }
+    if (!r.ok) throw new Error((d && d.detail) || "Something went wrong (" + r.status + "). Try again in a moment.");
+    msg.textContent = d.message || "Noted.";
+    if (!d.exists) { $("btAskName").value = ""; $("btAskDetails").value = ""; }
+  } catch (e) { msg.textContent = e.message; msg.classList.add("warn"); }
+  $("btAskGo").disabled = false;
+});
+boot();
+
+/* ---- the model ------------------------------------------------------ */
+function newOperand(kind) {
+  const m = KIND[kind], o = {kind: kind, ago: 0, times: 1, tf: "D", candle: "completed"};
+  m.params.forEach(p => o[p.name] = p.default);
+  return o;
+}
+const TF_UNIT = {D: "day", W: "week", M: "month"};
+const O = (kind, p) => Object.assign(newOperand(kind), p || {});
+const COND = (l, cmp, r, within) => ({left: l, cmp: cmp, right: r, within: within || 1});
+const GROUP = (op, items) => ({op: op, items: items});
+function newCond() { return COND(O("close"), "gt", O("ema", {period: 20})); }
+function freshState() {
+  return {stocks: [], group: null, entry: GROUP("and", [newCond()]), exit: GROUP("and", []),
+    stop: "", target: "", trail: "", hold: "", stepEvery: "", stepBy: "", direction: "long", years: 10,
+    fill: "next_open", cost: 0.1, exclude: true, capital: 100000, from: null};
+}
+
+function at(path) {                       // "entry.items.0.left" -> the object
+  return path.split(".").reduce((o, k) => o[k], S);
+}
+function countConds(g) {
+  return g.items.reduce((n, i) => n + (i.items ? countConds(i) : 1), 0);
+}
+
+/* ---- the builder ----------------------------------------------------- */
+function kindOptions(sel) {
+  const groups = [], by = {};
+  CAT.operands.forEach(o => { if (!by[o.group]) { by[o.group] = []; groups.push(o.group); } by[o.group].push(o); });
+  return groups.map(g => `<optgroup label="${esc(g)}">` + by[g].map(o =>
+    `<option value="${o.kind}"${o.kind === sel ? " selected" : ""}>${esc(o.label)}</option>`).join("") +
+    "</optgroup>").join("");
+}
+
+function operandHtml(o, path) {
+  const m = KIND[o.kind];
+  const tf = o.tf || "D", cur = tf !== "D" && o.candle === "current";
+  let h = `<div class="bt-op" data-p="${path}">` +
+    `<select data-role="kind" aria-label="What to compare">${kindOptions(o.kind)}</select>`;
+  if (o.kind !== "number") {
+    // which candles it is read on: daily, weekly or monthly
+    h += `<label class="bt-p" title="The candle size this is worked out on. Trades are always made on daily candles.">on ` +
+      `<select data-f="tf" aria-label="Candle size">${CAT.timeframes.map(t =>
+        `<option value="${t.key}"${t.key === tf ? " selected" : ""}>${esc(t.label)}</option>`).join("")}</select></label>`;
+    if (tf !== "D") {
+      h += `<label class="bt-p" title="Last finished candle: only the last completed ${TF_UNIT[tf]}. Steady, but it can be up to a ${TF_UNIT[tf]} old. ` +
+        `Candle in progress: this ${TF_UNIT[tf]} as it stands at each day's close. Fresher, but it can change from day to day and flip back before the ${TF_UNIT[tf]} ends.">` +
+        `uses <select data-f="candle" class="bt-wide" aria-label="Finished or in-progress candle">` +
+        CAT.candles.map(c => `<option value="${c.key}"${c.key === (o.candle || "completed") ? " selected" : ""}>${esc(c.label)}</option>`).join("") +
+        "</select></label>";
+    }
+  }
+  m.params.forEach(p => {
+    if (p.type === "choice") {
+      h += `<label class="bt-p">${esc(p.label)} <select data-f="${p.name}">` +
+        p.choices.map(c => `<option${c === o[p.name] ? " selected" : ""}>${c}</option>`).join("") +
+        "</select></label>";
+    } else {
+      const wide = o.kind === "number" ? " wide" : "";
+      h += `<label class="bt-p">${esc(p.label)} <input type="number" class="${wide}" data-f="${p.name}" ` +
+        `value="${o[p.name] === "" ? "" : o[p.name]}" step="${p.type === "int" ? 1 : "any"}" ` +
+        (o.kind === "number" ? "" : `min="${p.min}" max="${p.max}" `) + 'inputmode="decimal"></label>';
+    }
+  });
+  if (o.kind !== "number") {
+    h += `<label class="bt-p bt-mod" title="${cur
+      ? "Counted back from the " + TF_UNIT[tf] + " in progress: 0 is that " + TF_UNIT[tf] + " itself, 1 is the last finished one."
+      : "Read the value from this many " + TF_UNIT[tf] + "s earlier. 1 means " + (tf === "D" ? "yesterday" : "the " + TF_UNIT[tf] + " before the last finished one") + "."}">` +
+      `${TF_UNIT[tf]}s ago <input type="number" data-f="ago" value="${o.ago}" min="0" max="${CAT.limits.max_ago}" step="1" inputmode="numeric"></label>`;
+    // The multiplier is rarely needed, so it stays out of sight until asked for
+    // (or until a saved test already uses one).
+    h += (o.times !== 1 || o._x)
+      ? `<label class="bt-p" title="Multiply the value, for example 1.5 for one and a half times.">` +
+        `&times; <input type="number" data-f="times" value="${o.times}" min="0.001" step="any" inputmode="decimal"></label>`
+      : `<button type="button" class="bt-x" data-act="mul" data-p="${path}" title="Multiply this by a number, e.g. 1.5 times the average volume">&times; multiply</button>`;
+  }
+  return h + "</div>";
+}
+
+/* A condition whose two sides are exactly the same thing can never be true (the server refuses it too). The usual
+   slip is a weekly or monthly "rising" test with "ago" left at 0 on the right-hand side. */
+function canonOperand(o) {
+  const x = {};
+  Object.keys(o).filter(k => k !== "_x").sort().forEach(k => { x[k] = o[k]; });
+  if ((x.tf || "D") === "D") delete x.candle;
+  if (x.ago === "" || x.ago == null) x.ago = 0;
+  if (x.times === "" || x.times == null) x.times = 1;
+  return JSON.stringify(x);
+}
+function sameSidesHint(c) {
+  if (c.left.kind === "number" || c.right.kind === "number" || canonOperand(c.left) !== canonOperand(c.right)) return "";
+  const tf = c.left.tf || "D", u = TF_UNIT[tf];
+  return `<div class="bt-same"><b>Both sides are the same thing</b>, so this can never be true. ` +
+    (tf === "D" ? "To compare with an earlier day, set &ldquo;days ago&rdquo; to 1 on the right-hand side."
+      : `To ask whether it is rising, set &ldquo;${u}s ago&rdquo; to 1 on the right-hand side.`) + "</div>";
+}
+
+function refreshSame(opPath) {                 // after a number is typed, which does not redraw the builder
+  if (!/\.(left|right)$/.test(opPath)) return;
+  const cpath = opPath.replace(/\.(left|right)$/, "");
+  const slot = document.querySelector(`.bt-cond[data-p="${cpath}"] > .bt-sameslot`);
+  if (slot) slot.innerHTML = sameSidesHint(at(cpath));
+}
+
+function condHtml(c, path) {
+  return `<div class="bt-cond" data-p="${path}"><div class="bt-sides">` +
+    operandHtml(c.left, path + ".left") +
+    `<div class="bt-cmp"><select data-role="cmp" aria-label="How they compare">` +
+    CAT.comparisons.map(k => `<option value="${k.key}"${k.key === c.cmp ? " selected" : ""}>${esc(k.label)}</option>`).join("") +
+    "</select></div>" + operandHtml(c.right, path + ".right") + "</div>" + `<div class="bt-sameslot">${sameSidesHint(c)}</div>` +
+    `<div class="bt-extra"><label>It counts if true on any of the last ` +
+    `<input type="number" data-role="within" value="${c.within}" min="1" max="${CAT.limits.max_within}" step="1" inputmode="numeric"> day(s)` +
+    ` <span title="1 means today only. Use a larger number to combine two events that happen a day or two apart, such as two crossovers.">(1 = today only)</span></label>` +
+    `<button type="button" class="bt-x" data-act="rm" data-p="${path}">Remove</button></div></div>`;
+}
+
+/* ---- a chart scanner as a condition: "the Screener's scanner newly lists the stock" ------------------------------- */
+const sigDef = key => (CAT.signals || []).find(s => s.key === key);
+function newSignal(key, within) {
+  const d = sigDef(key) || CAT.signals[0], p = {};
+  d.controls.forEach(c => { p[c.param] = c.default; });
+  return {signal: {screen: d.key, params: p}, within: within || 1};
+}
+function signalHtml(c, path) {
+  const d = sigDef(c.signal.screen) || CAT.signals[0], p = c.signal.params || {};
+  const val = ct => p[ct.param] != null ? p[ct.param] : ct.default;
+  const shown = d.controls.filter(ct => {                 // a control can apply only when another has a value (look back and fall belong to the big-picture reading)
+    if (!ct.when) return true;
+    const other = d.controls.find(x => x.param === ct.when.param);
+    return other ? String(val(other)) === String(ct.when.value) : true;
+  });
+  const ctl = ct => ct.kind === "choice"
+    ? `<label class="bt-p">${esc(ct.label)} <select data-sg="${esc(ct.param)}">${ct.options.map(o =>
+        `<option value="${esc(o[0])}"${String(o[0]) === String(val(ct)) ? " selected" : ""}>${esc(o[1])}</option>`).join("")}</select></label>`
+    : `<label class="bt-p">${esc(ct.label)} <input type="number" data-sg="${esc(ct.param)}" value="${val(ct) === "" ? "" : val(ct)}" min="${ct.min}" max="${ct.max}" step="${ct.step || "any"}" inputmode="decimal"></label>`;
+  return `<div class="bt-cond bt-sig" data-p="${path}"><div class="bt-sighead"><b>Scanner signal</b>` +
+    `<select data-role="sigscreen" aria-label="Which scanner">${CAT.signals.map(s =>
+      `<option value="${esc(s.key)}"${s.key === d.key ? " selected" : ""}>${esc(s.label)}</option>`).join("")}</select></div>` +
+    `<div class="bt-sigops">${shown.map(ctl).join("")}</div>` +
+    `<p class="bt-sigwhat">True on the day the scanner <b>newly lists</b> the stock, judged on that day&rsquo;s close, with the settings above (the same ones as on the Screener page).</p>` +
+    `<div class="bt-extra"><label>It counts if true on any of the last ` +
+    `<input type="number" data-role="within" value="${c.within}" min="1" max="${CAT.limits.max_within}" step="1" inputmode="numeric"> day(s)` +
+    ` <span title="1 means the day the scanner lists it. Use a larger number to combine it with another event that happens a day or two apart.">(1 = that day only)</span></label>` +
+    `<button type="button" class="bt-x" data-act="rm" data-p="${path}">Remove</button></div></div>`;
+}
+
+function groupHtml(g, path, depth, root) {
+  const full = countConds(S[path.split(".")[0]]) >= CAT.limits.max_conditions;
+  let h = `<div class="bt-group" data-p="${path}"><div class="bt-ghead">Match ` +
+    `<select data-role="gop" aria-label="All or any"><option value="and"${g.op === "and" ? " selected" : ""}>all of (AND)</option>` +
+    `<option value="or"${g.op === "or" ? " selected" : ""}>any of (OR)</option></select> these:` +
+    (root ? "" : `<button type="button" class="bt-x" data-act="rm" data-p="${path}">Remove group</button>`) + "</div>";
+  g.items.forEach((it, i) => {
+    if (i) h += `<div class="bt-join">${g.op === "and" ? "AND" : "OR"}</div>`;
+    h += it.items ? groupHtml(it, `${path}.items.${i}`, depth + 1, false) : it.signal ? signalHtml(it, `${path}.items.${i}`) : condHtml(it, `${path}.items.${i}`);
+  });
+  if (!g.items.length) h += '<p class="bt-help" style="margin:0 0 8px">Nothing here yet.</p>';
+  h += `<div class="bt-gadd"><button type="button" class="bt-sm" data-act="addc" data-p="${path}"${full ? " disabled" : ""}>+ Add a condition</button>` +
+    ((CAT.signals || []).length ? `<button type="button" class="bt-sm" data-act="addsig" data-p="${path}"${full ? " disabled" : ""} title="A chart scanner from the Screener page as a condition: the day it newly lists the stock">+ Add a scanner signal</button>` : "") +
+    `<button type="button" class="bt-sm" data-act="addg" data-p="${path}"${depth >= CAT.limits.max_depth || full ? " disabled" : ""}>+ Add a group</button></div></div>`;
+  return h;
+}
+
+function drawBuilders() {
+  $("btEntry").innerHTML = groupHtml(S.entry, "entry", 1, true);
+  $("btExit").innerHTML = groupHtml(S.exit, "exit", 1, true);
+}
+
+function onBuilderInput(e) {
+  const t = e.target;
+  const host = t.closest("[data-p]");
+  if (!host) return;
+  const f = t.dataset.f, role = t.dataset.role;
+  if (t.dataset.sg !== undefined) {                       // a setting of a scanner signal
+    const c = at(host.dataset.p), v = t.tagName === "SELECT" ? t.value : (t.value === "" ? "" : Number(t.value));
+    c.signal.params[t.dataset.sg] = v;
+    if (t.tagName === "SELECT") { if (e.type !== "change") return; drawBuilders(); }   // a choice can show or hide others
+    changed();
+    return;
+  }
+  if (role === "sigscreen") {                             // another scanner: its own settings, the same 'within'
+    if (e.type !== "change") return;
+    const path = host.dataset.p, old = at(path), parts = path.split("."), key = parts.pop();
+    at(parts.join("."))[key] = newSignal(t.value, old.within);
+    drawBuilders(); changed();
+    return;
+  }
+  if (f === "tf" || f === "candle") {                     // the candle size, or finished / in progress
+    if (e.type !== "change") return;
+    const path = host.dataset.p, o = at(path), old = o[f];
+    o[f] = t.value;
+    if (f === "tf" && t.value === "D") o.candle = "completed";
+    // Setting the left side sets the right side too, unless the right was already something else:
+    // "5-week EMA crosses 13-week EMA" is two clicks fewer, and a daily-against-weekly comparison
+    // is still one change away.
+    if (path.endsWith(".left")) {
+      const right = at(path.slice(0, -5) + ".right");
+      if (right.kind !== "number" && (right[f] || (f === "tf" ? "D" : "completed")) === old) {
+        right[f] = t.value;
+        if (f === "tf" && t.value === "D") right.candle = "completed";
+      }
+    }
+    drawBuilders();
+  } else if (f) {                                         // a parameter of an operand
+    const o = at(host.dataset.p);
+    o[f] = t.tagName === "SELECT" ? t.value : (t.value === "" ? "" : Number(t.value));
+    refreshSame(host.dataset.p);
+  } else if (role === "within") {
+    at(host.dataset.p).within = t.value === "" ? "" : Number(t.value);
+  } else if (role === "cmp") {
+    at(host.dataset.p).cmp = t.value;
+  } else if (role === "gop") {
+    at(host.dataset.p).op = t.value;
+    drawBuilders();
+  } else if (role === "kind" && e.type === "change") {
+    const path = host.dataset.p, old = at(path);
+    const n = newOperand(t.value);
+    if (t.value !== "number") {
+      n.ago = old.ago || 0; n.times = old.times || 1;
+      n.tf = old.tf || "D"; n.candle = old.candle || "completed";
+    }
+    const parts = path.split("."), key = parts.pop();
+    at(parts.join("."))[key] = n;
+    drawBuilders();
+  } else {
+    return;
+  }
+  changed();
+}
+
+function onBuilderClick(e) {
+  const b = e.target.closest("[data-act]");
+  if (!b) return;
+  const path = b.dataset.p, act = b.dataset.act;
+  if (act === "mul") { at(path)._x = true; drawBuilders(); return; }
+  if (act === "addc") at(path).items.push(newCond());
+  else if (act === "addsig") at(path).items.push(newSignal());
+  else if (act === "addg") at(path).items.push(GROUP("and", [newCond()]));
+  else if (act === "rm") {
+    const parts = path.split("."), idx = Number(parts.pop());
+    at(parts.join(".")).splice(idx, 1);
+  }
+  drawBuilders();
+  changed();
+}
+
+/* ---- examples -------------------------------------------------------- */
+function clearExits() { S.stop = S.target = S.trail = S.hold = S.stepEvery = S.stepBy = ""; }
+function examples() {
+  return [
+    {name: "5 EMA crosses 50 EMA", set() {
+      S.entry = GROUP("and", [COND(O("ema", {period: 5}), "crosses_above", O("ema", {period: 50}))]);
+      S.exit = GROUP("and", [COND(O("ema", {period: 5}), "crosses_below", O("ema", {period: 50}))]);
+      clearExits(); }},
+    {name: "Close above yesterday's high", set() {
+      S.entry = GROUP("and", [COND(O("close"), "gt", O("high", {ago: 1}))]);
+      S.exit = GROUP("and", []); clearExits(); S.hold = 5; }},
+    {name: "RSI bounces back above 30", set() {
+      S.entry = GROUP("and", [COND(O("rsi", {period: 14}), "crosses_above", O("number", {value: 30}))]);
+      S.exit = GROUP("and", [COND(O("rsi", {period: 14}), "gt", O("number", {value: 60}))]);
+      clearExits(); S.stop = 8; S.hold = 30; }},
+    {name: "20-day breakout on heavy volume", set() {
+      S.entry = GROUP("and", [COND(O("close"), "gt", O("highest", {period: 20})),
+        COND(O("volume"), "gt", O("sma", {period: 20, src: "volume", times: 1.5}))]);
+      S.exit = GROUP("and", [COND(O("close"), "lt", O("lowest", {period: 10}))]);
+      clearExits(); S.stop = 8; }},
+    {name: "Dip inside an uptrend", set() {
+      S.entry = GROUP("and", [COND(O("close"), "gt", O("ema", {period: 200})),
+        GROUP("or", [COND(O("rsi", {period: 14}), "lt", O("number", {value: 40})),
+                     COND(O("close"), "lt", O("ema", {period: 20, times: 0.95}))])]);
+      S.exit = GROUP("and", [COND(O("rsi", {period: 14}), "gt", O("number", {value: 55}))]);
+      clearExits(); S.hold = 20; }},
+    {name: "Daily 5/50 cross + monthly MACD rising", set() {
+      S.entry = GROUP("and", [COND(O("ema", {period: 5}), "crosses_above", O("ema", {period: 50})),
+        COND(O("macd", {tf: "M"}), "gt", O("macd", {tf: "M", ago: 1}))]);
+      S.exit = GROUP("and", [COND(O("ema", {period: 5}), "crosses_below", O("ema", {period: 50}))]);
+      clearExits(); }},
+    {name: "Same, using the month in progress", set() {
+      S.entry = GROUP("and", [COND(O("ema", {period: 5}), "crosses_above", O("ema", {period: 50})),
+        COND(O("macd", {tf: "M", candle: "current"}), "gt", O("macd", {tf: "M", candle: "current", ago: 1}))]);
+      S.exit = GROUP("and", [COND(O("ema", {period: 5}), "crosses_below", O("ema", {period: 50}))]);
+      clearExits(); }},
+    {name: "5/50 cross with a stepped stop", set() {
+      S.entry = GROUP("and", [COND(O("ema", {period: 5}), "crosses_above", O("ema", {period: 50}))]);
+      S.exit = GROUP("and", [COND(O("ema", {period: 5}), "crosses_below", O("ema", {period: 50}))]);
+      clearExits(); S.stop = 5; S.stepEvery = 10; S.stepBy = 5; }},
+    {name: "Weekly 5/13 EMA cross", set() {
+      S.entry = GROUP("and", [COND(O("ema", {period: 5, tf: "W"}), "crosses_above", O("ema", {period: 13, tf: "W"}))]);
+      S.exit = GROUP("and", [COND(O("ema", {period: 5, tf: "W"}), "crosses_below", O("ema", {period: 13, tf: "W"}))]);
+      clearExits(); S.stop = 12; }},
+  ].concat((CAT.signals || []).length ? [
+    {name: "Scanner: Dow theory turns up", set() {
+      S.entry = GROUP("and", [newSignal("dow_change")]);
+      S.exit = GROUP("and", []); clearExits(); S.hold = 20; S.stop = 8; S.direction = "long"; }},
+    {name: "Scanner: Higher low in an uptrend", set() {
+      const s = newSignal("higher_low"); s.signal.params.trend = "HH";
+      S.entry = GROUP("and", [s]);
+      S.exit = GROUP("and", []); clearExits(); S.hold = 15; S.stop = 8; S.direction = "long"; }},
+  ] : []);
+}
+
+/* ---- the form -------------------------------------------------------- */
+let pvTimer = null, pvSeq = 0, PV = null, seekTimer = null, seekSeq = 0, hits = [], hitOn = -1;
+
+function numOrNull(v) { return v === "" || v == null || Number(v) === 0 ? null : Number(v); }
+function payload() {
+  return {
+    // a ready-made group is sent as its key and resolved on the server, never as a hundred ISINs
+    ...(S.group ? {group: S.group.key} : {isins: S.stocks.map(s => s.isin)}),
+    direction: S.direction, years: S.years, fill: S.fill,
+    cost_pct: S.cost === "" ? 0 : S.cost, exclude_jumps: S.exclude,
+    capital: S.capital === "" ? 0 : S.capital,
+    entry: S.entry, exit: S.exit.items.length ? S.exit : null,
+    stop_loss_pct: numOrNull(S.stop), target_pct: numOrNull(S.target),
+    step_every_pct: numOrNull(S.stepEvery), step_by_pct: numOrNull(S.stepBy),
+    trailing_pct: numOrNull(S.trail), max_hold_days: numOrNull(S.hold),
+  };
+}
+
+function readsHtml(tree) {
+  if (!tree) return "";
+  const j = `<span class="j">${tree.join}</span>`;
+  return tree.lines.map(l => `<b>${esc(l)}</b>`).join(j);
+}
+
+function paintReads() {
+  const ok = PV && PV.ok;
+  const e = $("btEntryReads"), x = $("btExitReads");
+  if (ok) {
+    e.hidden = false;
+    e.innerHTML = "Reads as: " + readsHtml(PV.rules.entry);
+    const parts = [];
+    if (PV.rules.exit) parts.push("leave when " + readsHtml(PV.rules.exit));
+    PV.rules.exit_other.forEach(l => parts.push(esc(l)));
+    x.hidden = !parts.length;
+    x.innerHTML = parts.length ? "Reads as: " + parts.join("<br>") : "";
+  } else {
+    e.hidden = x.hidden = true;
+  }
+}
+
+function updateGo() {
+  const hint = $("btHint");
+  let msg = "", warn = false, can = false;
+  if (!S.stocks.length && !S.group) msg = "Choose a stock, or a whole group, on the Stocks tab to begin.";
+  else if (!PV) msg = "Checking your rules…";
+  else if (!PV.ok) { msg = PV.error; warn = true; }
+  else if (!PV.has_exit) { msg = "Choose at least one way out on the Exit tab: an exit rule, a stop-loss, a target, a trailing stop or a holding limit."; warn = true; }
+  else can = true;
+  $("btGo").disabled = !can;
+  hint.textContent = msg;
+  hint.className = "bt-hint" + (warn ? " warn" : "");
+  paintTabs();
+}
+
+function changed() { clearTimeout(pvTimer); PV = null; updateGo(); pvTimer = setTimeout(preview, 350); }
+
+async function preview() {
+  const my = ++pvSeq;
+  try {
+    const r = await fetch("/api/rule-backtest/describe", {method: "POST",
+      headers: {"content-type": "application/json"}, body: JSON.stringify(payload())});
+    if (r.status === 403 || r.status === 401) { relock(); return; }
+    const d = await r.json();
+    if (my !== pvSeq) return;
+    PV = d.ok === undefined ? {ok: false, error: d.detail || "Could not check the rules just now."} : d;
+  } catch (e) {
+    if (my !== pvSeq) return;
+    PV = {ok: false, error: "Could not reach FinChaya to check the rules."};
+  }
+  paintReads();
+  updateGo();
+}
+
+function paintStocks() {
+  const g = S.group;
+  $("btChips").innerHTML = g ? "" : S.stocks.map((s, i) =>
+    `<span class="bt-chip"><b>${esc(s.symbol)}</b><span>${esc(s.company_name)}</span>` +
+    `<button type="button" data-rm="${i}" aria-label="Remove ${esc(s.symbol)}">&times;</button></span>`).join("");
+  $("btCount").textContent = g ? "" : S.stocks.length
+    ? S.stocks.length + " of " + CAT.limits.max_stocks + " stocks" +
+      (S.stocks.length > 1 ? ". With several stocks you get combined statistics and a row for each; with one you also get the equity curve." : ".")
+    : "";
+  const box = $("btGroupChosen");
+  box.hidden = !g;
+  box.innerHTML = g ? `<button type="button" id="btGroupClear">Clear</button><b>${esc(g.label)}</b><span>${g.count} stocks</span>` +
+    `<p>${esc(g.note)} This is today&rsquo;s list, applied to the whole period, so it leaves out companies that were in it earlier and have since dropped out. That flatters the results. ` +
+    (g.count > 25 ? `A group this large can take up to a minute or two to test.` : "") + `</p>` : "";
+  paintGroupButtons();
+}
+
+function paintGroupButtons() {
+  $("btGroups").hidden = !GROUPS.length;
+  $("btGroupBtns").innerHTML = GROUPS.map((g, i) =>
+    `<button type="button" class="bt-chipb${S.group && S.group.key === g.key ? " on" : ""}" data-g="${i}"` +
+    `${g.too_big ? " disabled" : ""} title="${esc(g.too_big ? g.why_not : g.note)}">${esc(g.label)}<small>${g.count}</small></button>`).join("");
+}
+
+function pickGroup(g) {
+  S.group = {key: g.key, label: g.label, count: g.count, note: g.note};
+  S.stocks = [];
+  closeHits(); $("btSearch").value = "";
+  paintStocks(); changed();
+}
+
+function addStock(s) {
+  if (S.group) { S.group = null; }                      // a group and hand-picked stocks do not mix
+  if (S.stocks.some(x => x.isin === s.isin)) { closeHits(); return; }
+  if (S.stocks.length >= CAT.limits.max_stocks) {
+    $("btCount").textContent = "Up to " + CAT.limits.max_stocks + " stocks at a time.";
+    closeHits(); return;
+  }
+  S.stocks.push({isin: s.isin, symbol: s.symbol, company_name: s.company_name});
+  closeHits();
+  $("btSearch").value = "";
+  paintStocks();
+  changed();
+}
+
+function closeHits() { $("btHits").hidden = true; $("btSearch").setAttribute("aria-expanded", "false"); hits = []; hitOn = -1; }
+
+function paintHits(rows, q) {
+  const box = $("btHits");
+  hits = rows; hitOn = -1;
+  box.innerHTML = rows.length ? rows.map((s, i) =>
+    `<button type="button" class="bt-hit" role="option" data-i="${i}"><span>${esc(s.company_name)}` +
+    `<small>${esc(s.symbol)}</small></span></button>`).join("")
+    : `<div class="bt-none">No stock matches &ldquo;${esc(q)}&rdquo;.</div>`;
+  box.hidden = false;
+  $("btSearch").setAttribute("aria-expanded", "true");
+}
+
+async function seek(q) {
+  const my = ++seekSeq;
+  try {
+    const r = await fetch("/api/stocks?limit=8&search=" + encodeURIComponent(q));
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    if (my !== seekSeq) return;
+    paintHits(d.stocks || [], q);
+  } catch (e) {
+    if (my !== seekSeq) return;
+    $("btHits").hidden = false;
+    $("btHits").innerHTML = '<div class="bt-none">Could not search just now. Try again in a moment.</div>';
+  }
+}
+
+function syncSettings() {
+  $("btStop").value = S.stop; $("btTarget").value = S.target; $("btTrail").value = S.trail;
+  $("btStepEvery").value = S.stepEvery; $("btStepBy").value = S.stepBy;
+  $("btHold").value = S.hold; $("btYears").value = String(S.years); $("btFill").value = S.fill;
+  $("btCost").value = S.cost; $("btExclude").checked = S.exclude; $("btCapital").value = S.capital;
+  document.querySelectorAll("[data-dir]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.dir === S.direction)));
+}
+
+function init() {
+  S = freshState();
+  $("btStockHelp").textContent = "up to " + CAT.limits.max_stocks;
+  $("btYears").innerHTML = CAT.limits.years.map(y =>
+    `<option value="${y}">Last ${y} year${y === 1 ? "" : "s"}</option>`).join("");
+
+  const ex = $("btEx");
+  examples().forEach(e => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "bt-chipb"; b.textContent = e.name;
+    b.addEventListener("click", () => { e.set(); S.from = null; syncSettings(); drawBuilders(); changed(); paintFrom(); });
+    ex.appendChild(b);
+  });
+
+  const inp = $("btSearch");
+  inp.addEventListener("input", () => {
+    clearTimeout(seekTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) { seekSeq++; closeHits(); return; }
+    seekTimer = setTimeout(() => seek(q), 200);
+  });
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeHits(); return; }
+    if (!hits.length) return;
+    const els = $("btHits").querySelectorAll(".bt-hit");
+    const mark = () => els.forEach((x, k) => x.classList.toggle("on", k === hitOn));
+    if (e.key === "ArrowDown") { e.preventDefault(); hitOn = Math.min(hits.length - 1, hitOn + 1); mark(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); hitOn = Math.max(0, hitOn - 1); mark(); }
+    else if (e.key === "Enter") { e.preventDefault(); addStock(hits[hitOn >= 0 ? hitOn : 0]); }
+  });
+  $("btHits").addEventListener("click", e => {
+    const b = e.target.closest(".bt-hit");
+    if (b) addStock(hits[Number(b.dataset.i)]);
+  });
+  document.addEventListener("click", e => { if (!e.target.closest(".bt-pick")) closeHits(); });
+  $("btGroupBtns").addEventListener("click", e => {
+    const b = e.target.closest("[data-g]");
+    if (b && !b.disabled) pickGroup(GROUPS[Number(b.dataset.g)]);
+  });
+  $("btGroupChosen").addEventListener("click", e => {
+    if (e.target.id === "btGroupClear") { S.group = null; paintStocks(); changed(); }
+  });
+  $("btChips").addEventListener("click", e => {
+    const b = e.target.closest("[data-rm]");
+    if (!b) return;
+    S.stocks.splice(Number(b.dataset.rm), 1);
+    paintStocks(); changed();
+  });
+
+  ["btEntry", "btExit"].forEach(id => {
+    $(id).addEventListener("input", onBuilderInput);
+    $(id).addEventListener("change", onBuilderInput);
+    $(id).addEventListener("click", onBuilderClick);
+  });
+  const bind = (id, key, num) => $(id).addEventListener("input", () => {
+    S[key] = num ? ($(id).value === "" ? "" : Number($(id).value)) : $(id).value; changed();
+  });
+  bind("btStop", "stop", true); bind("btTarget", "target", true); bind("btTrail", "trail", true);
+  bind("btStepEvery", "stepEvery", true); bind("btStepBy", "stepBy", true);
+  bind("btHold", "hold", true); bind("btCost", "cost", true); bind("btCapital", "capital", true);
+  $("btYears").addEventListener("change", () => { S.years = Number($("btYears").value); changed(); });
+  $("btFill").addEventListener("change", () => { S.fill = $("btFill").value; changed(); });
+  $("btExclude").addEventListener("change", () => { S.exclude = $("btExclude").checked; changed(); });
+  document.querySelectorAll("[data-dir]").forEach(b => b.addEventListener("click", () => {
+    S.direction = b.dataset.dir; syncSettings(); changed();
+  }));
+  $("btGo").addEventListener("click", run);
+  wireTabs();
+  $("btOut").innerHTML = NO_RESULTS;
+
+  restoreFromLink();
+  syncSettings(); paintStocks(); drawBuilders(); changed(); paintFrom();
+  showTab("stocks", {stay: true});
+}
+const NO_RESULTS = '<p class="bt-empty">Nothing has been run yet. Choose the stocks, set the rules to get in and out and the money, ' +
+  'then press <b>Run the back-test</b>. The results appear here.</p>';
+
+/* ---- a test can be shared as a link: the rules ride in the address ---- */
+function saveLink() {
+  try {
+    const s = JSON.stringify(S);
+    history.replaceState(null, "", "#s=" + btoa(unescape(encodeURIComponent(s))));
+  } catch (e) {}
+}
+function restoreFromLink() {
+  try {
+    const m = /^#s=(.+)$/.exec(location.hash);
+    if (!m) return;
+    const s = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    if (!s || !s.entry || !Array.isArray(s.stocks)) return;
+    const base = freshState();
+    ["stocks", "entry", "exit", "stop", "target", "trail", "hold", "stepEvery", "stepBy", "direction", "years", "fill", "cost", "exclude", "capital", "from"]
+      .forEach(k => { if (s[k] !== undefined) base[k] = s[k]; });
+    // A saved group is kept only if the server still offers it (lists change, tables get loaded).
+    const g = s.group && GROUPS.find(x => x.key === s.group.key && !x.too_big);
+    if (g) { base.group = {key: g.key, label: g.label, count: g.count, note: g.note}; base.stocks = []; }
+    // Every operand must be one this server knows; otherwise start clean.
+    const okOp = o => o && KIND[o.kind];
+    const okTree = g => g && (g.items ? g.items.every(okTree) : g.signal ? !!sigDef(g.signal.screen) : okOp(g.left) && okOp(g.right) && CMP[g.cmp]);
+    if (!okTree(base.entry) || !okTree(base.exit)) return;
+    // A link made by another page (the Screener's "Back-test this scanner") may leave out settings it does not care about: fill in every default,
+    // so the builder shows real numbers and the rule means what the link says.
+    const fill = g => {
+      if (g.items) { g.items.forEach(fill); return; }
+      if (g.signal) {
+        const d = sigDef(g.signal.screen), p = {};
+        d.controls.forEach(c => { p[c.param] = (g.signal.params || {})[c.param] != null ? g.signal.params[c.param] : c.default; });
+        g.signal = {screen: d.key, params: p};
+        g.within = g.within || 1;
+        return;
+      }
+      g.left = Object.assign(newOperand(g.left.kind), g.left);
+      g.right = Object.assign(newOperand(g.right.kind), g.right);
+      g.within = g.within || 1;
+    };
+    fill(base.entry); fill(base.exit);
+    S = base;
+  } catch (e) {}
+}
+
+/* Opened from the Screener's "Back-test this scanner": say what is being tested and what is still to choose. */
+function paintFrom() {
+  const box = $("btFrom");
+  if (!S || !S.from || !S.from.label) { box.hidden = true; return; }
+  const f = S.from, grp = S.group ? ` The stocks are <b>${esc(S.group.label)}</b> (${S.group.count}); change them on the Stocks tab.` : " Choose the stocks on the Stocks tab.";
+  box.hidden = false;
+  box.innerHTML = `Back-testing the <b>${esc(f.label)}</b> scanner, opened from the Screener. A trade starts the day after the scanner newly lists a stock (the same moment an alert on it would email you), ` +
+    `and ${S.hold ? "ends after <b>" + esc(S.hold) + " trading days</b>" : "ends by the exit you choose on the Exit tab"}.${grp} ` +
+    `Up to 250 stocks can be tested at once. Change anything on the tabs, then press <b>Run the back-test</b>. ` +
+    `<a href="/#/screener/${esc(f.screen)}">Back to the scanner</a>`;
+}
+
+
+/* ---- the tabs --------------------------------------------------------------
+   Stocks, Entry, Exit, Capital & settings, Results. Only one is on screen at a time; the Run button and
+   Back / Next sit under every one of them, so the test can be started from wherever the person is. The small
+   number on a tab says what is in it (stocks chosen, conditions, ways out, money per stock, trades found); an
+   amber "!" says what still needs attention. */
+const TAB_ORDER = ["stocks", "entry", "exit", "money", "results"];
+const FORM_TABS = ["stocks", "entry", "exit", "money"];
+let TAB = "stocks";
+
+function showTab(t, opts) {
+  if (TAB_ORDER.indexOf(t) < 0) return;
+  TAB = t;
+  const res = t === "results";
+  document.querySelectorAll("#btTabs [data-tab]").forEach(b => {
+    const on = b.dataset.tab === t;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  $("btForm").hidden = res;
+  $("btOut").hidden = !res;
+  document.querySelectorAll(".bt-pane").forEach(p => { p.hidden = p.dataset.pane !== t; });
+  const i = FORM_TABS.indexOf(t);
+  $("btBack").hidden = res || i <= 0;
+  $("btNext").hidden = res || i < 0 || i >= FORM_TABS.length - 1;
+  $("btForm").setAttribute("aria-labelledby", "btTab-" + t);
+  // keep the strip in view when the tab is long (it is sticky, but a tab opened from a button far down the page)
+  if (!(opts && opts.stay)) {
+    const r = $("btTabs").getBoundingClientRect();
+    if (r.top < 0 || r.top > 200) $("btTabs").scrollIntoView({block: "start", behavior: "smooth"});
+  }
+}
+
+function setTc(key, text, warn) {
+  const e = $("btTc-" + key);
+  if (!e) return;
+  e.hidden = !text;
+  e.textContent = text || "";
+  e.classList.toggle("warn", !!warn);
+}
+
+function paintTabs() {
+  if (!S) return;
+  const nStocks = S.group ? S.group.count : S.stocks.length;
+  setTc("stocks", nStocks ? nf(nStocks, 0) : "!", !nStocks);
+  const nEntry = countConds(S.entry);
+  const err = PV && !PV.ok ? String(PV.error || "") : "";
+  const errTab = /^Entry/.test(err) ? "entry" : /^(Exit|Stop|Target|Trailing|Stepped)/.test(err) ? "exit" : /^Settings/.test(err) ? "money" : "";
+  setTc("entry", errTab === "entry" ? "!" : nEntry ? String(nEntry) : "", errTab === "entry");
+  const ways = countConds(S.exit) + [S.stop, S.target, S.trail, S.hold].filter(v => numOrNull(v) != null).length +
+    (numOrNull(S.stepEvery) != null ? 1 : 0);
+  const noWay = PV && PV.ok && !PV.has_exit;
+  setTc("exit", errTab === "exit" || noWay ? "!" : ways ? String(ways) : "", errTab === "exit" || noWay);
+  setTc("money", errTab === "money" ? "!" : S.capital ? compact(Number(S.capital)) : "", errTab === "money");
+  setTc("results", LAST && LAST.summary ? nf(LAST.summary.trades, 0) : "", false);
+}
+
+function wireTabs() {
+  const strip = $("btTabs");
+  strip.addEventListener("click", e => {
+    const b = e.target.closest("[data-tab]");
+    if (b) showTab(b.dataset.tab, {stay: true});
+  });
+  strip.addEventListener("keydown", e => {                     // arrow keys move between the tabs
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const k = TAB_ORDER.indexOf(TAB) + (e.key === "ArrowRight" ? 1 : -1);
+    if (k < 0 || k >= TAB_ORDER.length) return;
+    showTab(TAB_ORDER[k], {stay: true});
+    $("btTab-" + TAB_ORDER[k]).focus();
+  });
+  $("btBack").addEventListener("click", () => showTab(FORM_TABS[Math.max(0, FORM_TABS.indexOf(TAB) - 1)]));
+  $("btNext").addEventListener("click", () => showTab(FORM_TABS[Math.min(FORM_TABS.length - 1, FORM_TABS.indexOf(TAB) + 1)]));
+  $("btOut").addEventListener("click", e => {                  // "change the rules" buttons inside a result or an error
+    const g = e.target.closest("[data-gotab]");
+    if (g) showTab(g.dataset.gotab);
+  });
+}
+
+/* ---- running --------------------------------------------------------- */
+async function run() {
+  if ($("btGo").disabled) return;
+  const out = $("btOut");
+  showTab("results", {stay: true});
+  const many = S.group ? S.group.count : S.stocks.length;
+  out.innerHTML = '<p class="bt-busy">' + (many > 25
+    ? "Testing " + many + " stocks. This can take up to a minute or two, so please keep this page open&hellip;"
+    : "Replaying your rules over the price history&hellip;") + "</p>";
+  $("btGo").disabled = true;
+  const fail = msg => {
+    out.innerHTML = '<p class="bt-err">' + esc(msg) + '</p><p><button type="button" class="bt-sm" data-gotab="entry">&larr; Change the rules</button></p>';
+  };
+  try {
+    let r;
+    try {
+      r = await fetch("/api/rule-backtest/run", {method: "POST",
+        headers: {"content-type": "application/json"}, body: JSON.stringify(payload())});
+    } catch (e) {                    // only a failed request is a connection problem
+      fail("Could not reach FinChaya. Check your connection and try again.");
+      return;
+    }
+    if (r.status === 401) { out.innerHTML = ""; window.fcSignIn && window.fcSignIn(); return; }
+    if (r.status === 403) { out.innerHTML = ""; relock(); return; }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      fail(j.detail || "The back-test could not run just now.");
+      return;
+    }
+    try {
+      LAST = await r.json();
+      paint(LAST);
+    } catch (e) {                    // a bug in drawing the answer must not pose as a network error
+      console.error(e);
+      fail("The back-test ran, but the result could not be shown. Please try again, and tell us if it keeps happening.");
+      return;
+    }
+    saveLink();
+    $("btTabs").scrollIntoView({behavior: "smooth", block: "start"});
+  } finally {
+    updateGo();
+  }
+}
+
+/* ---- the answer ------------------------------------------------------ */
+const inrC = v => v == null ? "–" : (v < 0 ? "−" : "") + compact(Math.abs(v));      // ₹1.5 Cr, ₹2.5 L
+function tile(k, v, d, cls) {
+  return `<div class="tile"><div class="k">${k}</div><div class="v ${cls || ""}">${v}</div>` +
+    (d ? `<div class="d">${d}</div>` : "") + "</div>";
+}
+
+function summarySentence(d) {
+  const s = d.summary, yrs = d.window.years, n = s.trades;
+  const names = d.stocks.filter(x => !x.skipped);
+  if (!n) {
+    return names.length
+      ? "These rules produced no trades in the last " + yrs + " year" + (yrs === 1 ? "" : "s") +
+        (s.signals ? "." : ", because the entry rule was never met.")
+      : "None of the chosen stocks had enough price history to test.";
+  }
+  if (d.equity) {
+    return `Over the last <b>${yrs} year${yrs === 1 ? "" : "s"}</b> on <b>${esc(names[0].symbol)}</b>, these rules took ` +
+      `<b>${n}</b> trade${n === 1 ? "" : "s"}. <b>${plain(s.win_rate, 0)}</b> closed in a profit, and the average trade returned ` +
+      `<b class="${sgn(s.avg_trade)}">${pct(s.avg_trade, 2)}</b>. Following them the whole way, <b>${inr(s.capital)}</b> put into the stock would have become ` +
+      `<b>${inr(s.final_value)}</b>: a ${gl(s.profit)} of <b class="${sgn(s.profit)}">${inr(Math.abs(s.profit))}</b> (<span class="${sgn(s.total_return)}">${pct(s.total_return, 0)}</span>), ` +
+      `against <b>${inr(s.bh_final_value)}</b>, a ${gl(s.bh_profit)} of <b class="${sgn(s.bh_profit)}">${inr(Math.abs(s.bh_profit))}</b> (<span class="${sgn(s.bh_return)}">${pct(s.bh_return, 0)}</span>), for simply holding. ` +
+      `The rules had money in the stock <b>${plain(s.in_market, 0)}</b> of the time, and the deepest fall from a peak was ` +
+      `<b class="neg">${plain(s.max_drawdown, 0)}</b> (holding: <span class="neg">${plain(s.bh_max_drawdown, 0)}</span>).`;
+  }
+  return `Across ${d.group ? `the <b>${esc(d.group.label)}</b> (<b>${s.stocks_tested}</b> stocks tested)` :
+      `<b>${s.stocks_tested}</b> stock${s.stocks_tested === 1 ? "" : "s"}`} over the last <b>${yrs} year${yrs === 1 ? "" : "s"}</b>, ` +
+    `these rules took <b>${n}</b> trade${n === 1 ? "" : "s"}. <b>${plain(s.win_rate, 0)}</b> closed in a profit, and the average ` +
+    `trade returned <b class="${sgn(s.avg_trade)}">${pct(s.avg_trade, 2)}</b>. Putting <b>${inr(s.capital)}</b> into each of the ${s.stocks_tested} ` +
+    `stocks (<b>${inr(s.put_in)}</b> in all) would have turned it into <b>${inr(s.final_value)}</b>: a ${gl(s.profit)} of ` +
+    `<b class="${sgn(s.profit)}">${inr(Math.abs(s.profit))}</b> (<span class="${sgn(s.profit_pct)}">${pct(s.profit_pct, 1)}</span>), against ` +
+    `a ${gl(s.bh_profit)} of <b class="${sgn(s.bh_profit)}">${inr(Math.abs(s.bh_profit))}</b> (<span class="${sgn(s.bh_profit_pct)}">${pct(s.bh_profit_pct, 1)}</span>) for simply holding them. ` +
+    `<b>${s.stocks_positive}</b> of ${s.stocks_tested} stocks ended the period ahead, and <b>${s.stocks_beat_bh}</b> did better than simply holding them.`;
+}
+
+function tilesHtml(d) {
+  const s = d.summary;
+  if (!s.trades) return "";
+  const t = [];
+  // the money first: what the rules would have made or lost, and what holding would have
+  const multi = !d.equity;
+  // a crore-sized amount in the big number would wrap across two lines: say it short up top, exactly below
+  const big = v => Math.abs(v) >= 1e7 ? (v > 0 ? "+" : "−") + compact(Math.abs(v)) : inrS(v);
+  const exact = v => Math.abs(v) >= 1e7 ? inrS(v) + " exactly · " : "";
+  t.push(tile("Profit or loss, following the rules", big(s.profit),
+    exact(s.profit) + (multi ? `${inrC(s.capital)} in each of ${s.stocks_tested} stocks (${inrC(s.put_in)} in all) · ${pct(s.profit_pct, 1)}`
+          : `${inr(s.capital)} became ${inr(s.final_value)} · ${pct(s.total_return, 0)}`), sgn(s.profit)));
+  t.push(tile("If you had simply bought and held", big(s.bh_profit),
+    exact(s.bh_profit) + (multi ? `the same ${inrC(s.put_in)}, bought on day one and never sold · ${pct(s.bh_profit_pct, 1)}`
+          : `${inr(s.capital)} bought on day one, never sold, became ${inr(s.bh_final_value)} · ${pct(s.bh_return, 0)}`), sgn(s.bh_profit)));
+  t.push(tile("Trades", nf(s.trades, 0), `${s.winners} won · ${s.losers} lost` + (s.open_at_end ? ` · ${s.open_at_end} still open` : "")));
+  t.push(tile("Closed in a profit", plain(s.win_rate, 0), `Average win ${pct(s.avg_win, 1)} · loss ${pct(s.avg_loss, 1)}`));
+  t.push(tile("Average trade", pct(s.avg_trade, 2), `${inrS(s.avg_pnl)} a trade · middle trade ${pct(s.median_trade, 2)}`, sgn(s.avg_trade)));
+  t.push(tile("Profit factor", s.profit_factor == null ? "–" : nf(s.profit_factor, 2),
+    s.profit_factor == null ? "No losing trades" : "Total won ÷ total lost"));
+  t.push(tile("Best · worst trade", `<span class="pos">${pct(s.best, 0)}</span> · <span class="neg">${pct(s.worst, 0)}</span>`,
+    `${inrS(s.best_pnl)} · ${inrS(s.worst_pnl)}`));
+  t.push(tile("Held for", days(s.avg_days), "On average, per trade"));
+  if (d.equity) {
+    t.push(tile("Total return", pct(s.total_return, 0), `Holding: ${pct(s.bh_return, 0)}`, sgn(s.total_return)));
+    t.push(tile("Per year (CAGR)", s.cagr == null ? "–" : pct(s.cagr, 1), `Holding: ${s.bh_cagr == null ? "–" : pct(s.bh_cagr, 1)}`, sgn(s.cagr)));
+    t.push(tile("Deepest fall", plain(s.max_drawdown, 0), `Holding: ${plain(s.bh_max_drawdown, 0)}`, "neg"));
+    t.push(tile("Time invested", plain(s.in_market, 0), "of the period"));
+  } else {
+    t.push(tile("Stocks ahead", `${s.stocks_positive} of ${s.stocks_tested}`, `Median stock ${pct(s.median_stock_return, 0)}`));
+    t.push(tile("Beat holding", `${s.stocks_beat_bh} of ${s.stocks_tested}`, `Median holding ${pct(s.median_bh_return, 0)}`));
+  }
+  return `<div class="tiles bt-tiles">${t.join("")}</div>`;
+}
+
+function rulesHtml(d) {
+  const r = d.rules;
+  const line = tr => tr.lines.map(esc).join(`<span class="j">${tr.join}</span>`);
+  let h = `<div class="bt-rules"><h4>Get in when</h4><p>${line(r.entry)}</p>`;
+  const out = [];
+  if (r.exit) out.push(line(r.exit));
+  r.exit_other.forEach(x => out.push(esc(x)));
+  h += `<h4>Get out when</h4><p>${out.join("<br>")}</p><h4>Test settings</h4><p>${r.settings.map(esc).join(" · ")}</p></div>`;
+  return h;
+}
+
+/* ---- charts ---------------------------------------------------------- */
+function niceTicks(lo, hi, n) {
+  const span = hi - lo || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || raw;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(v);
+  return out;
+}
+
+function eqScale(eq, log) {
+  const W = 880, H = 340, L = 66, R = 14, T = 14, B = 30, n = eq.dates.length;
+  const f = v => log ? Math.log(Math.max(v, 1e-6)) : v;
+  // The holding line is absent until the price-history licence switch is on; the
+  // chart then shows the rules' own line and the holding figures sit in the tiles.
+  const bh = eq.buy_hold || null;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < n; i++) {
+    lo = Math.min(lo, eq.strategy[i], bh ? bh[i] : Infinity);
+    hi = Math.max(hi, eq.strategy[i], bh ? bh[i] : -Infinity);
+  }
+  if (!(hi > lo)) hi = lo + 1;
+  const pad = (f(hi) - f(lo)) * 0.04, y0 = f(lo) - pad, y1 = f(hi) + pad;
+  return {W, H, L, R, T, B, n, lo, hi, log,
+    X: i => L + (n < 2 ? 0 : i / (n - 1)) * (W - L - R),
+    Y: v => T + (1 - (f(v) - y0) / (y1 - y0)) * (H - T - B)};
+}
+
+function equityChart(eq, sc) {
+  const {W, H, L, R, T, B, n, lo, hi, log, X, Y} = sc;
+  const A = eq.strategy, Bh = eq.buy_hold;
+  const path = arr => { let s = ""; for (let i = 0; i < n; i++) s += (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(arr[i]).toFixed(1); return s; };
+  let ticks;
+  if (log) {
+    const cand = [0.1, 0.2, 0.25, 0.5, 1, 2, 3, 4, 5, 8, 10, 15, 20, 30, 40, 50, 80, 100];
+    ticks = cand.filter(v => v >= lo * 0.98 && v <= hi * 1.02);
+    if (ticks.length > 7) ticks = ticks.filter((v, i) => i % 2 === 0);
+    if (ticks.length < 2) ticks = [lo, hi];
+  } else {
+    ticks = niceTicks(lo, hi, 5);
+  }
+  let grid = "";
+  ticks.forEach(v => {
+    const y = Y(v).toFixed(1);
+    grid += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)"/>` +
+      `<text x="${L - 8}" y="${(+y + 4)}" text-anchor="end" font-size="12" fill="var(--muted)">${compact(v * CAP)}</text>`;
+  });
+  const base = Y(1).toFixed(1);
+  grid += `<line x1="${L}" x2="${W - R}" y1="${base}" y2="${base}" stroke="var(--line-firm)" stroke-dasharray="4 4"/>`;
+  // one label per calendar year, placed where that year's first trading day falls
+  const marks = [];
+  let lastYear = null;
+  for (let i = 0; i < n; i++) {
+    const y = eq.dates[i].slice(0, 4);
+    if (y !== lastYear) { marks.push([X(i), y]); lastYear = y; }
+  }
+  // a part-year at the start would sit on top of the next label: drop the part-year, not the full one
+  if (marks.length > 1 && marks[1][0] - marks[0][0] < 44) marks.shift();
+  let xs = "", lastX = -999;
+  marks.forEach(([x, y]) => {
+    if (x - lastX < 44) return;
+    lastX = x;
+    xs += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="12" fill="var(--muted)">${y}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" id="btEqSvg" role="img" aria-label="Value of ${inr(CAP)} following the rules compared with holding the stock, over time">` +
+    grid + xs +
+    (Bh ? `<path d="${path(Bh)}" fill="none" stroke="var(--bench)" stroke-width="2" stroke-linejoin="round"/>` : "") +
+    `<path d="${path(A)}" fill="none" stroke="var(--brand)" stroke-width="2.4" stroke-linejoin="round"/>` +
+    `<line id="btCur" y1="${T}" y2="${H - B}" x1="0" x2="0" stroke="var(--ink-2)" stroke-width="1" visibility="hidden"/>` +
+    `<circle id="btCurA" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="2" visibility="hidden"/>` +
+    (Bh ? `<circle id="btCurB" r="4.5" fill="var(--bench)" stroke="#fff" stroke-width="2" visibility="hidden"/>` : "") +
+    `<rect id="btHover" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+}
+
+function wireEquity(eq, sc) {
+  const svg = $("btEqSvg");
+  if (!svg) return;
+  const {W, L, R, n, X, Y} = sc;
+  const rd = $("btRead");
+  const idle = "Move across the chart to read a day.";
+  rd.textContent = idle;
+  const show = ev => {
+    const box = svg.getBoundingClientRect();
+    const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    const px = (cx - box.left) / box.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (W - L - R) * (n - 1))));
+    const x = X(i);
+    const cur = $("btCur"), a = $("btCurA"), b = $("btCurB");
+    cur.setAttribute("x1", x); cur.setAttribute("x2", x); cur.setAttribute("visibility", "visible");
+    a.setAttribute("cx", x); a.setAttribute("cy", Y(eq.strategy[i])); a.setAttribute("visibility", "visible");
+    if (b) { b.setAttribute("cx", x); b.setAttribute("cy", Y(eq.buy_hold[i])); b.setAttribute("visibility", "visible"); }
+    rd.innerHTML = `<b>${fdate(eq.dates[i])}</b> &nbsp; Rules: <b style="color:var(--brand-dark)">${inr(eq.strategy[i] * CAP)}</b>` +
+      (eq.buy_hold ? ` &nbsp; Holding: <b>${inr(eq.buy_hold[i] * CAP)}</b>` : "");
+  };
+  const hide = () => {
+    ["btCur", "btCurA", "btCurB"].forEach(id => { const e = $(id); if (e) e.setAttribute("visibility", "hidden"); });
+    rd.textContent = idle;
+  };
+  const h = $("btHover");
+  h.addEventListener("pointermove", show);
+  h.addEventListener("pointerdown", show);
+  h.addEventListener("pointerleave", hide);
+}
+
+function drawEquity(eq) {
+  const sc = eqScale(eq, !!($("btLog") && $("btLog").checked));
+  $("btEq").innerHTML = equityChart(eq, sc);
+  wireEquity(eq, sc);
+}
+
+function histChart(hg) {
+  const W = 880, H = 220, L = 40, R = 10, T = 10, B = 34;
+  const n = hg.counts.length, mx = Math.max.apply(null, hg.counts) || 1;
+  const bw = (W - L - R) / n;
+  let bars = "", labels = "";
+  hg.counts.forEach((c, i) => {
+    const h = (H - T - B) * c / mx, x = L + i * bw, y = H - B - h;
+    const lo = hg.edges[i], hi = hg.edges[i + 1];
+    const col = hi <= 0 ? "var(--neg)" : lo >= 0 ? "var(--brand)" : "var(--muted)";
+    bars += `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(bw - 2, 1).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}" opacity=".85">` +
+      `<title>${c} trade${c === 1 ? "" : "s"} between ${pct(lo, 0)} and ${pct(hi, 0)}</title></rect>`;
+  });
+  const every = n > 18 ? 3 : n > 10 ? 2 : 1;
+  const z0 = Math.max(hg.edges.indexOf(0), 0);          // keep zero among the labelled edges
+  hg.edges.forEach((e, i) => {
+    if ((i - z0) % every) return;
+    labels += `<text x="${(L + i * bw).toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--muted)">${nf(e, e % 1 ? 1 : 0)}%</text>`;
+  });
+  const zero = hg.edges.indexOf(0);
+  const zl = zero >= 0 ? `<line x1="${L + zero * bw}" x2="${L + zero * bw}" y1="${T}" y2="${H - B}" stroke="var(--ink-2)" stroke-dasharray="3 3"/>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="How many trades ended at each return">` +
+    `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--line-firm)"/>` +
+    `<text x="${L - 6}" y="${T + 10}" text-anchor="end" font-size="12" fill="var(--muted)">${mx}</text>` +
+    bars + zl + labels + "</svg>";
+}
+
+/* ---- sections -------------------------------------------------------- */
+// The per-stock table can be a hundred rows, so its columns sort. Skipped stocks always sit at the end.
+const STOCK_COLS = [["symbol", "Stock", true], ["trades", "Trades"], ["win_rate", "Closed in profit"],
+  ["avg_trade", "Average trade"], ["profit", "Profit or loss, rules"], ["bh_profit", "Profit or loss, holding"],
+  ["total_return", "Rules %"], ["bh_return", "Holding %"],
+  ["max_drawdown", "Deepest fall (rules)"], ["in_market", "Invested"]];
+let stockSort = {key: "symbol", dir: 1};
+
+function stockRows(d) {
+  const k = stockSort.key, dir = stockSort.dir;
+  const val = s => k === "symbol" ? String(s.symbol || "") : s[k];
+  const ok = d.stocks.filter(s => !s.skipped), skipped = d.stocks.filter(s => s.skipped);
+  ok.sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;                       // blanks last whichever way it sorts
+    if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
+  });
+  return ok.concat(skipped).map(s => {
+    if (s.skipped) return `<tr class="skip"><td class="l">${esc(s.symbol)} <small>${esc(s.name)}</small></td><td colspan="9" class="l">${esc(s.skipped)}</td></tr>`;
+    return `<tr><td class="l"><b>${esc(s.symbol)}</b> <small>${esc(s.name)}</small></td><td>${s.trades}</td>` +
+      `<td>${s.win_rate == null ? "–" : plain(s.win_rate, 0)}</td><td class="${sgn(s.avg_trade)}">${s.avg_trade == null ? "–" : pct(s.avg_trade, 2)}</td>` +
+      `<td class="${sgn(s.profit)}"><b>${inrS(s.profit)}</b></td><td class="${sgn(s.bh_profit)}">${inrS(s.bh_profit)}</td>` +
+      `<td class="${sgn(s.total_return)}">${pct(s.total_return, 0)}</td><td class="${sgn(s.bh_return)}">${pct(s.bh_return, 0)}</td>` +
+      `<td class="neg">${plain(s.max_drawdown, 0)}</td><td>${plain(s.in_market, 0)}</td></tr>`;
+  }).join("");
+}
+
+function stockHead() {
+  return "<tr>" + STOCK_COLS.map(([key, label, left]) =>
+    `<th${left ? ' class="l"' : ""} data-sort="${key}" title="Sort by this column" aria-sort="${stockSort.key === key ? (stockSort.dir > 0 ? "ascending" : "descending") : "none"}">` +
+    `${label}${stockSort.key === key ? `<span class="ar">${stockSort.dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("") + "</tr>";
+}
+
+function stocksTable(d) {
+  if (d.stocks.length < 2) return "";
+  return `<h3 class="bt-h3">Stock by stock</h3>
+    <p class="bt-note">Each stock is tested alone, with all of the money in it, one trade at a time. &ldquo;Rules&rdquo; compounds that stock&rsquo;s trades; &ldquo;Holding&rdquo; is buying at the start of the period and keeping it. Click a heading to sort.</p>
+    <div class="bt-scroll"><table class="bt-tbl" id="btStockTbl"><thead>${stockHead()}</thead><tbody>${stockRows(d)}</tbody></table></div>
+    <button type="button" class="bt-sm bt-stockcsv" id="btStockCsv" title="A file you can open in Excel">Download this table (Excel/CSV)</button>`;
+}
+
+function wireStocks(d) {
+  const t = $("btStockTbl");
+  if (!t) return;
+  $("btStockCsv").addEventListener("click", stocksCsv);
+  t.querySelector("thead").addEventListener("click", e => {
+    const th = e.target.closest("[data-sort]");
+    if (!th) return;
+    const key = th.dataset.sort;
+    stockSort = {key: key, dir: stockSort.key === key ? -stockSort.dir : (key === "symbol" ? 1 : -1)};
+    t.querySelector("thead").innerHTML = stockHead();
+    t.querySelector("tbody").innerHTML = stockRows(d);
+  });
+}
+
+function yearTable(d) {
+  if (!d.by_year.length) return "";
+  const single = !!d.equity;
+  const w = d.window;
+  const rows = d.by_year.map(y => {
+    const firstY = String(y.year) === w.from.slice(0, 4) && w.from.slice(5) > "01-10";
+    const lastY = String(y.year) === w.to.slice(0, 4) && w.to.slice(5) < "12-20";
+    const tag = (firstY || lastY) ? ' <small>(part year)</small>' : "";
+    return `<tr><td>${y.year}${tag}</td><td>${y.trades}</td><td>${y.win_rate == null ? "–" : plain(y.win_rate, 0)}</td>` +
+      `<td class="${sgn(y.avg_trade)}">${y.avg_trade == null ? "–" : pct(y.avg_trade, 2)}</td>` +
+      `<td class="${sgn(y.pnl)}"><b>${inrS(y.pnl)}</b></td>` +
+      (single ? `<td class="${sgn(y.strategy_pct)}">${pct(y.strategy_pct, 1)}</td><td class="${sgn(y.buy_hold_pct)}">${pct(y.buy_hold_pct, 1)}</td>` : "") + "</tr>";
+  }).join("");
+  return `<h3 class="bt-h3">Year by year</h3>
+    <p class="bt-note">Did it work steadily, or only in one stretch? Trades are counted in the year they ended.</p>
+    <div class="bt-scroll"><table class="bt-tbl"><thead><tr><th>Year</th><th>Trades ended</th><th>Closed in profit</th><th>Average trade</th><th title="Added up over the trades that ended in this year. A trade held over New Year counts in the year it ended.">Profit or loss on trades that ended (&#8377;)</th>${single ? '<th title="The change in the value of the money over the calendar year, including trades still open.">Rules, that year</th><th>Holding, that year</th>' : ""}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function forwardTable(d) {
+  if (!d.forward.length) return "";
+  const rows = d.forward.map(r => `<tr><td>${r.days} day${r.days === 1 ? "" : "s"} later</td><td>${r.n}</td><td>${plain(r.pct_up, 0)}</td>` +
+    `<td class="${sgn(r.avg)}">${pct(r.avg, 2)}</td><td class="${sgn(r.median)}">${pct(r.median, 2)}</td>` +
+    `<td class="pos">${pct(r.best, 1)}</td><td class="neg">${pct(r.worst, 1)}</td></tr>`).join("");
+  const dir = d.spec.direction === "short" ? "a short position" : "buying";
+  return `<h3 class="bt-h3">What the price did after each signal</h3>
+    <p class="bt-note">Every time the entry rule turned true, ${esc(String(d.summary.signals))} times in all, this measures ${dir} then and looking at the price a set number of trading days later &mdash; whatever the exit rules would have done. Before costs.</p>
+    <div class="bt-scroll"><table class="bt-tbl"><thead><tr><th class="l">Looking</th><th>Signals measured</th><th>Ended ahead</th><th>Average</th><th>Middle</th><th>Best</th><th>Worst</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+const EXIT_COL = {"Exit rule": "var(--brand)", "Target": "#3b9c78", "Time limit": "#a9b8b2",
+  "Trailing stop": "var(--note)", "Stepped stop": "#c9722b", "Stop-loss": "var(--neg)", "Still open": "#6b7d77"};
+function exitsHtml(d) {
+  const keys = Object.keys(d.exits), tot = keys.reduce((a, k) => a + d.exits[k], 0);
+  if (!tot) return "";
+  return `<h3 class="bt-h3">How trades ended</h3><div class="bt-exitbar">` +
+    keys.map(k => `<i style="width:${(100 * d.exits[k] / tot).toFixed(2)}%;background:${EXIT_COL[k] || "#999"}" title="${esc(k)}: ${d.exits[k]}"></i>`).join("") +
+    `</div><div class="bt-exitkey">` +
+    keys.map(k => `<span><i style="background:${EXIT_COL[k] || "#999"}"></i>${esc(k)}: <b>${d.exits[k]}</b></span>`).join("") + "</div>";
+}
+
+let tradeShown = 30;
+const PRINT_TRADES = 200;             // trades in the printed report; the CSV has them all
+function tradesHtml(d) {
+  if (!d.trades.length) return "";
+  const multi = d.stocks.length > 1, prices = d.show_prices;
+  const list = d.trades.slice().reverse();
+  const rows = list.slice(0, tradeShown).map(t => {
+    const tags = (t.set_aside ? '<span class="bt-tag" title="This trade crosses a one-day fall of 30% or more, or rise of 60% or more, that no split or bonus explains, so it is not counted.">set aside</span>' : "") +
+      (t.reason === "Still open" ? '<span class="bt-tag">still open</span>' : "");
+    return `<tr${t.set_aside ? ' class="aside"' : ""}>` + (multi ? `<td class="l"><b>${esc(t.symbol)}</b></td>` : "") +
+      `<td class="l">${fdate(t.entry_date)}</td><td class="l">${fdate(t.exit_date)}</td><td>${t.days}</td>` +
+      (prices ? `<td>${money(t.entry_price)}</td><td>${money(t.exit_price)}</td>` : "") +
+      `<td class="${sgn(t.ret_pct)}"><b>${pct(t.ret_pct, 2)}</b></td><td class="${sgn(t.pnl)}">${t.set_aside ? "–" : inrS(t.pnl)}</td>` +
+      `<td class="l">${esc(t.reason)}${tags}</td></tr>`;
+  }).join("");
+  const more = list.length > tradeShown
+    ? `<button type="button" class="bt-sm bt-more" id="btMore">Show ${Math.min(50, list.length - tradeShown)} more</button> ` : "";
+  return `<h3 class="bt-h3">Every trade</h3>
+    <p class="bt-note">Most recent first. ${d.trades_truncated ? "Showing the latest " + d.trades.length + " of " + d.trades_total + ". " : ""}Returns are after the ${d.spec.cost_pct}% cost on each side.</p>
+    <div class="bt-scroll"><table class="bt-tbl"><thead><tr>${multi ? '<th class="l">Stock</th>' : ""}<th class="l">In</th><th class="l">Out</th><th>Days</th>${prices ? "<th>In price</th><th>Out price</th>" : ""}<th>Return</th><th>Profit or loss (&#8377;)</th><th class="l">How it ended</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${list.length > tradeShown ? `<p class="bt-printonly">The most recent ${tradeShown} of ${list.length} trades are printed. The download (Excel/CSV) has all of them.</p>` : ""}
+    ${more}<button type="button" class="bt-sm bt-more" id="btCsv" title="A file you can open in Excel">Download all trades (Excel/CSV)</button>`;
+}
+
+// One file from a header row and rows; opens in Excel (the BOM makes it read the rupee sign and names as UTF-8).
+function saveTable(name, head, rows) {
+  const q = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const blob = new Blob(["﻿" + [head.map(q).join(",")].concat(rows.map(r => r.map(q).join(","))).join("\r\n")],
+    {type: "text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name + "-" + new Date().toISOString().slice(0, 10) + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function stocksCsv() {
+  const d = LAST;
+  saveTable("finchaya-backtest-stock-by-stock",
+    ["Stock", "Name", "Trades", "Closed in profit %", "Average trade %", "Profit or loss, rules (INR, on " + d.spec.capital + " per stock)",
+     "Profit or loss, holding (INR)", "Rules %", "Holding %", "Deepest fall (rules) %", "Invested % of the time", "Note"],
+    d.stocks.map(s => s.skipped ? [s.symbol, s.name, "", "", "", "", "", "", "", "", "", s.skipped]
+      : [s.symbol, s.name, s.trades, s.win_rate, s.avg_trade, s.profit, s.bh_profit, s.total_return, s.bh_return, s.max_drawdown, s.in_market, ""]));
+}
+
+function csv() {
+  const d = LAST;
+  saveTable("finchaya-backtest-trades",
+    ["Stock", "In", "Out", "Days held", "Return %", "Profit or loss (INR, on " + d.spec.capital + " per stock)", "How it ended", "Set aside"],
+    d.trades.map(t => [t.symbol, t.entry_date, t.exit_date, t.days, t.ret_pct, t.pnl, t.reason, t.set_aside ? "yes" : ""]));
+}
+
+function notesHtml(d) {
+  const notes = [];
+  (d.notes || []).forEach(n => notes.push(esc(n)));                       // about the whole run
+  // Notes about single stocks: shown one by one for a few stocks, folded away for many (a group
+  // can have a note on dozens of them, which would bury the result).
+  const per = [];
+  d.stocks.forEach(s => (s.notes || []).forEach(n => per.push((d.stocks.length > 1 ? `<b>${esc(s.symbol)}:</b> ` : "") + esc(n))));
+  const fold = d.stocks.length > 8 && per.length > 5;
+  if (!fold) per.forEach(n => notes.push(n));
+  if (d.summary.set_aside) notes.unshift(`<b>${d.summary.set_aside} trade${d.summary.set_aside === 1 ? " was" : "s were"} set aside</b> because ${d.summary.set_aside === 1 ? "it crosses" : "they cross"} a one-day fall of 30% or more, or rise of 60% or more, that no split or bonus explains. ${d.summary.set_aside === 1 ? "It is" : "They are"} still listed below, marked. Untick the option above to count ${d.summary.set_aside === 1 ? "it" : "them"}.`);
+  if (d.group) notes.push(`<b>${esc(d.group.label)} is today&rsquo;s list.</b> It leaves out companies that were in it earlier and have since dropped out or been delisted, so a test across the last ten years flatters the results.`);
+  else if (d.stocks.length > 1) notes.push("Only stocks listed today are in the database, so a test across many stocks leaves out the ones that were delisted. That flatters the results.");
+  let h = notes.length ? `<div class="bt-notes">${notes.map(n => `<div class="bt-warn">${n}</div>`).join("")}</div>` : "";
+  if (fold) h += `<details class="bt-detail"><summary>${per.length} notes about individual stocks</summary><ul class="bt-noteslist">${per.map(n => `<li>${n}</li>`).join("")}</ul></details>`;
+  return h;
+}
+
+function paint(d) {
+  const out = $("btOut");
+  CAP = d.spec.capital;
+  const names = d.stocks.filter(s => !s.skipped).map(s => s.symbol);
+  const title = d.group ? esc(d.group.label) + " · " + d.group.count + " stocks"
+    : d.stocks.length === 1 ? esc(d.stocks[0].name || d.stocks[0].symbol) : d.stocks.length + " stocks";
+  const skipped = d.stocks.filter(s => s.skipped).length;
+  let h = `<section class="panel"><div class="bt-printhead"><span><b>FinChaya</b> &nbsp;Back-test report</span>` +
+    `<span>Generated ${esc(new Date().toLocaleString("en-IN", {dateStyle: "medium", timeStyle: "short"}))} &middot; mf.finchaya.com</span></div>` +
+    `<div class="bt-head"><div><h2>${title}</h2>` +
+    `<p class="bt-sub">${fdate(d.window.from)} to ${fdate(d.window.to)} · tested on daily prices` +
+    (skipped ? ` · ${skipped} stock${skipped === 1 ? "" : "s"} left out (too little history)` : "") + `</p></div>` +
+    `<div class="bt-acts"><button type="button" class="bt-sm" data-gotab="entry" title="Go back to the rules, change them and run again">&larr; Change the rules</button>` +
+    `<button type="button" class="bt-sm" id="btPdf" title="Opens your browser's print window: choose Save as PDF as the printer">Save as PDF</button>` +
+    `<button type="button" class="bt-sm" id="btCopy">Copy a link to this test</button></div></div>`;
+  h += `<p class="bt-sum">${summarySentence(d)}</p>`;
+  h += rulesHtml(d) + notesHtml(d);
+  if (!d.summary.trades) {
+    h += `<p class="bt-empty">Try a wider rule (for example a lower threshold, or OR instead of AND), a longer period, or more stocks.</p>`;
+    h += stocksTable(d) + "</section>";
+    out.innerHTML = h;
+    wireResult(d);
+    return;
+  }
+  h += `<p class="bt-note" style="margin:18px 0 0"><b>&ldquo;Simply holding&rdquo;</b> is the yardstick, not a trade that is still open: ` +
+    `the same money put into ${d.equity ? "the stock" : "each stock"} on the <b>first day of the period</b> and never sold, valued at the latest ` +
+    `price. The rules are only in the market for part of the time, so this shows what sitting through the whole period would have made.</p>`;
+  h += tilesHtml(d);
+  if (d.equity) {
+    const hasHold = !!d.equity.buy_hold;
+    h += `<h3 class="bt-h3">${inr(d.spec.capital)} over time</h3>
+      <p class="bt-note">What the money would have become following the rules` +
+      (hasHold ? ", against buying at the start and holding" : "") + `. Trades are marked to the day&rsquo;s close while they are open.` +
+      (hasHold ? "" : " The line for simply holding is not drawn here, because it would be the stock&rsquo;s price history itself; the holding figures are in the cards above and the year table below.") + `</p>
+      <div class="bt-read" id="btRead"></div><div class="bt-chart" id="btEq"></div>
+      <div class="bt-legend"><span><i style="background:var(--brand)"></i>Following the rules</span>` +
+      (hasHold ? `<span><i style="background:var(--bench)"></i>Buying and holding</span>` : "") +
+      `<label><input type="checkbox" id="btLog"> Log scale</label></div>`;
+  }
+  h += stocksTable(d) + yearTable(d) + forwardTable(d);
+  if (d.histogram) h += `<h3 class="bt-h3">How the trades ended up</h3>
+    <p class="bt-note">The number of trades that finished at each return, after costs. The dashed line is zero, and the two outer bars also hold everything beyond them.</p>${histChart(d.histogram)}`;
+  h += exitsHtml(d) + '<div id="btTrades">' + tradesHtml(d) + "</div>";
+  h += `<details class="bt-detail"><summary>How this was tested</summary><ul>${d.assumptions.map(a => `<li>${esc(a)}</li>`).join("")}` +
+    `<li>Took ${nf(d.took_ms / 1000, 1)} seconds.</li></ul></details></section>`;
+  out.innerHTML = h;
+  wireResult(d);
+}
+
+function wireResult(d) {
+  // The chart exists only when there were trades; a rule that never fired has
+  // an equity line (flat) but no chart box to draw it in.
+  if (d.equity && $("btEq")) {
+    drawEquity(d.equity);
+    $("btLog").addEventListener("change", () => drawEquity(d.equity));
+  }
+  const pdf = $("btPdf");
+  if (pdf) pdf.addEventListener("click", printReport);
+  const cp = $("btCopy");
+  if (cp) cp.addEventListener("click", () => {
+    const done = () => { cp.textContent = "Link copied"; setTimeout(() => cp.textContent = "Copy a link to this test", 2200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(location.href).then(done, done);
+    else done();
+  });
+  wireStocks(d);
+  wireTrades(d);
+}
+
+/* ---- Save as PDF ----------------------------------------------------------
+   The browser makes the PDF from the print layout in #btPrintCss. For the print the collapsed sections
+   ("How this was tested", the per-stock notes) are opened, since a closed section prints as nothing, and
+   up to 200 trades are shown instead of 30. The page title becomes the file name, because that is what
+   browsers offer as the PDF's name. Everything is put back when the print window closes. */
+function printReport() {
+  const d = LAST;
+  if (!d) return;
+  const prevTitle = document.title, prevShown = tradeShown, opened = [];
+  const nm = d.group ? d.group.label : d.stocks.length === 1 ? (d.stocks[0].symbol || "stock") : d.stocks.length + " stocks";
+  document.querySelectorAll("#btOut details").forEach(x => { if (!x.open) { x.open = true; opened.push(x); } });
+  tradeShown = PRINT_TRADES;
+  if ($("btTrades")) $("btTrades").innerHTML = tradesHtml(d);
+  document.title = "FinChaya back-test - " + nm + " - " + new Date().toISOString().slice(0, 10);
+  const restore = () => {
+    document.title = prevTitle;
+    opened.forEach(x => { x.open = false; });
+    tradeShown = prevShown;
+    if ($("btTrades")) { $("btTrades").innerHTML = tradesHtml(d); wireTrades(d); }
+  };
+  window.addEventListener("afterprint", restore, {once: true});
+  setTimeout(() => window.print(), 80);
+}
+
+function wireTrades(d) {
+  const m = $("btMore");
+  if (m) m.addEventListener("click", () => { tradeShown += 50; $("btTrades").innerHTML = tradesHtml(d); wireTrades(d); });
+  const c = $("btCsv");
+  if (c) c.addEventListener("click", csv);
+}
+</script>
+</body>
+</html>

@@ -52,12 +52,13 @@ WHAT THESE SCREENS ARE NOT
     from so the page can say so.
 """
 
+import os
 from datetime import date, timedelta
 from typing import Optional
 
 import psycopg
 from psycopg.rows import dict_row
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 
 from portfolio_api import DB, _q, CA_BAND, _require_subscription
 
@@ -199,7 +200,122 @@ SCREENS = [
         "timeframes": True,
     },
 ]
+# Which row of tabs each screen sits under on the page. The first four read the funds' monthly share counts, the
+# next three the chart, the last three are what is coming up; the ownership screens (ownership_screens.py) read
+# the quarterly shareholding pattern. A new module that is missing (a partial upload) costs those screens
+# and nothing else: the page simply has no Ownership group.
+_GROUP_OF = {"buying": "funds", "leaving": "funds", "new": "funds", "quiet": "funds",
+             "rsi_cross": "chart", "macd_pco": "chart", "cross": "chart",
+             "upcoming_results": "events", "upcoming_dividends": "events", "upcoming_actions": "events"}
+for _s in SCREENS:
+    _s["group"] = _GROUP_OF[_s["key"]]
+
+GROUPS = [
+    {"key": "funds", "name": "Fund flows",
+     "what": "What the fund managers did last month, from the share counts in every fund's monthly disclosure."},
+    {"key": "own", "name": "Ownership",
+     "what": "Who owns each company and how that changed this quarter, from the shareholding pattern every "
+             "company files: foreign institutions, mutual funds, promoters, individuals."},
+    {"key": "chart", "name": "Chart signals",
+     "what": "Crossings and patterns on the chart: momentum, MACD, moving averages, trend turns, chart patterns (double tops and bottoms, head and shoulders, flags) and breakouts of old highs."},
+    {"key": "events", "name": "Coming up",
+     "what": "Results, dividends, splits and bonuses scheduled in the next few weeks."},
+]
+
+try:
+    import ownership_screens as own
+    SCREENS = SCREENS[:4] + own.SCREENS + SCREENS[4:]
+    OWN_KEYS = set(own.SCREEN_KEYS)
+except ImportError:                      # the module was not uploaded: carry on without the Ownership group
+    own = None
+    OWN_KEYS = set()
+    GROUPS = [g for g in GROUPS if g["key"] != "own"]
+
+# The pattern scanners on the chart (dow_change.py: a trend turning up or down; fib_retracement.py: a 62-78%
+# pullback) sit with the chart screens, after the crossovers. Same rule as above: a missing module costs its own
+# screens and nothing else. Both read bars from price_bars.py and take their controls from their catalogue entry.
+try:
+    import price_bars
+    import dow_change as dow
+    import fib_retracement as fib
+    _at = next(i for i, s in enumerate(SCREENS) if s["key"] == "cross") + 1
+    SCREENS = SCREENS[:_at] + dow.SCREENS + [fib.SCREEN] + SCREENS[_at:]
+except ImportError:
+    price_bars = dow = fib = None
+
+# The expanded-flat scanner (expanded_flat.py) sits after the Fibonacci one. Its own block, so that a copy of this file
+# uploaded without it still starts and keeps the other chart screens.
+try:
+    import expanded_flat as flat
+    _at = next(i for i, s in enumerate(SCREENS) if s["key"] == "fib_retrace") + 1
+    SCREENS = SCREENS[:_at] + flat.SCREENS + SCREENS[_at:]
+except (ImportError, StopIteration):
+    flat = None
+
+# The higher-low scanner (higher_low.py) sits after the Dow-theory and Fibonacci ones. Its own block, so that a copy of this file uploaded without it keeps every other screen.
+try:
+    import higher_low as hlow
+    _at = next(i for i, s in enumerate(SCREENS) if s["key"] == "fib_retrace") + 1
+    SCREENS = SCREENS[:_at] + [hlow.SCREEN] + SCREENS[_at:]
+except (ImportError, StopIteration):
+    hlow = None
+
+# The six chart-pattern scanners (chart_patterns.py: double top / bottom with a fake breakout or breakdown, head and shoulders and its inverse, bullish and bearish flag and pole)
+# follow the higher-low one. Same rule: a copy of this file uploaded without chart_patterns.py (or price_bars.py) keeps every other screen.
+try:
+    import chart_patterns as cpat
+    _at = next((i for i, s in enumerate(SCREENS) if s["key"] == "higher_low"), None)
+    _at = (_at if _at is not None else max(i for i, s in enumerate(SCREENS) if s.get("group") == "chart")) + 1
+    SCREENS = SCREENS[:_at] + cpat.SCREENS + SCREENS[_at:]
+except (ImportError, ValueError):
+    cpat = None
+
+# The multi-year breakout scanner (multiyear_breakout.py) closes the chart group. Its own block again: a copy of this file
+# uploaded without it (or without price_adjust.py, which it needs) keeps every other screen.
+try:
+    import multiyear_breakout as breakout
+    _at = max(i for i, s in enumerate(SCREENS) if s.get("group") == "chart") + 1
+    SCREENS = SCREENS[:_at] + breakout.SCREENS + SCREENS[_at:]
+except (ImportError, ValueError):
+    breakout = None
+
+# The IPO trend screen (ipo_trend.py: IPO stocks only, by the exchange's listing date) and the listing-date filter every screen offers (ipo_universe.py). Their own blocks
+# again: a copy of this file uploaded without them (or without the IPO tables) keeps every other screen.
+try:
+    import ipo_universe
+except ImportError:
+    ipo_universe = None
+try:
+    import ipo_trend as ipotrend
+    _at = max(i for i, s in enumerate(SCREENS) if s.get("group") == "chart") + 1
+    SCREENS = SCREENS[:_at] + [ipotrend.SCREEN] + SCREENS[_at:]
+except (ImportError, ValueError):
+    ipotrend = None
+
 SCREEN_KEYS = {s["key"] for s in SCREENS}
+
+# The chart signals are two tabs: the chart PATTERNS (shapes) and the INDICATOR / CONCEPT based ones; in the second the screens sit under "Indicators" or "Concepts".
+# Set here, once, so the page needs no list of its own and a module that is missing just leaves its tab shorter.
+_PATTERN_SCREENS = ("double_top", "double_bottom", "inv_head_shoulders", "head_shoulders", "flag_pole", "flag_pole_down")
+_INDICATOR_SCREENS = ("rsi_cross", "macd_pco", "cross")
+for _s in SCREENS:
+    if _s.get("group") != "chart":
+        continue
+    if _s["key"] in _PATTERN_SCREENS:
+        _s["sub"] = "patterns"
+    else:
+        _s["sub"], _s["topic"] = "ic", ("Indicators" if _s["key"] in _INDICATOR_SCREENS else "Concepts")
+for _g in GROUPS:
+    if _g["key"] == "chart":
+        _g["subs"] = [
+            {"key": "patterns", "name": "Chart patterns",
+             "what": "Shapes that form on the chart: double tops and bottoms, head and shoulders, flags. Each is confirmed by a close through the neckline or the flag's line, never a wick."},
+            {"key": "ic", "name": "Indicator and concept based",
+             "what": "Indicators (RSI, MACD, moving-average crossovers) and price-structure concepts (Dow theory, Fibonacci retracement, higher lows, expanded flats, multi-year breakouts, IPO trends)."}]
+
+# "Only IPOs": listed in the last N days (the exchange's listing date). Offered on every screen except the IPO trend screen, which is IPO-only and has the same choice
+# as one of its own controls.
+IPO_WINDOWS = [[30, "30 days"], [60, "60 days"], [90, "90 days"], [180, "180 days"], [365, "1 year"], [730, "2 years"]]
 
 CAPS = ("Large", "Mid", "Small")
 TIMEFRAMES = ("DAILY", "WEEKLY", "MONTHLY")
@@ -484,8 +600,62 @@ def _period_pairs(cur, tf):
 @router.get("/screens")
 def list_screens():
     """The catalogue, so the page never hard-codes a rule's wording."""
+    if price_bars is not None:
+        price_bars.warm_async()      # read the prices in the background now: somebody has opened the screener
+    if breakout is not None:
+        breakout.warm_async()        # the ten-year read behind the multi-year breakout screen
     return {"screens": [{k: v for k, v in s.items()} for s in SCREENS],
-            "caps": list(CAPS)}
+            "groups": GROUPS, "caps": list(CAPS),
+            "ipo": {"available": ipo_universe is not None, "windows": IPO_WINDOWS}}
+
+
+LATEST_CLOSE = """
+SELECT i.isin,
+       (array_agg(o.close ORDER BY o.as_of_date DESC))[1]      AS close,
+       (array_agg(o.as_of_date ORDER BY o.as_of_date DESC))[1] AS as_of_date,
+       (array_agg(o.close ORDER BY o.as_of_date DESC))[2]      AS prev_close
+FROM unnest(%(isins)s::text[]) AS i(isin)
+CROSS JOIN LATERAL (
+    SELECT x.close, x.as_of_date FROM stock_ohlc_daily x
+    WHERE x.isin = i.isin ORDER BY x.as_of_date DESC LIMIT 2
+) o
+GROUP BY i.isin
+"""
+
+
+def _attach_prices(cur, rows):
+    """The latest stored close, its date and the day's change on EVERY row.
+
+    Every screen now carries them, whatever the screen is about. A list of
+    "funds buying" or "results due" says nothing about whether the price feed
+    behind the site is current, and that is the first thing to check when a
+    number looks wrong. Read from the candles themselves, once for the whole
+    page of rows (so after the limit, not before), and only for stocks that
+    have one -- the others get None, which the page shows as a dash."""
+    isins = [r["isin"] for r in rows if r.get("isin")]
+    got = ({p["isin"]: p for p in _q(cur, LATEST_CLOSE, {"isins": isins})}
+           if isins else {})
+    for r in rows:
+        p = got.get(r.get("isin"))
+        close = _f(p["close"]) if p else None
+        prev = _f(p["prev_close"]) if p else None
+        r["last_close"] = close
+        r["last_close_date"] = str(p["as_of_date"]) if p else None
+        r["last_change_pct"] = (round((close / prev - 1) * 100, 2)
+                                if close and prev else None)
+    return rows
+
+
+def _may_see_old_prices(request):
+    """May this reader be shown rupee prices from before api.CHART_FLOOR (1 Aug 2024)? Those came from a feed whose licence
+    restricts showing them to the public: an administrator may, and so may everyone once MF_CHART_FULL_HISTORY=1. Fails closed."""
+    if os.getenv("MF_CHART_FULL_HISTORY", "").strip() == "1":
+        return True
+    try:
+        from api import current_user, is_admin_user
+        return bool(is_admin_user(current_user(request)))
+    except Exception:                                    # noqa: BLE001
+        return False
 
 
 def _meta(cur, isins, when=None):
@@ -540,10 +710,56 @@ def run(request: Request,
         timeframe: str = "DAILY",
         level: int = 60,
         window: Optional[int] = None,
+        quarter: Optional[str] = None,
+        points: Optional[float] = None,
+        holder: Optional[str] = None,
+        streak: Optional[int] = None,
+        pledge: Optional[float] = None,
+        listed_within: Optional[str] = None,
+        listed_from: Optional[str] = None,
+        listed_to: Optional[str] = None,
         limit: int = 50):
+    """Run a screen. listed_within=N (days), or listed_from / listed_to (YYYY-MM-DD), narrows ANY screen to IPOs by the exchange's listing date: the screen is run over
+    every stock, then only the IPOs inside the window are kept, so the limit applies to those. (The IPO trend screen is IPO-only and takes its own 'listed_within'.)"""
+    _require_subscription(request, "stocks")
+    return _run_listed(request, screen, cap, minimum, timeframe, level, window, quarter, points, holder, streak, pledge, listed_within, listed_from, listed_to, limit)
+
+
+def _run_listed(request, screen, cap, minimum, timeframe, level, window, quarter, points, holder, streak, pledge, listed_within, listed_from, listed_to, limit,
+                max_rows=MAX_ROWS, internal=False):
+    """The body of /run: the screen, narrowed to IPOs when a listing window is asked for. `internal` is the alert checker (scanner_alerts.py), which has no web request and no
+    sign-in: it asks for every match (max_rows) and gets them."""
+    spec = next((s for s in SCREENS if s["key"] == screen), None)
+    asked = any(v not in (None, "", "0") for v in (listed_within, listed_from, listed_to))
+    if not asked or spec is None or spec.get("ipo_only"):
+        return _run_screen(request, screen, cap, minimum, timeframe, level, window, quarter, points, holder, streak, pledge, limit, max_rows=max_rows, internal=internal)
+    if ipo_universe is None:
+        raise HTTPException(503, "The IPO list is not on this server yet.")
+    try:
+        within, lf, lt = ipo_universe.window_from_params({"listed_within": listed_within, "listed_from": listed_from, "listed_to": listed_to})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+        try:
+            listed = ipo_universe.select(ipo_universe.listings(cur), within, lf, lt)
+        except ipo_universe.NotSetUp as e:
+            raise HTTPException(503, str(e))
+    shown_limit = max(1, min(limit, max_rows))
+    res = _run_screen(request, screen, cap, minimum, timeframe, level, window, quarter, points, holder, streak, pledge, 100000, max_rows=100000, internal=internal)
+    rows = [r for r in res.get("rows", []) if r.get("isin") in listed]
+    out = dict(res)
+    out["rows"], out["total"] = rows[:shown_limit], len(rows)
+    out["ipo"] = {"universe": len(listed), "window": ipo_universe.describe(within, lf, lt)}
+    return out
+
+
+def _run_screen(request, screen, cap, minimum, timeframe, level, window, quarter, points, holder, streak, pledge, limit, max_rows=MAX_ROWS, internal=False):
     # The screens are a paid product. The LIST of screens (/screens above)
     # stays open so a visitor can see what exists; running one does not.
-    _require_subscription(request)
+    # Stock screens are the STOCKS tier. (`internal`: the alert checker, run by
+    # cron on the server for a member who set the alert while signed in.)
+    if not internal:
+        _require_subscription(request, "stocks")
     if screen not in SCREEN_KEYS:
         raise HTTPException(400, "Unknown screen: %s" % screen)
     if cap and cap not in CAPS:
@@ -555,11 +771,49 @@ def run(request: Request,
     # 95 is a handful of stocks in a decade, and a crossing of it is a
     # data error more often than a move.
     level = max(5, min(int(level), 95))
-    limit = max(1, min(limit, MAX_ROWS))
+    limit = max(1, min(limit, max_rows))
     spec = next(s for s in SCREENS if s["key"] == screen)
-    floor = minimum if minimum is not None else (spec["min_default"] or 0)
+    floor = minimum if minimum is not None else (spec.get("min_default") or 0)
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+
+        # ---------------------------- chart patterns: Dow theory, Fibonacci
+        # Their controls (timeframe, chart type, swing size ...) come from the catalogue entry, so they are read
+        # from the query as they are and checked there, not added to this signature one by one.
+        if dow is not None and screen in dow.SCREEN_KEYS:
+            return dow.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices)
+        if fib is not None and screen == fib.SCREEN["key"]:
+            return fib.run_screen(cur, dict(request.query_params), cap, limit, _meta, _attach_prices)
+        if flat is not None and screen in flat.SCREEN_KEYS:
+            return flat.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices)
+        if hlow is not None and screen in hlow.SCREEN_KEYS:
+            return hlow.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices)
+        if cpat is not None and screen in cpat.SCREEN_KEYS:
+            return cpat.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices)
+        if ipotrend is not None and screen in ipotrend.SCREEN_KEYS:
+            try:
+                return ipotrend.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices)
+            except ValueError as e:                              # a listing date that is not a date, or a range the wrong way round
+                raise HTTPException(400, str(e))
+        if breakout is not None and screen in breakout.SCREEN_KEYS:
+            return breakout.run_screen(cur, screen, dict(request.query_params), cap, limit, _meta, _attach_prices,
+                                       show_old=_may_see_old_prices(request))
+
+        # ----------------------------------------- ownership (quarterly)
+        if screen in OWN_KEYS:
+            chosen = None
+            if quarter:
+                try:
+                    chosen = date.fromisoformat(quarter)
+                except ValueError:
+                    raise HTTPException(400, "Unknown quarter: %s" % quarter)
+            try:
+                return own.run_screen(cur, screen,
+                                      {"points": points, "holder": holder, "streak": streak, "pledge": pledge},
+                                      cap, chosen, limit, _meta, _attach_prices)
+            except psycopg.errors.UndefinedTable:
+                # create_stock_shareholding_table.py has not been run: say so rather than a bare 500
+                raise HTTPException(503, "The shareholding data has not been loaded yet.")
 
         # ------------------------------------------- upcoming BSE events
         if screen in EVENT_KIND_GROUPS:
@@ -599,7 +853,9 @@ def run(request: Request,
                     "days_away": (r["event_date"] - date.today()).days,
                     "headline": r["headline"],
                 })
-            return {"screen": screen, "rows": out[:limit], "total": len(out),
+            return {"screen": screen,
+                    "rows": _attach_prices(cur, out[:limit]),
+                    "total": len(out),
                     "window_days": win, "as_of": str(date.today())}
 
         # -------------------------------------------------- crossovers
@@ -639,7 +895,9 @@ def run(request: Request,
             # wants the turns upward; the falls are still on the list.
             order = {"golden": 0, "price_up": 1, "price_down": 2, "death": 3}
             out.sort(key=lambda x: (order[x["kind"]], x["name"] or ""))
-            return {"screen": screen, "rows": out[:limit], "total": len(out),
+            return {"screen": screen,
+                    "rows": _attach_prices(cur, out[:limit]),
+                    "total": len(out),
                     "timeframe": timeframe,
                     "considered": considered,
                     "as_of": str(newest) if newest else None,
@@ -684,7 +942,9 @@ def run(request: Request,
                                  if r["gap_days"] is not None else None),
                 })
             out.sort(key=lambda x: (-x["rsi"], x["name"] or ""))
-            return {"screen": screen, "rows": out[:limit], "total": len(out),
+            return {"screen": screen,
+                    "rows": _attach_prices(cur, out[:limit]),
+                    "total": len(out),
                     "timeframe": timeframe, "level": level,
                     "considered": considered,
                     "as_of": str(newest) if newest else None,
@@ -764,7 +1024,9 @@ def run(request: Request,
                     "rank": rank,
                 })
             out.sort(key=lambda x: (-x["rank"], x["name"] or ""))
-            return {"screen": screen, "rows": out[:limit], "total": len(out),
+            return {"screen": screen,
+                    "rows": _attach_prices(cur, out[:limit]),
+                    "total": len(out),
                     "considered": len(common),
                     "as_of": (str(newest["DAILY"])
                               if newest.get("DAILY") else None),
@@ -832,5 +1094,321 @@ def run(request: Request,
             })
 
         out.sort(key=lambda x: (-x["rank"], -x["holders"]))
-        return {"screen": screen, "rows": out[:limit], "total": len(out),
+        return {"screen": screen,
+                "rows": _attach_prices(cur, out[:limit]),
+                "total": len(out),
                 "as_of": str(now), "compared_with": str(prev)}
+
+
+# =====================================================================
+# EMAIL ME WHEN A NEW STOCK MATCHES THE IPO TREND SCREEN
+# =====================================================================
+# ipo_alerts.py holds the rules and the checker (cron); the tables come from create_ipo_alert_tables.py. A copy of this file uploaded without ipo_alerts.py simply
+# does not offer the box: GET /ipo-alerts then says {"available": false} and the page hides it.
+try:
+    import ipo_alerts
+except ImportError:
+    ipo_alerts = None
+
+
+def _alert_user(request):
+    """The signed-in member on the Stocks plan (or an administrator): the same door as running the screens."""
+    _require_subscription(request, "stocks")
+    from api import current_user
+    user = current_user(request)
+    if not user or not user.get("user_id"):
+        raise HTTPException(401, "Sign in to set an alert.")
+    return user
+
+
+def _alerts_trouble(e, user, what, kind="IPO alerts", script="create_ipo_alert_tables.py", doc="DEPLOY_IPOALERTS.md"):
+    """A failed read or write on the alert tables, as words. The commonest cause on a fresh deploy: the table script (create_ipo_alert_tables.py, or
+    create_scanner_alert_tables.py for the scanner alerts) has not been run."""
+    text = str(e).strip()
+    first = text.splitlines()[0][:200] if text else ""
+    print("mfapi: %s %s failed: %s: %s" % (kind, what, type(e).__name__, first), flush=True)
+    if isinstance(e, psycopg.errors.UndefinedTable):
+        detail = "%s are not set up on this server yet: the tables that hold them have not been created." % kind
+        try:
+            from api import is_admin_user
+            if is_admin_user(user):
+                detail += " Run `python %s --admin doadmin` on the server (%s), then try again." % (script, doc)
+        except Exception:                                    # noqa: BLE001
+            pass
+    else:
+        detail = "%s could not be %s because of a problem on the server." % (kind, what)
+    return HTTPException(503, detail)
+
+
+def _alert_scan(cur, settings):
+    """The IPO trend screen's rows for these settings, as the checker will read them (None when the screen cannot be run here)."""
+    res = ipotrend.run_screen(cur, "ipo_trend", dict(settings, recent=ipo_alerts.LOOKBACK[settings["timeframe"]]), None, ipotrend.ALL_ROWS, _meta, lambda c, rows: rows)
+    return None if res.get("unavailable") else res["rows"]
+
+
+@router.get("/ipo-alerts")
+def ipo_alert_list(request: Request):
+    """My IPO alerts, and whether email and the checker are really set up (the page says so in full weight when they are not)."""
+    user = _alert_user(request)
+    if ipo_alerts is None or ipotrend is None:
+        return {"available": False}
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("""SELECT a.alert_id, a.settings, a.sentence, a.active, a.created_at, a.last_checked_at,
+                                  count(s.*) FILTER (WHERE s.emailed AND NOT s.baseline) AS emailed, count(s.*) FILTER (WHERE NOT s.emailed) AS waiting
+                           FROM ipo_trend_alert a LEFT JOIN ipo_trend_alert_seen s USING (alert_id)
+                           WHERE a.user_id = %(u)s GROUP BY a.alert_id ORDER BY a.created_at DESC""", {"u": user["user_id"]})
+            alerts = cur.fetchall()
+            conn.rollback()
+            status = ipo_alerts.checker_status(lambda sql, p=None, one=False: (cur.execute(sql, p or {}), cur.fetchone() if one else cur.fetchall())[1])
+            conn.rollback()
+    except psycopg.errors.UndefinedTable as e:
+        raise _alerts_trouble(e, user, "loaded")
+    email = {"ready": None, "why": None}
+    try:
+        import mailer
+        cfg = mailer.mail_config()
+        email = {"ready": bool(cfg["configured"]), "why": cfg.get("why")}
+    except Exception:                                        # noqa: BLE001
+        pass
+    last = status.get("last_run_at")
+    return {"available": True, "max": ipo_alerts.MAX_ALERTS, "email": email,
+            "checker": {"known": status.get("known"), "never_run": status.get("never_run"), "stale": status.get("stale"), "last_run_at": last.isoformat() if hasattr(last, "isoformat") else last},
+            "alerts": [{"alert_id": a["alert_id"], "settings": a["settings"], "sentence": a["sentence"], "created_at": a["created_at"].isoformat(),
+                        "last_checked_at": a["last_checked_at"].isoformat() if a["last_checked_at"] else None, "emailed": a["emailed"], "waiting": a["waiting"]} for a in alerts if a["active"]]}
+
+
+@router.post("/ipo-alerts")
+def ipo_alert_create(request: Request, body: dict = Body(...)):
+    """Make an alert from the screen's settings. Every stock already on the screen is marked as seen (so the first email is about something new), and the answer says
+    how many that was."""
+    user = _alert_user(request)
+    if ipo_alerts is None or ipotrend is None or ipo_universe is None:
+        raise HTTPException(503, "IPO alerts are not on this server yet.")
+    try:
+        settings = ipo_alerts.clean_settings(body.get("settings") if isinstance(body, dict) and "settings" in body else body)
+    except ipo_alerts.AlertError as e:
+        raise HTTPException(400, str(e))
+    key, text = ipo_alerts.settings_key(settings), ipo_alerts.sentence(settings)
+    import json
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            try:
+                rows = _alert_scan(cur, settings)
+            except ipo_universe.NotSetUp as e:
+                raise HTTPException(503, str(e))
+            conn.rollback()
+            if rows is None:
+                raise HTTPException(503, "The IPO screen cannot be read on this server right now, so an alert cannot be started.")
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (user["user_id"] + 7270000000,))    # sixty clicks at once must not slip past the limit
+            cur.execute("SELECT count(*) AS n FROM ipo_trend_alert WHERE user_id = %(u)s AND active", {"u": user["user_id"]})
+            if cur.fetchone()["n"] >= ipo_alerts.MAX_ALERTS:
+                raise HTTPException(400, "You can keep up to %d IPO alerts. Stop one you no longer need first." % ipo_alerts.MAX_ALERTS)
+            cur.execute("SELECT 1 AS x FROM ipo_trend_alert WHERE user_id = %(u)s AND settings_key = %(k)s", {"u": user["user_id"], "k": key})
+            if cur.fetchone():
+                raise HTTPException(400, "You already have an alert with exactly these settings.")
+            cur.execute("INSERT INTO ipo_trend_alert (user_id, settings, settings_key, sentence) VALUES (%(u)s, %(s)s::jsonb, %(k)s, %(t)s) RETURNING alert_id, created_at",
+                        {"u": user["user_id"], "s": json.dumps(settings), "k": key, "t": text})
+            made = cur.fetchone()
+            n = ipo_alerts.baseline(lambda sql, params=None, returning=False: cur.execute(sql, params or {}), made["alert_id"], rows)
+            conn.commit()
+    except HTTPException:
+        raise
+    except psycopg.errors.UndefinedTable as e:
+        raise _alerts_trouble(e, user, "saved")
+    except Exception as e:                                   # noqa: BLE001
+        raise _alerts_trouble(e, user, "saved")
+    return {"ok": True, "alert": {"alert_id": made["alert_id"], "sentence": text, "settings": settings, "created_at": made["created_at"].isoformat(), "emailed": 0, "waiting": 0},
+            "already_matching": n}
+
+
+@router.post("/ipo-alerts/{alert_id}/delete")
+def ipo_alert_delete(alert_id: int, request: Request):
+    user = _alert_user(request)
+    if ipo_alerts is None:
+        raise HTTPException(503, "IPO alerts are not on this server yet.")
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM ipo_trend_alert WHERE alert_id = %(a)s AND user_id = %(u)s RETURNING alert_id", {"a": alert_id, "u": user["user_id"]})
+            gone = cur.fetchone()
+            conn.commit()
+    except Exception as e:                                   # noqa: BLE001
+        raise _alerts_trouble(e, user, "stopped")
+    if not gone:
+        raise HTTPException(404, "No such alert.")                # somebody else's alert is a 404, not a 403
+    return {"ok": True}
+
+
+# =====================================================================
+# EMAIL ME WHEN A NEW STOCK APPEARS ON ANY SCANNER
+# =====================================================================
+# scanner_alerts.py holds the rules and the checker (cron); the tables come from create_scanner_alert_tables.py. A copy of this file uploaded without scanner_alerts.py simply
+# does not offer the box: GET /alerts then says {"available": false} and the page hides it.
+try:
+    import scanner_alerts
+except ImportError:
+    scanner_alerts = None
+
+_SCANNER_ALERTS = dict(kind="Scanner alerts", script="create_scanner_alert_tables.py", doc="DEPLOY_SCANNERALERTS.md")
+
+
+class _InternalRequest:
+    """Stands in for a web request when the alert checker runs a screen: the screen's own controls as query parameters, no cookies, no sign-in."""
+
+    def __init__(self, params):
+        self.query_params = params
+        self.headers = {}
+        self.cookies = {}
+        self.client = None
+
+
+def _num(v):
+    return None if v in (None, "") else float(v)
+
+
+def _whole(v):
+    return None if v in (None, "") else int(float(v))
+
+
+def alert_scan(screen, settings):
+    """The scanner's WHOLE answer for these settings (rows, as_of, considered ...), as the alert checker reads it: every match, no sign-in, no row limit. An alert always reads the
+    newest bars: 'alert made within the last N' is widened to scanner_alerts.CATCH_UP, so a missed day is caught up (a stock already noted is never emailed twice).
+    Raises when the scanner cannot be run."""
+    spec = next((s for s in SCREENS if s["key"] == screen), None)
+    if spec is None:
+        raise ValueError("Unknown screen: %s" % screen)
+    params = {k: str(v) for k, v in settings.items() if v not in (None, "")}
+    recent = scanner_alerts.scan_recent(spec, settings, settings.get("recent"))
+    if recent is not None:
+        params["recent"] = str(recent)
+    listed = settings.get("listed_within")
+    try:
+        return _run_listed(_InternalRequest(params), screen, settings.get("cap"), _whole(settings.get("minimum")), settings.get("timeframe") or "DAILY",
+                           _whole(settings.get("level")) or 60, _whole(settings.get("window")), None, _num(settings.get("points")), settings.get("holder"),
+                           _whole(settings.get("streak")), _num(settings.get("pledge")), str(listed) if listed else None, None, None, 100000,
+                           max_rows=100000, internal=True)
+    except HTTPException as e:
+        raise RuntimeError(str(e.detail))
+
+
+def _market_date():
+    """The newest trading day with prices (None when it cannot be told)."""
+    if price_bars is None:
+        return None
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            d = price_bars.latest_market_date(cur)
+            conn.rollback()
+        return d
+    except Exception:                                        # noqa: BLE001
+        return None
+
+
+@router.get("/alerts")
+def scanner_alert_list(request: Request):
+    """My scanner alerts (on every screen), and whether email and the checker are really set up (the page says so in full weight when they are not)."""
+    user = _alert_user(request)
+    if scanner_alerts is None:
+        return {"available": False}
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("""SELECT alert_id, screen, title, settings, sentence, mode, created_at, last_checked_at, last_emailed_at, emails_sent, emailed_count, last_error,
+                                  (pending IS NOT NULL) AS waiting, jsonb_array_length(members) AS on_screen
+                           FROM scanner_alert WHERE user_id = %(u)s AND active ORDER BY created_at DESC""", {"u": user["user_id"]})
+            alerts = cur.fetchall()
+            conn.rollback()
+            status = scanner_alerts.checker_status(lambda sql, p=None, one=False: (cur.execute(sql, p or {}), cur.fetchone() if one else cur.fetchall())[1])
+            conn.rollback()
+    except psycopg.errors.UndefinedTable as e:
+        raise _alerts_trouble(e, user, "loaded", **_SCANNER_ALERTS)
+    email = {"ready": None, "why": None}
+    try:
+        import mailer
+        cfg = mailer.mail_config()
+        email = {"ready": bool(cfg["configured"]), "why": cfg.get("why")}
+    except Exception:                                        # noqa: BLE001
+        pass
+    last = status.get("last_run_at")
+    iso = lambda d: d.isoformat() if d else None             # noqa: E731
+    return {"available": True, "max": scanner_alerts.MAX_ALERTS, "email": email, "modes": list(scanner_alerts.MODES),
+            "checker": {"known": status.get("known"), "never_run": status.get("never_run"), "stale": status.get("stale"), "last_run_at": last.isoformat() if hasattr(last, "isoformat") else last},
+            "alerts": [{"alert_id": a["alert_id"], "screen": a["screen"], "title": a["title"], "settings": a["settings"], "sentence": a["sentence"], "mode": a["mode"],
+                        "created_at": iso(a["created_at"]), "last_checked_at": iso(a["last_checked_at"]), "last_emailed_at": iso(a["last_emailed_at"]), "emails_sent": a["emails_sent"],
+                        "emailed": a["emailed_count"], "waiting": bool(a["waiting"]), "on_screen": a["on_screen"], "error": a["last_error"]} for a in alerts]}
+
+
+@router.post("/alerts")
+def scanner_alert_create(request: Request, body: dict = Body(...)):
+    """Make an alert on a scanner from the page's own settings. The stocks already on the scanner are noted (so the first email is about something new), and the answer says
+    how many that was."""
+    user = _alert_user(request)
+    if scanner_alerts is None:
+        raise HTTPException(503, "Scanner alerts are not on this server yet.")
+    body = body if isinstance(body, dict) else {}
+    screen = body.get("screen")
+    spec = next((s for s in SCREENS if s["key"] == screen), None) if isinstance(screen, str) else None
+    if spec is None:
+        raise HTTPException(400, "Choose a scanner to set the alert on.")
+    if spec.get("ipo_only"):
+        raise HTTPException(400, "This screen has its own alert box for IPO stocks, below its settings.")
+    mode = body.get("mode") or "new"
+    if mode not in scanner_alerts.MODES:
+        raise HTTPException(400, "Choose how you want to be told: only new stocks, or a list every day.")
+    windows = [w[0] for w in IPO_WINDOWS] if ipo_universe is not None else []
+    try:
+        settings = scanner_alerts.clean_settings(spec, body.get("settings") if "settings" in body else {}, windows)
+    except scanner_alerts.AlertError as e:
+        raise HTTPException(400, str(e))
+    key, text = scanner_alerts.settings_key(screen, settings), scanner_alerts.sentence(spec, settings, IPO_WINDOWS)
+    import json
+    from datetime import date as _date
+    try:
+        res = alert_scan(screen, settings)
+    except Exception as e:                                   # noqa: BLE001
+        print("mfapi: scanner alert could not read %s: %s: %s" % (screen, type(e).__name__, str(e)[:200]), flush=True)
+        raise HTTPException(503, "This scanner cannot be read on this server right now, so an alert cannot be started. Try again in a minute.")
+    market = _market_date()
+    ok, why = scanner_alerts.readable(screen, res, market, had_members=False)
+    if not ok:
+        raise HTTPException(503, "This scanner's data is not up to date yet (%s), so an alert cannot be started right now. Try again later." % why)
+    tf = scanner_alerts.timeframe_of(spec, settings)
+    members = sorted(r["isin"] for r in res["rows"] if scanner_alerts.usable(r, tf, market, _date.today()))[:scanner_alerts.MAX_MEMBERS]
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (user["user_id"] + 7310000000,))    # sixty clicks at once must not slip past the limit
+            cur.execute("SELECT count(*) AS n FROM scanner_alert WHERE user_id = %(u)s AND active", {"u": user["user_id"]})
+            if cur.fetchone()["n"] >= scanner_alerts.MAX_ALERTS:
+                raise HTTPException(400, "You can keep up to %d scanner alerts. Stop one you no longer need first." % scanner_alerts.MAX_ALERTS)
+            cur.execute("SELECT 1 AS x FROM scanner_alert WHERE user_id = %(u)s AND settings_key = %(k)s", {"u": user["user_id"], "k": key})
+            if cur.fetchone():
+                raise HTTPException(400, "You already have an alert with exactly these settings on this scanner.")
+            cur.execute("INSERT INTO scanner_alert (user_id, screen, title, settings, settings_key, sentence, mode, members, last_as_of) "
+                        "VALUES (%(u)s, %(sc)s, %(ti)s, %(s)s::jsonb, %(k)s, %(t)s, %(m)s, %(mem)s::jsonb, %(asof)s) RETURNING alert_id, created_at",
+                        {"u": user["user_id"], "sc": screen, "ti": spec["name"], "s": json.dumps(settings), "k": key, "t": text, "m": mode, "mem": json.dumps(members),
+                         "asof": str(res.get("as_of") or "")})
+            made = cur.fetchone()
+            conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:                                   # noqa: BLE001
+        raise _alerts_trouble(e, user, "saved", **_SCANNER_ALERTS)
+    return {"ok": True, "alert": {"alert_id": made["alert_id"], "screen": screen, "title": spec["name"], "sentence": text, "settings": settings, "mode": mode,
+                                   "created_at": made["created_at"].isoformat(), "emailed": 0, "waiting": False, "on_screen": len(members)},
+            "already_matching": len(members)}
+
+
+@router.post("/alerts/{alert_id}/delete")
+def scanner_alert_delete(alert_id: int, request: Request):
+    user = _alert_user(request)
+    if scanner_alerts is None:
+        raise HTTPException(503, "Scanner alerts are not on this server yet.")
+    try:
+        with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM scanner_alert WHERE alert_id = %(a)s AND user_id = %(u)s RETURNING alert_id", {"a": alert_id, "u": user["user_id"]})
+            gone = cur.fetchone()
+            conn.commit()
+    except Exception as e:                                   # noqa: BLE001
+        raise _alerts_trouble(e, user, "stopped", **_SCANNER_ALERTS)
+    if not gone:
+        raise HTTPException(404, "No such alert.")                # somebody else's alert is a 404, not a 403
+    return {"ok": True}

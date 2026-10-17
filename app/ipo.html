@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPOs: upcoming, open and listed &mdash; FinChaya</title>
+<meta name="description" content="Every IPO that is coming, open or recently listed, and drafts filed with SEBI, with what the company's own offer document says: who the promoters are, what the business does, the financials, and what the money is for. Information only.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  ipo.html -- the IPO lists and scanner.
+  ======================================================================
+  WHAT IT IS
+      Issues in three groups (upcoming and open; listed in the last 120 days; draft offer documents filed with SEBI), each a card with the facts that
+      matter before anyone looks closer: dates, price band, lot, size, whether the issue is new shares or existing holders selling, what the money is
+      for, the promoters' holding, the latest full-year revenue and profit, and how many risk factors the company lists. A card links to the page of that
+      issue (/ipo/<name>), which has the rest; once an issue has listed and its stock is on FinChaya the card links to the STOCK page (its "IPO" tab), because
+      there is one page per company. Ready-made scanners and a few filters narrow the list.
+
+  NO VERDICT
+      Nothing on this page says whether an issue is good or bad, cheap or dear, or what to do. There is no score, rank, rating, "subscribe" or "avoid".
+      The scanners describe what an issue IS ("the money repays debt", "promoters are selling"). Colours are not used to say good or bad: the one place
+      with up/down colour is how a LISTED issue has traded against its issue price, which is arithmetic on prices.
+
+  DATA
+      GET /api/ipo/access (asked first), GET /api/ipo/scanners, GET /api/ipo/list?... (ipo_api.py). The server checks every call; the page only avoids
+      drawing an empty screen.
+-->
+<style>
+  /* Every class is prefixed ip-: finchaya.css owns .panel, .chip, .tabs, .note and more and loads after this block. */
+  .ip-notice{margin:16px 0 0;padding:12px 16px;border-radius:var(--r);background:var(--note-wash);border:1px solid #f0d6a6;color:var(--ink-2);font-size:14px;line-height:1.55}
+  .ip-notice b{color:var(--ink)}
+  .ip-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid var(--line-firm);margin:20px 0 6px}
+  .ip-tab{appearance:none;border:0;background:none;cursor:pointer;padding:11px 16px;font-size:15.5px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1.5px}
+  .ip-tab:hover{color:var(--ink)}
+  .ip-tab[aria-selected=true]{color:var(--brand-dark);border-bottom-color:var(--brand)}
+  .ip-badge{display:inline-block;min-width:22px;padding:0 7px;margin-left:7px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:700;text-align:center}
+  .ip-tab[aria-selected=true] .ip-badge{background:var(--brand-wash);color:var(--brand-dark)}
+  .ip-updated{color:var(--muted);font-size:13px;margin:8px 0 0}
+  .ip-stale{margin:10px 0 0;padding:10px 14px;border-radius:var(--r);background:var(--note-wash);border:1px solid #f0d6a6;color:#7a4b00;font-size:14px;line-height:1.5}
+  .ip-stale[hidden]{display:none}
+
+  .ip-scan{margin:16px 0 0}
+  .ip-scan summary{margin:0 0 8px;font-size:15px;color:var(--ink-2);font-weight:700;letter-spacing:.01em;cursor:pointer;list-style:none;padding:6px 0}
+  .ip-scan summary::-webkit-details-marker{display:none}
+  .ip-scan summary::after{content:" \25B4";color:var(--muted)}
+  .ip-scan:not([open]) summary::after{content:" \25BE"}
+  .ip-scansel{color:var(--brand-dark);font-weight:600}
+  .ip-scan .ip-help{margin-top:8px}
+  @media (max-width:700px){ .ip-scan summary{border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);padding:11px 14px;margin:0 0 8px} }
+  .ip-chips{display:flex;gap:7px;flex-wrap:wrap}
+  .ip-chip{appearance:none;cursor:pointer;border:1.5px solid var(--line-firm);background:var(--card);border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;color:var(--ink-2)}
+  .ip-chip:hover{border-color:var(--brand)}
+  .ip-chip[aria-pressed=true]{background:var(--brand-wash);border-color:var(--brand);color:var(--brand-dark)}
+  .ip-help{color:var(--muted);font-size:13px;margin:8px 0 0;min-height:1.3em}
+  .ip-ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+  .ip-ctl input[type=search],.ip-ctl select,.ip-ctl input[type=number]{padding:9px 12px;font-size:15px;border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink);min-width:0}
+  .ip-ctl input[type=search]{flex:1 1 220px}
+  .ip-ctl select{flex:0 1 210px}
+  .ip-ctl input[type=number]{width:110px}
+  .ip-more{margin:12px 0 0;font-size:14px}
+  .ip-more summary{cursor:pointer;color:var(--brand-dark);font-weight:600;width:max-content}
+  .ip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 14px;margin:12px 0 0}
+  .ip-grid label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+  .ip-grid select,.ip-grid input{display:block;width:100%;margin-top:4px;padding:8px 10px;font-size:14.5px;border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink);box-sizing:border-box}
+  .ip-clear{appearance:none;border:0;background:none;color:var(--brand-dark);font-weight:600;cursor:pointer;font-size:14px;padding:6px 4px}
+  .ip-count{color:var(--muted);font-size:13.5px;margin:14px 0 0}
+
+  .ip-card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:18px 20px 16px;margin:14px 0 0}
+  .ip-head{display:flex;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;align-items:flex-start}
+  .ip-name{margin:0;font-size:19px;line-height:1.25;font-weight:700;letter-spacing:-.01em}
+  .ip-name a{color:var(--ink);text-decoration:none}
+  .ip-name a:hover{color:var(--brand-dark);text-decoration:underline}
+  .ip-meta{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:center;margin:6px 0 0;font-size:13px;color:var(--muted)}
+  .ip-tag{display:inline-block;padding:1px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:600}
+  .ip-tag.stage{background:var(--brand-wash);color:var(--brand-dark)}
+  .ip-tag.draft{background:var(--note-wash);color:#9a5d0b}
+  .ip-go{font-weight:600;font-size:14.5px;color:var(--brand-dark);text-decoration:none;white-space:nowrap}
+  .ip-go:hover{text-decoration:underline}
+  .ip-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 18px;margin:14px 0 0}
+  .ip-fact small{display:block;font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.03em;text-transform:uppercase}
+  .ip-fact b{display:block;font-size:16.5px;font-variant-numeric:tabular-nums;font-weight:700;margin-top:2px}
+  .ip-fact span{display:block;font-size:12.5px;color:var(--muted);margin-top:1px;line-height:1.35}
+  .ip-uses{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0;font-size:13px;color:var(--ink-2);align-items:center}
+  .ip-uses > span:first-child{font-weight:700;color:var(--muted);font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;margin-right:4px}
+  .ip-use{background:var(--surface-2);border-radius:999px;padding:1px 10px;font-weight:600;font-size:12.5px}
+  .ip-na{color:var(--muted);font-weight:500}
+  .ip-up{color:var(--brand-dark)}
+  .ip-down{color:var(--neg)}
+  .ip-unread{margin:12px 0 0;font-size:13.5px;color:var(--muted)}
+  .ip-perf{margin:14px 0 0;padding:10px 14px;background:var(--surface);border-radius:var(--r);font-size:14px;color:var(--ink-2);display:flex;gap:6px 26px;flex-wrap:wrap}
+  .ip-perf b{font-variant-numeric:tabular-nums}
+  .ip-src{margin:12px 0 0;font-size:12.5px;color:var(--muted)}
+  .ip-busy,.ip-none{color:var(--muted);padding:26px 4px;font-size:15.5px}
+  .ip-err{background:var(--neg-wash);border:1px solid #f2c4c4;border-radius:var(--r);padding:12px 16px;color:#8a2323;margin:18px 0 0}
+  #ipApp[hidden]{display:none}
+  .ip-lock{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 20px;margin:6px 0 16px}
+  .ip-lock h3{margin:0 0 6px;font-size:1.05rem;color:var(--ink)}
+  .ip-lock p{margin:6px 0;color:var(--ink-2);line-height:1.5}
+  .ip-lock .ip-sign{margin-top:10px;padding:9px 18px;border:0;border-radius:var(--r);background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  .ip-more-btn{display:block;margin:18px auto 0;appearance:none;border:1.5px solid var(--line-firm);background:var(--card);color:var(--brand-dark);font-size:15px;font-weight:600;padding:11px 22px;border-radius:var(--r);cursor:pointer}
+  @media (max-width:700px){.ip-card{padding:16px 14px 14px}.ip-facts{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <p class="eyebrow">IPOs</p>
+  <h1>IPOs: coming, open and listed</h1>
+  <p class="note">What each company's own offer document says: who the promoters are, what the business does, the financials, and what the money is for.
+    Drafts filed with SEBI are here too, before they reach the market.</p>
+  <div class="ip-notice"><b>Information only. No verdict.</b> FinChaya does not say whether any issue is good or bad, cheap or dear, or whether to apply. There is no
+    score, rank or recommendation on these pages. Figures are read automatically from the offer documents and can contain mistakes: every item shows the page of
+    the document it came from.</div>
+
+  <div id="ipLock"></div>
+  <div id="ipApp" hidden>
+    <div class="ip-tabs" role="tablist" id="ipTabs">
+      <button type="button" class="ip-tab" role="tab" data-stage="upcoming" aria-selected="true">Upcoming and open<span class="ip-badge" id="ipB1">&ndash;</span></button>
+      <button type="button" class="ip-tab" role="tab" data-stage="listed" aria-selected="false">Listed<span class="ip-badge" id="ipB2">&ndash;</span></button>
+      <button type="button" class="ip-tab" role="tab" data-stage="filed" aria-selected="false">Draft filed with SEBI<span class="ip-badge" id="ipB3">&ndash;</span></button>
+      <button type="button" class="ip-tab" role="tab" data-stage="ended" aria-selected="false">Closed or withdrawn<span class="ip-badge" id="ipB4">&ndash;</span></button>
+    </div>
+    <p class="ip-updated" id="ipUpdated"></p>
+    <p class="ip-stale" id="ipStale" role="status" hidden></p>
+
+    <!-- Open on a wide screen; on a phone it starts closed (fourteen chips would push the list a screen and a half down) and opens on a tap. -->
+    <details class="ip-scan" id="ipScanBox" open>
+      <summary>Scanners <span class="ip-scansel" id="ipScanSel"></span></summary>
+      <div class="ip-chips" id="ipChips" role="group" aria-label="Ready-made scanners"></div>
+    </details>
+    <p class="ip-help" id="ipHelp"></p>
+
+    <div class="ip-ctl">
+      <input type="search" id="ipQ" placeholder="Search a company or symbol" aria-label="Search a company or symbol" autocomplete="off">
+      <select id="ipSort" aria-label="Sort by">
+        <option value="date">Newest first</option>
+        <option value="size">Largest issue first</option>
+        <option value="growth">Highest revenue growth first</option>
+        <option value="promoters">Highest promoter holding first</option>
+        <option value="gain">Highest first-day change first (listed)</option>
+      </select>
+      <button type="button" class="ip-clear" id="ipClear">Clear filters</button>
+    </div>
+    <details class="ip-more" id="ipMore">
+      <summary>More filters</summary>
+      <div class="ip-grid">
+        <div><label for="fBoard">Platform</label><select id="fBoard"><option value="">Any</option><option value="mainboard">Main board</option><option value="sme">SME</option></select></div>
+        <div><label for="fType">Kind of issue</label><select id="fType"><option value="">Any</option></select></div>
+        <div><label for="fUse">The money is used for</label><select id="fUse"><option value="">Any</option></select></div>
+        <div><label for="fPs">Promoters selling shares</label><select id="fPs"><option value="">Any</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div><label for="fProfit">Profit in the latest full year</label><select id="fProfit"><option value="">Any</option><option value="yes">Made a profit</option><option value="no">Made a loss</option></select></div>
+        <div><label for="fGrowth">Revenue growth at least (%)</label><input type="number" id="fGrowth" inputmode="decimal" placeholder="e.g. 25"></div>
+        <div><label for="fSizeMin">Issue size at least (₹ crore)</label><input type="number" id="fSizeMin" inputmode="decimal" placeholder="e.g. 500"></div>
+        <div><label for="fSizeMax">Issue size at most (₹ crore)</label><input type="number" id="fSizeMax" inputmode="decimal" placeholder="e.g. 5000"></div>
+        <div><label for="fPmin">Promoter holding at least (%)</label><input type="number" id="fPmin" inputmode="decimal" placeholder="e.g. 50"></div>
+        <div><label for="fPmax">Promoter holding at most (%)</label><input type="number" id="fPmax" inputmode="decimal" placeholder="e.g. 75"></div>
+        <div><label for="fRisk">The company's risk factors mention</label><select id="fRisk"><option value="">Any</option></select></div>
+        <div><label for="fGain">First-day close vs issue price (listed)</label><select id="fGain"><option value="">Any</option><option value="above">Above the issue price</option><option value="below">Below the issue price</option></select></div>
+      </div>
+    </details>
+
+    <p class="ip-count" id="ipCount" aria-live="polite"></p>
+    <div id="ipOut"><p class="ip-busy">Loading issues&hellip;</p></div>
+    <button type="button" class="ip-more-btn" id="ipShowMore" hidden>Show more</button>
+  </div>
+  <p class="foot">FinChaya is not a SEBI-registered Research Analyst or Investment Adviser. These pages report what issuers filed with SEBI and the stock exchanges.
+    They do not recommend applying for, buying, holding or selling anything.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const PAGE = 20;
+  const state = {stage: "upcoming", scanners: [], active: new Set(), meta: null, shown: PAGE, data: null, timer: null};
+  if (window.matchMedia("(max-width:700px)").matches) $("ipScanBox").open = false;      // on a phone the scanners start folded away
+
+  const inr = (v, dp) => v == null ? "–" : Number(v).toLocaleString("en-IN", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+  function crore(v) { if (v == null) return "–"; const a = Math.abs(v); return inr(v, a >= 1000 ? 0 : a >= 100 ? 1 : 2); }
+  function ymd(s) { const p = String(s || "").split("-"); return p.length === 3 ? new Date(+p[0], +p[1] - 1, +p[2]) : null; }
+  function dshort(s) { const d = ymd(s); return d ? d.getDate() + " " + MONTHS[d.getMonth()] : ""; }
+  function dlong(s) { const d = ymd(s); return d ? d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() : ""; }
+  const pctText = p => p == null ? "–" : (p > 0 ? "+" : p < 0 ? "−" : "") + Math.abs(p).toFixed(1) + "%";
+  const pcls = p => p == null ? "ip-na" : p > 0 ? "ip-up" : p < 0 ? "ip-down" : "ip-na";
+
+  // ------------------------------------------------------------ one issue
+  function fact(k, v, sub) { return '<div class="ip-fact"><small>' + k + "</small><b>" + v + "</b>" + (sub ? "<span>" + sub + "</span>" : "") + "</div>"; }
+
+  function dates(i) {
+    if (i.stage === "filed") return fact("Draft filed", i.filed_on ? esc(dlong(i.filed_on)) : "–", "Dates and price not announced yet");
+    if (i.stage === "listed") return fact("Listed", esc(dlong(i.listing_date)), "Bidding " + esc(dshort(i.open_date)) + " – " + esc(dshort(i.close_date)));
+    if (i.stage === "ended") return fact("Bidding", esc(dshort(i.open_date)) + " – " + esc(dshort(i.close_date)), i.close_date ? "Closed " + esc(dlong(i.close_date)) : "");
+    return fact(i.stage === "open" ? "Open until" : "Bidding", i.stage === "open" ? esc(dlong(i.close_date)) : esc(dshort(i.open_date)) + " – " + esc(dshort(i.close_date)),
+                i.stage === "closed" ? "Bidding closed" + (i.listing_date ? " · lists " + esc(dshort(i.listing_date)) : " · listing awaited") : i.stage === "open" ? "Opened " + esc(dshort(i.open_date)) : (i.listing_date ? "Lists " + esc(dshort(i.listing_date)) : ""));
+  }
+  function price(i) {
+    if (i.issue_price != null) return fact("Issue price", "₹" + inr(i.issue_price, 0), i.price_low != null ? "Band was ₹" + inr(i.price_low, 0) + " – " + inr(i.price_high, 0) : "");
+    if (i.price_high != null) return fact("Price band", "₹" + inr(i.price_low, 0) + (i.price_high !== i.price_low ? " – " + inr(i.price_high, 0) : ""),
+                                         i.lot_size ? "Lot of " + inr(i.lot_size, 0) + " shares" + (i.min_investment ? " · about ₹" + inr(i.min_investment, 0) + " at the top" : "") : "");
+    return fact("Price band", '<span class="ip-na">Not announced</span>');
+  }
+  function size(i) {
+    if (i.size_cr == null) return fact("Issue size", '<span class="ip-na">Not stated</span>', i.read ? "The document leaves the price open" : "");
+    return fact("Issue size", "₹" + crore(i.size_cr) + " Cr", i.size_basis && i.size_basis !== "document" ? "At the " + esc(i.size_basis) : "");
+  }
+  function kind(i) {
+    if (!i.issue_type) return fact("Kind of issue", '<span class="ip-na">–</span>');
+    const w = {fresh: "Fresh issue", ofs: "Offer for sale", mix: "Fresh + offer for sale"}[i.issue_type];
+    const sub = i.issue_type === "mix" && i.fresh_pct != null ? inr(i.fresh_pct, 1) + "% new shares" : i.issue_type === "ofs" ? "Company receives nothing" : "Company receives the money";
+    return fact("Kind of issue", w, sub);
+  }
+  function prom(i) {
+    if (i.promoters_pct == null) return fact("Promoters hold", '<span class="ip-na">–</span>');
+    return fact("Promoters hold", inr(i.promoters_pct, 2) + "%", i.promoters_selling ? "and are selling some" : i.promoters_selling === false && i.sellers ? "none of them selling" : "before the issue");
+  }
+  function fin(i) {
+    if (i.revenue_cr == null) return fact("Revenue", '<span class="ip-na">–</span>');
+    const g = i.revenue_growth == null ? "" : '<span class="' + pcls(i.revenue_growth) + '">' + pctText(i.revenue_growth) + "</span> on the year before · ";
+    const p = i.pat_cr == null ? "" : "profit ₹" + crore(i.pat_cr) + " Cr" + (i.pat_margin != null ? " (" + inr(i.pat_margin, 1) + "% margin)" : "");
+    return fact("Revenue " + esc(i.fin_period || ""), "₹" + crore(i.revenue_cr) + " Cr", g + p);
+  }
+  function perf(i) {
+    const p = i.perf;
+    if (i.stage !== "listed") return "";
+    if (!p) return '<div class="ip-perf"><span class="ip-na">Trading figures are not on file for this issue.</span></div>';
+    return '<div class="ip-perf"><span>Issue price <b>₹' + inr(i.issue_price, 0) + "</b></span>" +
+      "<span>Opened <b>₹" + inr(p.listing_open, 2) + '</b> <span class="' + pcls(p.listing_open_pct) + '">' + pctText(p.listing_open_pct) + "</span></span>" +
+      "<span>Closed day one <b>₹" + inr(p.listing_close, 2) + '</b> <span class="' + pcls(p.listing_close_pct) + '">' + pctText(p.listing_close_pct) + "</span></span>" +
+      "<span>Latest close <b>₹" + inr(p.latest, 2) + '</b> <span class="' + pcls(p.latest_pct) + '">' + pctText(p.latest_pct) + "</span> <span class=\"ip-na\">(" + esc(dshort(p.latest_date)) + ")</span></span></div>";
+  }
+  // One page per company: a listed issue whose stock is on FinChaya opens the STOCK page on its IPO tab; the IPO page is for issues that are not listed yet.
+  const hrefOf = i => (i.stage === "listed" && i.isin && i.read) ? "/#/stock/" + encodeURIComponent(i.isin) + "/ipo" : "/ipo/" + encodeURIComponent(i.slug);
+  function card(i) {
+    const stageTag = '<span class="ip-tag stage">' + esc(i.stage_label) + "</span>";
+    const board = '<span class="ip-tag">' + (i.board === "sme" ? "SME platform" : "Main board") + "</span>";
+    const doc = i.read ? '<span class="ip-tag">Read from the ' + (i.doc_kind === "DRHP" ? "draft prospectus" : "prospectus") + (i.doc_kind === "DRHP" && i.doc_date ? " · filed " + esc(dshort(i.doc_date)) : "") + "</span>"
+                       : '<span class="ip-tag draft">Offer document not read yet</span>';
+    const uses = i.uses && i.uses.length ? '<div class="ip-uses"><span>The money is for</span>' + i.uses.map(u => '<span class="ip-use">' + esc(u) + "</span>").join("") + "</div>" : "";
+    const risks = i.risk_count ? fact("Risk factors listed", inr(i.risk_count, 0), "by the company") : "";
+    const href = hrefOf(i), onStock = href.startsWith("/#/stock/");
+    return '<article class="ip-card"><div class="ip-head"><div><h3 class="ip-name"><a href="' + href + '">' + esc(i.name) + "</a></h3>" +
+      '<div class="ip-meta">' + stageTag + board + doc + (i.symbol ? "<span>" + esc(i.symbol) + "</span>" : "") + "</div></div>" +
+      '<a class="ip-go" href="' + href + '">' + (onStock ? "Open the stock page" : "Open the page") + " &rarr;</a></div>" +
+      '<div class="ip-facts">' + dates(i) + price(i) + size(i) + kind(i) + (i.read ? prom(i) + fin(i) + risks : "") + "</div>" + uses + perf(i) +
+      (i.stage_note ? '<p class="ip-unread">' + esc(i.stage_note) + "</p>" : "") +
+      (i.read || i.stage === "ended" ? "" : '<p class="ip-unread">The offer document has not been read yet; the page will fill in after the next daily update.</p>') + "</article>";
+  }
+
+  // ------------------------------------------------------------ the list
+  function params() {
+    const p = new URLSearchParams();
+    p.set("stage", state.stage);
+    for (const key of state.active) { const s = state.scanners.find(x => x.key === key); if (s) for (const [k, v] of Object.entries(s.params)) if (k !== "stage") p.set(k, v); }
+    const set = (k, v) => { if (v !== "" && v != null) p.set(k, v); };
+    set("q", $("ipQ").value.trim()); set("sort", $("ipSort").value);
+    set("board", $("fBoard").value || p.get("board")); set("issue_type", $("fType").value || p.get("issue_type")); set("use", $("fUse").value || p.get("use"));
+    set("promoters_selling", $("fPs").value || p.get("promoters_selling")); set("profitable", $("fProfit").value || p.get("profitable"));
+    set("min_revenue_growth", $("fGrowth").value || p.get("min_revenue_growth")); set("min_size_cr", $("fSizeMin").value || p.get("min_size_cr")); set("max_size_cr", $("fSizeMax").value);
+    set("min_promoters_pct", $("fPmin").value); set("max_promoters_pct", $("fPmax").value); set("risk", $("fRisk").value); set("gain", $("fGain").value || p.get("gain"));
+    return p;
+  }
+  function relock(a) { return lock(a); }
+  async function load() {
+    $("ipOut").innerHTML = '<p class="ip-busy">Loading issues&hellip;</p>';
+    let r;
+    try { r = await fetch("/api/ipo/list?" + params().toString(), {headers: {Accept: "application/json"}}); }
+    catch (e) { $("ipOut").innerHTML = '<div class="ip-err" role="alert">Could not reach FinChaya. Check your connection and try again.</div>'; return; }
+    if (r.status === 401 || r.status === 403) { try { await lock(await (await fetch("/api/ipo/access")).json()); } catch (e) { await lock({}); } return; }
+    if (!r.ok) { let m = "The list could not be loaded."; try { m = (await r.json()).detail || m; } catch (e) {} $("ipOut").innerHTML = '<div class="ip-err" role="alert">' + esc(m) + "</div>"; return; }
+    state.data = await r.json(); state.shown = PAGE; draw();
+  }
+  // The list is filled by a daily job. If that job has not finished for two days or more, say so in plain words: an issue that opened, closed or listed since
+  // then (its dates, price band, how many times it is subscribed) is not here yet, and a visitor should not have to guess why.
+  function staleNote(updated, now) {
+    const el = $("ipStale");
+    const d = updated ? ymd(String(updated).slice(0, 10)) : null;
+    const days = d ? Math.floor(((now || new Date()).getTime() - d.getTime()) / 86400000) : null;
+    if (d && days < 2) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = d
+      ? "This list was last updated on " + dlong(String(updated).slice(0, 10)) + ", " + days + " days ago. An issue that opened, closed or listed since then, or its dates, price band or subscription, may not be shown yet or may be out of date."
+      : "This list has not been updated yet, so issues that are open now may not be shown.";
+  }
+  window.ipoStaleNote = staleNote;                       // for the tests
+  function draw() {
+    const d = state.data; if (!d) return;
+    $("ipB1").textContent = d.counts.upcoming; $("ipB2").textContent = d.counts.listed; $("ipB3").textContent = d.counts.filed; $("ipB4").textContent = d.counts.ended || 0;
+    $("ipUpdated").textContent = d.updated ? "Updated " + dlong(String(d.updated).slice(0, 10)) + ". Upcoming shows only what is still ahead; listed shows issues that listed in the last 120 days; drafts filed in the last 150 days; closed or withdrawn, issues whose bidding closed in the last 120 days without a listing." : "The daily update has not run yet.";
+    staleNote(d.updated);
+    $("ipCount").textContent = d.matched === 1 ? "1 issue" : d.matched + " issues";
+    const items = d.issues.slice(0, state.shown);
+    $("ipOut").innerHTML = items.length ? items.map(card).join("") : '<p class="ip-none">No issues match. Clear a filter or pick another tab.</p>';
+    $("ipShowMore").hidden = d.issues.length <= state.shown;
+  }
+
+  // ------------------------------------------------------------ controls
+  function helpFor() {
+    const names = [...state.active].map(k => (state.scanners.find(s => s.key === k) || {}).help).filter(Boolean);
+    $("ipHelp").textContent = names.join(" · ");
+    $("ipScanSel").textContent = state.active.size ? "(" + state.active.size + " on)" : "";
+  }
+  function buildChips() {
+    $("ipChips").innerHTML = state.scanners.map(s => '<button type="button" class="ip-chip" data-key="' + esc(s.key) + '" aria-pressed="false" title="' + esc(s.help) + '">' + esc(s.label) + "</button>").join("");
+  }
+  $("ipChips").addEventListener("click", e => {
+    const b = e.target.closest(".ip-chip"); if (!b) return;
+    const k = b.dataset.key, s = state.scanners.find(x => x.key === k);
+    if (state.active.has(k)) state.active.delete(k);
+    else {
+      // a scanner that names a stage moves to that tab; two scanners that set the same filter replace each other
+      state.active.forEach(o => { const so = state.scanners.find(x => x.key === o); if (so && Object.keys(so.params).some(p => p in s.params && p !== "stage")) state.active.delete(o); });
+      state.active.add(k);
+      if (s.params.stage) setStage(s.params.stage, true);
+    }
+    document.querySelectorAll(".ip-chip").forEach(x => x.setAttribute("aria-pressed", String(state.active.has(x.dataset.key))));
+    helpFor(); load();
+  });
+  function setStage(st, quiet) {
+    state.stage = st;
+    document.querySelectorAll(".ip-tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.stage === st)));
+    if (!quiet) { state.active = new Set([...state.active].filter(k => { const s = state.scanners.find(x => x.key === k); return !(s && s.params.stage && s.params.stage !== st); })); }
+    document.querySelectorAll(".ip-chip").forEach(x => x.setAttribute("aria-pressed", String(state.active.has(x.dataset.key))));
+    history.replaceState(null, "", "#" + st);
+    helpFor();
+  }
+  $("ipTabs").addEventListener("click", e => { const t = e.target.closest(".ip-tab"); if (!t) return; setStage(t.dataset.stage); load(); });
+  const later = () => { clearTimeout(state.timer); state.timer = setTimeout(load, 350); };
+  $("ipQ").addEventListener("input", later);
+  ["ipSort", "fBoard", "fType", "fUse", "fPs", "fProfit", "fRisk", "fGain"].forEach(id => $(id).addEventListener("change", load));
+  ["fGrowth", "fSizeMin", "fSizeMax", "fPmin", "fPmax"].forEach(id => $(id).addEventListener("input", later));
+  $("ipClear").addEventListener("click", () => {
+    state.active.clear(); $("ipQ").value = "";
+    ["fBoard", "fType", "fUse", "fPs", "fProfit", "fRisk", "fGain", "fGrowth", "fSizeMin", "fSizeMax", "fPmin", "fPmax"].forEach(id => { $(id).value = ""; });
+    $("ipSort").value = "date";
+    document.querySelectorAll(".ip-chip").forEach(x => x.setAttribute("aria-pressed", "false"));
+    helpFor(); load();
+  });
+  $("ipShowMore").addEventListener("click", () => { state.shown += PAGE; draw(); });
+
+  // ------------------------------------------------------------ the gate
+  const INTRO = "Every IPO that is coming, open or recently listed, and drafts filed with SEBI, with what the company's own offer document says. Information only.";
+  async function lock(a) {
+    a = a || {};
+    $("ipApp").hidden = true;
+    const host = $("ipLock");
+    const box = (title, msg, extra) => '<div class="ip-lock"><h3>' + esc(title) + "</h3><p>" + esc(msg) + "</p>" + (extra || "") + "</div>";
+    if (a.enabled === false) host.innerHTML = box("The IPO pages are switched off", "They are not available at the moment.");
+    else if (a.signed_in === false) {
+      host.innerHTML = box("Sign in to see the IPO pages", INTRO, '<button type="button" class="ip-sign" id="ipSign">Sign in</button>');
+      $("ipSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+    } else host.innerHTML = box("The IPO pages are not open to your account yet", "They are available to " + (a.who || "administrators") + " for now. " + INTRO);
+  }
+  async function boot() {
+    let a;
+    try { a = await (await fetch("/api/ipo/access", {headers: {Accept: "application/json"}})).json(); }
+    catch (e) { $("ipLock").innerHTML = '<div class="ip-err" role="alert">Could not reach FinChaya. Check your connection and reload the page.</div>'; return; }
+    if (!a.allowed) { await lock(a); return; }
+    $("ipLock").innerHTML = ""; $("ipApp").hidden = false;
+    try {
+      const m = await (await fetch("/api/ipo/scanners")).json();
+      state.meta = m; state.scanners = m.scanners; buildChips();
+      $("fType").innerHTML += m.types.map(t => '<option value="' + esc(t.key) + '">' + esc(t.label) + "</option>").join("");
+      $("fUse").innerHTML += m.uses.map(t => '<option value="' + esc(t.key) + '">' + esc(t.label) + "</option>").join("");
+      $("fRisk").innerHTML += m.risks.map(t => '<option value="' + esc(t.key) + '">' + esc(t.label) + "</option>").join("");
+    } catch (e) { /* the list still works without the choices */ }
+    const h = location.hash.replace("#", "");
+    if (["upcoming", "listed", "filed", "ended"].includes(h)) setStage(h, true);
+    load();
+  }
+  window.ipRelock = relock;
+  if (document.readyState === "complete") boot(); else window.addEventListener("load", boot);
+})();
+</script>
+</body>
+</html>

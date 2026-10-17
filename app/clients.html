@@ -107,10 +107,10 @@ async function api(path, opts) {
 function fail(e) {
   if (e && e.signin) {
     app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
-      <p class="note">Client records are held against your account.
-         Sign in on the main page, then come back here.</p>
-      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
-         and sign in</a></p></div>`;
+      <p class="note">Client records are held against your account.</p>
+      <p><button type="button" class="go" id="clSignIn" style="font:inherit;font-weight:650;padding:12px 22px;border-radius:10px;border:0;background:var(--brand,#0f7a56);color:#fff;cursor:pointer">Sign in</button></p></div>`;
+    const b = document.getElementById("clSignIn");
+    if (b) b.addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
     return;
   }
   const box = document.createElement("div");

@@ -3,6 +3,7 @@ grant_premium.py -- who has a paid subscription.
 --------------------------------------------------
     /opt/mfapi/venv/bin/python3 /opt/mfapi/grant_premium.py --email you@example.com
     /opt/mfapi/venv/bin/python3 /opt/mfapi/grant_premium.py --email x@y.com --days 365
+    /opt/mfapi/venv/bin/python3 /opt/mfapi/grant_premium.py --email x@y.com --days 30 --scope stocks
     /opt/mfapi/venv/bin/python3 /opt/mfapi/grant_premium.py --list
     /opt/mfapi/venv/bin/python3 /opt/mfapi/grant_premium.py --revoke x@y.com
 
@@ -52,7 +53,7 @@ def find_user(cur, email):
     return cur.fetchone()
 
 
-def grant(cur, email, days):
+def grant(cur, email, days, scope="all"):
     user = find_user(cur, email)
     if not user:
         # Deliberately not created here. An account exists once someone has
@@ -62,11 +63,16 @@ def grant(cur, email, days):
                  "run this again." % email)
 
     until = (date.today() + timedelta(days=days)) if days else None
+    # scope: which tier -- 'mf' (fund tools), 'stocks' (stock tools) or
+    # 'all'. The gates treat NULL as 'all', so it is always written here.
     cur.execute("""
-        UPDATE mf_user SET is_premium = true, premium_until = %s
+        UPDATE mf_user SET is_premium = true, premium_until = %s,
+                           premium_scope = %s
         WHERE user_id = %s
-    """, (until, user["user_id"]))
+    """, (until, scope, user["user_id"]))
     print("Granted: %s" % user["email"])
+    print("   plan:  %s" % {"mf": "mutual funds", "stocks": "stocks",
+                             "all": "mutual funds + stocks"}[scope])
     print("   until: %s" % (until if until else "no expiry"))
     if not until:
         print("   NOTE: no end date. Use --days for a customer.")
@@ -86,7 +92,7 @@ def show(cur):
     # but whose row still claims premium -- an expired subscription is not
     # the same state as a revoked one and should not look like it.
     cur.execute("""
-        SELECT email, premium_until,
+        SELECT email, premium_until, premium_scope,
                (premium_until IS NULL OR premium_until >= CURRENT_DATE) AS live
         FROM mf_user WHERE is_premium = true
         ORDER BY premium_until NULLS FIRST, email
@@ -97,11 +103,12 @@ def show(cur):
         print("With MF_PAYWALL_ENABLED=true that means NOBODY can see "
               "scores, the funds tab, the look-through or rising.")
         return
-    print("%-38s %-12s %s" % ("email", "until", "state"))
+    print("%-38s %-12s %-8s %s" % ("email", "until", "plan", "state"))
     for r in rows:
-        print("%-38s %-12s %s" % (
+        print("%-38s %-12s %-8s %s" % (
             r["email"][:38],
             r["premium_until"] or "no expiry",
+            r["premium_scope"] or "all",
             "active" if r["live"] else "EXPIRED"))
     live = sum(1 for r in rows if r["live"])
     print("\n%d active, %d expired" % (live, len(rows) - live))
@@ -113,6 +120,9 @@ def main():
     ap.add_argument("--days", type=int, default=0,
                     help="how long it lasts. Omit for no expiry -- right "
                          "for your own account, wrong for a customer.")
+    ap.add_argument("--scope", choices=("mf", "stocks", "all"), default="all",
+                    help="which tier: mf (fund tools), stocks (stock tools) "
+                         "or all (default)")
     ap.add_argument("--revoke", help="take the subscription away")
     ap.add_argument("--list", action="store_true", dest="show",
                     help="who has one, and until when")
@@ -124,7 +134,7 @@ def main():
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         if args.email:
-            grant(cur, args.email, args.days)
+            grant(cur, args.email, args.days, args.scope)
         if args.revoke:
             revoke(cur, args.revoke)
         conn.commit()

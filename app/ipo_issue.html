@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPO &mdash; FinChaya</title>
+<meta name="description" content="What the company's own offer document says about this IPO: promoters, business, financials, what the money is for, and the risk factors it lists. Information only.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<script src="/api/ipo/view.js"></script>
+<!--
+  ipo_issue.html -- the page of one IPO that has NOT listed yet (address /ipo/<name>).
+  ======================================================================
+  ONE PAGE PER COMPANY. Once an issue has listed and the stock is on FinChaya, this address sends the visitor to the STOCK PAGE (/#/stock/<isin>/ipo), where the
+  same IPO sections are an "IPO" tab beside the price chart, financials and shareholding. This page is only for issues that are coming, open, waiting to list, or
+  whose stock is not on the site (some SME listings). Both draw the IPO the same way: ipo_view.js.
+
+  WHAT IT SHOWS, IN THE ORDER A READER ASKS (ipo_view.js)
+      Key highlights; the facts of the issue; why the company is raising money (new shares vs existing holders selling, what the money is for, who sells);
+      who is behind it; what the company does; the financials; the risk factors the company lists; where to read more.
+
+  NO VERDICT
+      No score, rank, rating, "subscribe" or "avoid", and no comment on whether any number is high or low. Every figure carries the page of the offer document it
+      was read from.
+
+  DATA
+      GET /api/ipo/access (asked first), then GET /api/ipo/<name> (ipo_api.py).
+-->
+<style>
+  /* Every class is prefixed ii-: finchaya.css owns .panel, .chip, .tabs, .note and more and loads after this block. The sections' own styles are in ipo_view.js. */
+  .ii-back{display:inline-block;margin:0 0 8px;font-size:14px;color:var(--brand-dark);text-decoration:none;font-weight:600}
+  .ii-back:hover{text-decoration:underline}
+  .ii-tags{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:center;margin:8px 0 0;font-size:13px;color:var(--muted)}
+  .ii-tag{display:inline-block;padding:1px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:600}
+  .ii-tag.stage{background:var(--brand-wash);color:var(--brand-dark)}
+  .ii-tag.draft{background:var(--note-wash);color:#9a5d0b}
+  .ii-busy,.ii-none{color:var(--muted);padding:26px 4px;font-size:15.5px}
+  .ii-err{background:var(--neg-wash);border:1px solid #f2c4c4;border-radius:var(--r);padding:12px 16px;color:#8a2323;margin:18px 0 0}
+  #iiApp[hidden]{display:none}
+  .ii-lock{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 20px;margin:6px 0 16px}
+  .ii-lock h3{margin:0 0 6px;font-size:1.05rem;color:var(--ink)}
+  .ii-lock p{margin:6px 0;color:var(--ink-2);line-height:1.5}
+  .ii-lock button{margin-top:10px;padding:9px 18px;border:0;border-radius:var(--r);background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  .ii-stocklink{display:inline-block;margin:12px 0 0;font-size:14.5px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <a class="ii-back" href="/ipo">&larr; All IPOs</a>
+  <p class="eyebrow" id="iiEye">IPO</p>
+  <h1 id="iiTitle">IPO</h1>
+  <div id="iiLock"></div>
+  <div id="iiApp" hidden>
+    <div class="ii-tags" id="iiTags"></div>
+    <div id="iiOut"><p class="ii-busy">Loading&hellip;</p></div>
+  </div>
+  <p class="foot">FinChaya is not a SEBI-registered Research Analyst or Investment Adviser. This page reports what the issuer filed and what the stock exchanges publish.
+    It does not recommend applying for, buying, holding or selling anything.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const slug = decodeURIComponent(location.pathname.replace(/\/+$/, "").split("/").pop() || "");
+
+  function head(d) {
+    const i = d.issue;
+    document.title = i.name + " IPO — FinChaya";
+    $("iiEye").textContent = i.board === "sme" ? "IPO · SME platform" : "IPO · Main board";
+    $("iiTitle").textContent = i.name;
+    $("iiTags").innerHTML = '<span class="ii-tag stage">' + esc(i.stage_label) + "</span>" + (i.symbol ? '<span class="ii-tag">' + esc(i.symbol) + "</span>" : "") +
+      (d.document ? '<span class="ii-tag">Read from the ' + (d.document.kind === "DRHP" ? "draft red herring prospectus" : "red herring prospectus") + "</span>" : '<span class="ii-tag draft">Offer document not read yet</span>');
+  }
+
+  // ------------------------------------------------------------ the gate
+  const INTRO = "What the company’s own offer document says about an IPO. Information only.";
+  async function lock(a) {
+    a = a || {};
+    $("iiApp").hidden = true;
+    const host = $("iiLock");
+    const box = (title, msg, extra) => '<div class="ii-lock"><h3>' + esc(title) + "</h3><p>" + esc(msg) + "</p>" + (extra || "") + "</div>";
+    if (a.enabled === false) host.innerHTML = box("The IPO pages are switched off", "They are not available at the moment.");
+    else if (a.signed_in === false) {
+      host.innerHTML = box("Sign in to see the IPO pages", INTRO, '<button type="button" id="iiSign">Sign in</button>');
+      $("iiSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+    } else host.innerHTML = box("The IPO pages are not open to your account yet", "They are available to " + (a.who || "administrators") + " for now. " + INTRO);
+  }
+  async function boot() {
+    let a;
+    try { a = await (await fetch("/api/ipo/access", {headers: {Accept: "application/json"}})).json(); }
+    catch (e) { $("iiLock").innerHTML = '<div class="ii-err" role="alert">Could not reach FinChaya. Check your connection and reload the page.</div>'; return; }
+    if (!a.allowed) { await lock(a); return; }
+    $("iiLock").innerHTML = ""; $("iiApp").hidden = false;
+    let r;
+    try { r = await fetch("/api/ipo/" + encodeURIComponent(slug), {headers: {Accept: "application/json"}}); }
+    catch (e) { $("iiOut").innerHTML = '<div class="ii-err" role="alert">Could not reach FinChaya. Check your connection and reload.</div>'; return; }
+    if (r.status === 404) { $("iiTitle").textContent = "No such IPO"; $("iiOut").innerHTML = '<p class="ii-none">There is no issue at this address. <a href="/ipo">See all IPOs</a>.</p>'; return; }
+    if (r.status === 401 || r.status === 403) { try { await lock(await (await fetch("/api/ipo/access")).json()); } catch (e) { await lock({}); } return; }
+    if (!r.ok) { let m = "The page could not be loaded."; try { m = (await r.json()).detail || m; } catch (e) {} $("iiOut").innerHTML = '<div class="ii-err" role="alert">' + esc(m) + "</div>"; return; }
+    const d = await r.json();
+    // one page per company: a listed issue whose stock is on FinChaya lives on the stock page (the server redirects too; this covers a page opened from cache)
+    if (d.stock_tab && d.stock && d.stock.isin) { location.replace("/#/stock/" + encodeURIComponent(d.stock.isin) + "/ipo"); return; }
+    head(d);
+    if (window.fcIpoView) window.fcIpoView.render($("iiOut"), d);
+    else $("iiOut").innerHTML = '<div class="ii-err" role="alert">The page script could not be loaded. Reload the page.</div>';
+  }
+  if (document.readyState === "complete") boot(); else window.addEventListener("load", boot);
+})();
+</script>
+</body>
+</html>

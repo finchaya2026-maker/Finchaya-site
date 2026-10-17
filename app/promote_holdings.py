@@ -76,12 +76,17 @@ if not DB:
 MAP_SQL = """
 INSERT INTO mf_scheme_map (amc_fund_name, scheme_code, match_method,
                            confidence, reviewed)
+-- DISTINCT NAMES FIRST. fc_norm() was evaluated once per holding row (109,000
+-- for one month, 1,925 funds), so promoting every fund in one go ran past ten
+-- minutes inside this statement and had to be cancelled. Per-AMC runs hid it
+-- because each touched only a few thousand rows. Names first, then match.
 SELECT DISTINCT ON (r.amc_fund_name)
        r.amc_fund_name, c.canonical_scheme_code, 'EXACT_DG', 1.000, true
-FROM mf_holding_raw r
+FROM (SELECT DISTINCT amc_fund_name
+      FROM mf_holding_raw
+      WHERE amc_fund_name ILIKE %(pattern)s
+        AND as_of_date = %(as_of)s) r
 JOIN v_fund_canonical c ON fc_norm(c.scheme_name) = fc_norm(r.amc_fund_name)
-WHERE r.amc_fund_name ILIKE %(pattern)s
-  AND r.as_of_date = %(as_of)s
 ORDER BY r.amc_fund_name, c.canonical_scheme_code
 ON CONFLICT (amc_fund_name) DO NOTHING
 """

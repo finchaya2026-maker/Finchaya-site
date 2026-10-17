@@ -130,6 +130,7 @@
     </aside>
 
     <section class="screenResults">
+      <div id="lockHost"></div>
       <p class="rhead" id="rhead"></p>
       <div class="frows" id="frows"></div>
       <p class="foot" id="rfoot"></p>
@@ -515,15 +516,20 @@ function lockAll(status) {
   document.getElementById("trail").innerHTML = "";
   document.getElementById("funnel").innerHTML = "";
   document.getElementById("utilrow").innerHTML = "";
-  const host = document.getElementById("builderHost");
   document.getElementById("rhead").textContent = "";
   document.getElementById("frows").innerHTML = "";
   document.getElementById("rfoot").textContent = "";
+  // The notice goes in the wide results area, where the list of funds would
+  // be, not the 320px filter sidebar, which is far too narrow to read what
+  // the subscription includes. With nothing to filter, the sidebar is
+  // dropped so the results area takes the full width.
+  document.querySelector(".sidebar").hidden = true;
+  const host = document.getElementById("lockHost");
   if (window.fcLocked) {
     window.fcLocked(host, "The fund screener",
       "Every filter here reads through each fund’s actual return, "
       + "risk and rolling-window history — that is the part that "
-      + "is paid for.");
+      + "is paid for.", "mf");
   } else {
     host.innerHTML = '<p class="empty">The screener is part of the paid '
       + "plan. Sign in with a subscribed account to use it.</p>";

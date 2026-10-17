@@ -134,6 +134,11 @@ const EQUITY = ["large", "mid", "small"];
 
 let sel = {purpose: "appreciation", horizon: "15+", risk: "moderate"};
 let rows = [];
+// The fund-category layer. fundErr holds the reason it could not be
+// loaded, so the panel can say WHY it is empty -- "the tables are not set
+// up" and "this profile prescribes nothing" are different problems and a
+// blank panel says neither.
+let fundRows = [], cats = [], fundErr = null;
 
 async function api(path, opts) {
   const r = await fetch("/api/distributor" + path, Object.assign(
@@ -154,8 +159,9 @@ function fail(e) {
   if (e && e.signin) {
     app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
       <p class="note">These rules are edited from your account.</p>
-      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
-         and sign in</a></p></div>`;
+      <p><button type="button" class="go" id="alSignIn" style="font:inherit;font-weight:650;padding:12px 22px;border-radius:10px;border:0;background:var(--brand,#0f7a56);color:#fff;cursor:pointer">Sign in</button></p></div>`;
+    const b = document.getElementById("alSignIn");
+    if (b) b.addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
     return;
   }
   const box = document.createElement("div");
@@ -190,8 +196,184 @@ async function load() {
     rows = await api(`/rules?purpose=${sel.purpose}` +
       `&horizon_band=${encodeURIComponent(sel.horizon)}&risk_band=${sel.risk}`);
   } catch (e) { return fail(e); }
+
+  // The prescription layer is fetched in the same breath but must not be
+  // able to take the page down: it depends on tables created by a
+  // separate deploy step, and the bucket editor worked long before it
+  // existed. A failure here is reported inside its own panel.
+  fundErr = null;
+  try {
+    const q = `?purpose=${sel.purpose}` +
+      `&horizon_band=${encodeURIComponent(sel.horizon)}&risk_band=${sel.risk}`;
+    fundRows = await api("/fund-rules" + q);
+    if (!cats.length) cats = await api("/categories");
+  } catch (e) {
+    if (e && e.signin) return fail(e);
+    fundRows = []; cats = [];
+    fundErr = (e && e.message) || "Could not load the fund categories.";
+  }
+
   draw();
   glide();      // fetched separately; the table should not wait on it
+}
+
+/* ---- what to buy --------------------------------------------------
+   The layer the recommendation is built from. It sits ABOVE the exposure
+   table because that is the order the work happens in: a distributor
+   picks a mid cap fund, they cannot buy "40% mid cap".
+
+   Unlike the six buckets, the categories in a profile VARY -- so this
+   panel adds and removes rows, not just edits numbers. */
+function fundPanel() {
+  if (fundErr) {
+    return `<div class="panel">
+      <h2>What to buy</h2>
+      <div class="err">${esc(fundErr)}</div>
+      <p class="foot">The exposure rules below are unaffected and can still
+         be edited.</p></div>`;
+  }
+
+  // Categories not already in this profile. Offering one that is there
+  // produces a 409 and teaches nothing.
+  const used = new Set(fundRows.map(r => r.category_code));
+  const spare = cats.filter(c => c.active && !used.has(c.code));
+
+  let h = `<div class="panel">
+    <h2>What to buy</h2>
+    <p class="note">The fund categories to select from for this profile, as
+       percentages of the whole pot. Three or four is usually right &mdash; a
+       slice under 10% is a fund whose paperwork costs more than its
+       diversification. This is the layer a recommendation is built from.</p>`;
+
+  if (!fundRows.length) {
+    h += `<p class="note">This profile prescribes nothing yet. Add a
+          category below.</p>`;
+  } else {
+    h += `<table><thead><tr>
+      <th style="width:26%">Category</th><th>Target %</th><th>Floor %</th>
+      <th>Ceiling %</th><th style="width:34%">Why &mdash; in your words</th>
+      <th style="width:1%"></th>
+    </tr></thead><tbody>`;
+    fundRows.forEach(r => {
+      // A category matching no funds is the failure this column exists to
+      // catch: the bar renders, the selection comes back empty, and
+      // nothing says which of the two is wrong.
+      const avail = r.available === 0
+        ? `<span class="sub" style="color:#b4472f">no funds match this</span>`
+        : `<span class="sub">${r.available} funds</span>`;
+      h += `<tr data-fid="${r.rule_id}">
+        <td><span class="bk">${esc(r.label)}</span>
+          ${avail}
+          ${r.retired ? `<span class="sub" style="color:#b4472f">retired</span>` : ""}
+          ${r.seeded ? `<span class="sub">not yet reviewed</span>`
+                     : `<span class="edited">yours</span>`}</td>
+        <td><input type="number" class="num" data-g="target" min="0" max="100"
+             step="1" value="${r.target_pct}"></td>
+        <td><input type="number" class="num" data-g="min" min="0" max="100"
+             step="1" value="${r.min_pct ?? ""}"></td>
+        <td><input type="number" class="num" data-g="max" min="0" max="100"
+             step="1" value="${r.max_pct ?? ""}"></td>
+        <td><textarea rows="3" data-g="why">${esc(r.rationale || "")}</textarea></td>
+        <td><button class="ghost fdel" data-fid="${r.rule_id}"
+             title="Remove from this profile">&times;</button></td>
+      </tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+
+  h += `<div class="total" id="ftotal"></div>`;
+
+  if (spare.length) {
+    h += `<p style="margin:16px 0 0">
+      <label style="display:inline">Add a category</label>
+      <select id="f_add" style="margin:0 8px">
+        <option value="">choose&hellip;</option>
+        ${spare.map(c => `<option value="${c.code}">${esc(c.label)}${
+          c.available === 0 ? " — no funds" : ` (${c.available})`
+        }</option>`).join("")}
+      </select>
+      <button class="ghost" id="f_addbtn">Add</button></p>`;
+  }
+
+  h += `<p style="margin:18px 0 0">
+      <button class="go" id="fsave">Save what to buy</button>
+      <button class="ghost" id="frevert" style="margin-left:8px">Undo my changes</button>
+    </p>
+    <div id="fsaved"></div>
+    <p class="foot">Added categories start at 0% &mdash; giving one a weight
+       the moment it is added would edit the profile as a side effect of
+       opening a dropdown. Removing a category deletes it rather than
+       zeroing it: 0% still reads as a decision to hold none of it, which
+       is not the same as not prescribing it at all.</p>
+  </div>`;
+  return h;
+}
+
+function fundTally() {
+  const box = document.getElementById("ftotal");
+  if (!box) return false;
+  let total = 0;
+  app().querySelectorAll("input[data-g=target]").forEach(i => {
+    const v = Number(i.value);
+    if (Number.isFinite(v)) total += v;
+  });
+  const ok = Math.abs(total - 100) < 0.01;
+  box.className = "total " + (ok ? "ok" : "bad");
+  box.innerHTML = `<b>${total.toFixed(0)}%</b>
+    <span>${ok ? "adds up. This profile can be recommended from."
+      : total > 100
+        ? `that is ${(total - 100).toFixed(0)} too much.`
+        : `${(100 - total).toFixed(0)}% is unaccounted for.`}</span>`;
+  const btn = document.getElementById("fsave");
+  if (btn) btn.disabled = !ok;
+  return ok;
+}
+
+async function fundSave() {
+  if (!fundTally()) return;
+  const btn = document.getElementById("fsave");
+  btn.disabled = true;
+  const out = document.getElementById("fsaved");
+  out.innerHTML = `<p class="sub" style="margin:12px 0 0">Saving&hellip;</p>`;
+  try {
+    for (const tr of [...app().querySelectorAll("tr[data-fid]")]) {
+      const get = f => tr.querySelector(`[data-g=${f}]`).value;
+      const num = f => get(f) === "" ? null : Number(get(f));
+      const before = fundRows.find(r => String(r.rule_id) === tr.dataset.fid);
+      const body = {target_pct: Number(get("target")), min_pct: num("min"),
+                    max_pct: num("max"), rationale: get("why").trim() || null};
+      // Unchanged rows are skipped, or saving once would mark every row
+      // as edited and "yours" would stop meaning anything.
+      if (before
+          && Number(before.target_pct) === body.target_pct
+          && (before.min_pct ?? null) === body.min_pct
+          && (before.max_pct ?? null) === body.max_pct
+          && (before.rationale || null) === body.rationale) continue;
+      await api(`/fund-rules/${tr.dataset.fid}`,
+                {method: "PUT", body: JSON.stringify(body)});
+    }
+    out.innerHTML = `<p class="okline">Saved.</p>`;
+    await load();
+  } catch (e) { out.innerHTML = ""; fail(e); }
+  finally { btn.disabled = false; }
+}
+
+async function fundAdd() {
+  const code = document.getElementById("f_add").value;
+  if (!code) return;
+  try {
+    await api("/fund-rules", {method: "POST", body: JSON.stringify({
+      purpose: sel.purpose, horizon_band: sel.horizon,
+      risk_band: sel.risk, category_code: code, target_pct: 0})});
+    await load();
+  } catch (e) { fail(e); }
+}
+
+async function fundDelete(id) {
+  try {
+    await api(`/fund-rules/${id}`, {method: "DELETE"});
+    await load();
+  } catch (e) { fail(e); }
 }
 
 function draw() {
@@ -218,12 +400,16 @@ function draw() {
 
   <div class="panel" id="viewpanel"></div>
 
+  ${fundPanel()}
+
   <div class="panel">
     <h2>Where the money should end up</h2>
     <p class="note">Percentages of the whole pot, measured through to the
        shares underneath. A 40% mid cap target can be met by one mid cap fund
        or by two funds that hold mid caps between them &mdash; this says the
-       destination, not the route.</p>
+       destination, not the route. This is the layer the look-through can
+       check; it is information beside the categories above, not a second
+       instruction.</p>
     <table><thead><tr>
       <th style="width:22%">Bucket</th><th>Target %</th><th>Floor %</th>
       <th>Ceiling %</th><th style="width:42%">Why &mdash; in your words</th>
@@ -272,7 +458,24 @@ function draw() {
     i.addEventListener("input", tally));
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("revert").addEventListener("click", load);
+
+  // The fund panel's own controls. Every one is guarded: the panel is
+  // absent when its tables are not set up, and an unguarded
+  // addEventListener on null would stop this function before the market
+  // views below ever render.
+  app().querySelectorAll("input[data-g=target]").forEach(i =>
+    i.addEventListener("input", fundTally));
+  app().querySelectorAll("button.fdel").forEach(b =>
+    b.addEventListener("click", () => fundDelete(b.dataset.fid)));
+  const fs = document.getElementById("fsave");
+  if (fs) fs.addEventListener("click", fundSave);
+  const fr = document.getElementById("frevert");
+  if (fr) fr.addEventListener("click", load);
+  const fa = document.getElementById("f_addbtn");
+  if (fa) fa.addEventListener("click", fundAdd);
+
   tally();
+  fundTally();
   effect();
   views();
 }

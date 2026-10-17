@@ -28,7 +28,6 @@ import psycopg
 from parse_holdings import parse_file
 
 # ---------------------------------------------------------------------
-#DB = "host=localhost port=5432 dbname=finchaya user=postgres password=Finchaya@2026"
 from dotenv import load_dotenv
 load_dotenv()
 DB = os.getenv("FINCHAYA_DB")

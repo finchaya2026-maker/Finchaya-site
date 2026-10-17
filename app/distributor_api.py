@@ -166,6 +166,9 @@ def get_profile(request: Request):
 @router.put("/profile")
 def put_profile(body: ProfileIn, request: Request):
     user_id = _user_id(request)
+    for text, what, cap in ((body.display_name, "The display name", 120), (body.arn, "The ARN", 40), (body.contact, "The contact", 200)):
+        if text is not None and len(text) > cap:
+            raise HTTPException(400, f"{what} can be up to {cap} characters.")
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         row = _q(cur, """
             INSERT INTO distributor (user_id, display_name, arn, contact)
@@ -212,7 +215,7 @@ def list_clients(request: Request, include_archived: bool = False):
         rows = _q(cur, """
             SELECT c.*, COUNT(p.portfolio_id) AS portfolios
             FROM client c
-            LEFT JOIN portfolio p ON p.client_id = c.client_id
+            LEFT JOIN portfolio p ON p.client_id = c.client_id AND p.owner_user_id = c.owner_user_id
             WHERE c.owner_user_id = %(u)s
               AND (%(all)s OR NOT c.archived)
             GROUP BY c.client_id
@@ -221,9 +224,9 @@ def list_clients(request: Request, include_archived: bool = False):
     return [_shape(r, r["portfolios"]) for r in rows]
 
 
-@router.post("/clients")
-def create_client(body: ClientIn, request: Request):
-    user_id = _user_id(request)
+def _clean_client(body):
+    """The client as it will be stored, or a 400 in words. Create and update both use it: update used to check nothing, and a
+    consent date that is not a date went to the database as text and came back as a 500."""
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(400, "The client needs a name.")
@@ -231,6 +234,28 @@ def create_client(body: ClientIn, request: Request):
         raise HTTPException(400, "That name is too long.")
     if body.birth_year is not None and not (1900 <= body.birth_year <= date.today().year):
         raise HTTPException(400, "That year of birth does not look right.")
+    purpose = (body.purpose or "").strip() or None
+    if purpose is not None and purpose not in PURPOSES:
+        raise HTTPException(400, "Choose one of the listed purposes.")
+    note = body.goal_note
+    if note is not None and len(note) > 2000:
+        raise HTTPException(400, "The note can be up to 2,000 characters.")
+    consent = None
+    if body.consent_on and body.consent_on.strip():
+        try:
+            consent = date.fromisoformat(body.consent_on.strip()[:10])
+        except ValueError:
+            raise HTTPException(400, "The consent date must be a date like 2026-10-01.")
+        if consent > date.today():
+            raise HTTPException(400, "The consent date cannot be in the future.")
+    return {"name": name, "birth_year": body.birth_year, "purpose": purpose, "goal_note": note, "consent_on": consent}
+
+
+@router.post("/clients")
+def create_client(body: ClientIn, request: Request):
+    user_id = _user_id(request)
+    c = _clean_client(body)
+    name = c["name"]
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         n = _q(cur, """SELECT COUNT(*) AS n FROM client
@@ -252,9 +277,9 @@ def create_client(body: ClientIn, request: Request):
                                 goal_note, consent_on)
             VALUES (%(u)s, %(n)s, %(b)s, %(p)s, %(g)s, %(c)s)
             RETURNING *
-        """, {"u": user_id, "n": name, "b": body.birth_year,
-              "p": body.purpose, "g": body.goal_note,
-              "c": body.consent_on}, one=True)
+        """, {"u": user_id, "n": name, "b": c["birth_year"],
+              "p": c["purpose"], "g": c["goal_note"],
+              "c": c["consent_on"]}, one=True)
         conn.commit()
 
     out = _shape(row)
@@ -274,10 +299,10 @@ def get_client(client_id: int, request: Request):
             FROM portfolio p
             LEFT JOIN portfolio_holding h USING (portfolio_id)
             LEFT JOIN portfolio_goal    g USING (portfolio_id)
-            WHERE p.client_id = %(c)s
+            WHERE p.client_id = %(c)s AND p.owner_user_id = %(u)s
             GROUP BY p.portfolio_id, g.target_amount, g.target_date
             ORDER BY p.updated_at DESC
-        """, {"c": client_id})
+        """, {"c": client_id, "u": user_id})
 
     out = _shape(row, len(ports))
     out["portfolio_list"] = [{
@@ -293,9 +318,7 @@ def get_client(client_id: int, request: Request):
 @router.put("/clients/{client_id}")
 def update_client(client_id: int, body: ClientIn, request: Request):
     user_id = _user_id(request)
-    name = (body.name or "").strip()
-    if not name:
-        raise HTTPException(400, "The client needs a name.")
+    c = _clean_client(body)
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         _owned_client(cur, client_id, user_id)
         row = _q(cur, """
@@ -304,9 +327,9 @@ def update_client(client_id: int, body: ClientIn, request: Request):
                    goal_note = %(g)s, consent_on = %(c)s, updated_at = now()
              WHERE client_id = %(id)s AND owner_user_id = %(u)s
             RETURNING *
-        """, {"id": client_id, "u": user_id, "n": name, "b": body.birth_year,
-              "p": body.purpose, "g": body.goal_note,
-              "c": body.consent_on}, one=True)
+        """, {"id": client_id, "u": user_id, "n": c["name"], "b": c["birth_year"],
+              "p": c["purpose"], "g": c["goal_note"],
+              "c": c["consent_on"]}, one=True)
         conn.commit()
     return _shape(row)
 
@@ -355,8 +378,8 @@ def delete_client(client_id: int, request: Request):
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         _owned_client(cur, client_id, user_id)
         n = _q(cur, """SELECT COUNT(*) AS n FROM portfolio
-                       WHERE client_id = %(c)s""",
-               {"c": client_id}, one=True)["n"]
+                       WHERE client_id = %(c)s AND owner_user_id = %(u)s""",
+               {"c": client_id, "u": user_id}, one=True)["n"]
         # Portfolios first: holdings and goals hang off portfolio with their
         # own cascades, which DO exist because those tables were created by
         # this role.
@@ -1190,9 +1213,9 @@ def suggest_funds(category_code: str, request: Request, limit: int = 5,
     The whole route is built on the rising reading, so it is off while
     scores are switched off (MF_SCORES_ENABLED).
     """
-    if not _scores_on():
+    if not _scores_on(request):
         raise HTTPException(404, "Not available yet.")
-    _require_subscription(request)
+    _require_subscription(request, "mf")
     if not (1 <= limit <= 200):
         raise HTTPException(400, "Ask for between 1 and 200 funds.")
 

@@ -11,7 +11,9 @@ USAGE
     python map_benchmarks.py "..." --include-unscored # cover unscored funds
 
 WHAT IT WRITES
-    EXACT     we hold the index the fund actually states
+    EXACT     we hold the index the fund actually states -- or, for an index
+              fund / ETF, the index its own NAME says it tracks (see the
+              name-based step below; the note says which)
     PROXY     we hold a near-equivalent (BSE 500 shown against Nifty 500)
     CATEGORY  no stated benchmark found, but the fund sits in a category
               whose AMFI Tier-1 benchmark we hold
@@ -202,6 +204,125 @@ def resolve_index(have, target):
     return hits.pop() if len(hits) == 1 else None
 
 
+# ---------------------------------------------------------------------
+# NAME-BASED MATCH FOR INDEX FUNDS AND ETFs
+#
+# An index fund's benchmark is the index it tracks, and the fund says so in
+# its name: "Axis Nifty Next 50 Index Fund" tracks the Nifty Next 50. The
+# CRISIL sheets rarely list these funds, so without this step they sit at
+# NONE however many indices we hold (the category fallback skips them on
+# purpose: there is no category benchmark for "Index Fund").
+#
+# THE RISK IS A WRONG MATCH, NOT A MISSED ONE. "Nifty 50 Equal Weight Index
+# Fund" does not track the Nifty 50, and a Nifty 50 comparison would be
+# confidently wrong. So the rule is strict and fails toward NONE:
+#
+#   * the name must say Index / ETF / BeES / FoF;
+#   * a held index must appear in it as WHOLE WORDS, longest first
+#     ("nifty 500" is not found inside "nifty 500 multicap 50 25 25");
+#   * after the index only filler words may follow (Index, Fund, ETF, Direct,
+#     Growth, ...). Anything else -- Equal Weight, Value 20, Momentum 30,
+#     Quality, a second index -- means it is a DIFFERENT index, so no match;
+#   * before it only the AMC's own name and filler (at most two unknown words,
+#     and never Equal / Value / Momentum / ... ), so a brand quirk like an old
+#     AMC name does not block a match but a style qualifier does;
+#   * two different held indices in one name: no match.
+#
+# Whatever fails is left for a human and the review file says what the name
+# looks like it tracks, which doubles as the list of indices worth downloading.
+# ---------------------------------------------------------------------
+PASSIVE_MARKERS = {"index", "etf", "etfs", "bees", "fof"}
+
+# Words that say nothing about WHICH index a fund tracks.
+NAME_NOISE = {
+    "index", "indices", "fund", "funds", "etf", "etfs", "exchange", "traded", "tri", "total",
+    "return", "returns", "direct", "regular", "plan", "growth", "idcw", "option", "options",
+    "dividend", "payout", "reinvestment", "of", "the", "fof", "mf", "mutual", "scheme", "bees",
+    "units", "unit", "open", "ended", "passive", "passively", "managed",
+}
+
+# Words that mean "a variation of the index", never allowed in front of it.
+NAME_QUALIFIERS = {
+    "equal", "weight", "weighted", "value", "momentum", "quality", "alpha", "low", "volatility",
+    "esg", "sectoral", "sector", "enhanced", "smart", "factor", "factors", "high", "beta", "ex",
+}
+
+MAX_UNKNOWN_PREFIX = 2
+NAME_CONFIDENCE = 0.95      # the name states the index outright
+ALIAS_CONFIDENCE = 0.90     # a well-known short name ("Nifty Index Fund", "Junior BeES")
+
+# Short names that are unambiguous in practice. Only used if the index is held.
+NAME_ALIASES = {
+    ("nifty",):          "NIFTY 50",       # "UTI Nifty Index Fund", "ICICI Prudential Nifty ETF"
+    ("nifty", "bees"):   "NIFTY 50",
+    ("junior", "bees"):  "NIFTY NEXT 50",
+    ("bank", "bees"):    "NIFTY BANK",
+}
+
+
+def name_tokens(text):
+    """Lowercase words of a fund or index name, with the spellings AMCs disagree on made the same:
+    'Nifty500' / 'Nifty 500', 'Mid Cap' / 'Midcap', 'Large Midcap' / 'LargeMidcap', '&' / 'and'."""
+    t = (text or "").lower().replace("&", " and ")
+    t = re.sub(r"\blarge\s*(?:and\s*)?mid\s*cap\b", "largemidcap", t)
+    t = re.sub(r"\bmid\s+cap\b", "midcap", t)
+    t = re.sub(r"\bsmall\s+cap\b", "smallcap", t)
+    t = re.sub(r"\bmicro\s+cap\b", "microcap", t)
+    t = re.sub(r"\bmulti\s+cap\b", "multicap", t)
+    t = re.sub(r"\b(nifty|midcap|smallcap|largemidcap|microcap|multicap|next|sensex)(?=\d)", r"\1 ", t)
+    return re.sub(r"[^a-z0-9]+", " ", t).split()
+
+
+def index_phrases(index_names):
+    """({word tuple: index name} for every index we hold, {word tuple: index name} for the short names)."""
+    full = {tuple(name_tokens(n)): n for n in index_names}
+    held = set(index_names)
+    return full, {ph: idx for ph, idx in NAME_ALIASES.items() if idx in held}
+
+
+def index_from_name(name, amc_name, phrases, aliases):
+    """(index name, 'name' | 'alias', words matched) for the held index an index fund / ETF names,
+    or (None, reason, None). See the block comment above for the rules."""
+    toks = name_tokens(name)
+    if not (PASSIVE_MARKERS & set(toks)):
+        return None, "not an index fund or ETF by name", None
+    hits = []
+    for table, is_alias in ((phrases, False), (aliases, True)):
+        for ph, idx in table.items():
+            n = len(ph)
+            for i in range(len(toks) - n + 1):
+                if tuple(toks[i:i + n]) == ph:
+                    hits.append((n, i, idx, is_alias))
+    if not hits:
+        return None, "names no index we hold", None
+    hits.sort(key=lambda h: (-h[0], h[1], h[3]))          # longest first, then leftmost, full names before aliases
+    spans = []
+    for n, i, idx, is_alias in hits:
+        if not any(i < s_i + s_n and s_i < i + n for s_n, s_i, _, _ in spans):      # skip anything inside a longer hit
+            spans.append((n, i, idx, is_alias))
+    if len({s[2] for s in spans}) > 1:
+        return None, "names more than one index: %s" % ", ".join(sorted({s[2] for s in spans})), None
+    n, i, idx, is_alias = spans[0]
+    prefix, suffix = toks[:i], toks[i + n:]
+    after = [t for t in suffix if t not in NAME_NOISE]
+    if after:
+        return None, "the index is followed by '%s' (a variation or a different index)" % " ".join(after), None
+    amc = set(name_tokens(amc_name))
+    unknown = [t for t in prefix if t not in amc and t not in NAME_NOISE]
+    if len(unknown) > MAX_UNKNOWN_PREFIX or any(t in NAME_QUALIFIERS for t in unknown):
+        return None, "unrecognised words before the index: '%s'" % " ".join(unknown), None
+    return idx, ("alias" if is_alias else "name"), " ".join(toks[i:i + n])
+
+
+def tracked_guess(name):
+    """What an index fund's name seems to track, for the review file: everything from the first index
+    brand word on, minus filler. A hint for a human, never used to link anything."""
+    toks = name_tokens(name)
+    start = next((k for k, t in enumerate(toks) if t in ("nifty", "bse", "sensex", "crisil", "msci", "nasdaq", "s", "gold", "silver")), None)
+    core = [t for t in (toks[start:] if start is not None else toks) if t not in NAME_NOISE]
+    return " ".join(core)
+
+
 def read_references(folder):
     """{normalised scheme name: (original name, stated benchmark)}"""
     paths = sorted(glob.glob(os.path.join(folder, "**", "*.xlsx"), recursive=True))
@@ -306,6 +427,8 @@ def main():
                     help="skip the category fallback pass")
     ap.add_argument("--include-unscored", action="store_true",
                     help="also map active equity funds that have no health score")
+    ap.add_argument("--list-name-matches", action="store_true",
+                    help="print every index fund / ETF linked by its name, grouped by index, to eyeball")
     args = ap.parse_args()
 
     refs = read_references(args.folder)
@@ -313,7 +436,8 @@ def main():
     with psycopg.connect(DB) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT index_name, benchmark_id FROM benchmark_master")
-            have = {norm_bm(n): bid for n, bid in cur.fetchall()}
+            index_ids = dict(cur.fetchall())                  # NSE index name -> benchmark_id
+            have = {norm_bm(n): bid for n, bid in index_ids.items()}
             if not have:
                 sys.exit("benchmark_master is empty -- run load_benchmarks.py first.")
             print("Indices loaded: %d\n" % len(have))
@@ -329,11 +453,17 @@ def main():
             print("Human-confirmed mappings left untouched: %d\n" % len(reviewed))
 
         funds = load_funds(conn, args.include_unscored)
+        with conn.cursor() as cur:
+            cur.execute("SELECT scheme_code, amc_name FROM mf_scheme WHERE scheme_code = ANY(%s)",
+                        ([f[0] for f in funds],))
+            amc_of = dict(cur.fetchall())
+        phrases, aliases = index_phrases(list(index_ids))
 
         rows, review = [], []
-        counts = {"EXACT": 0, "PROXY": 0, "CATEGORY": 0,
+        counts = {"EXACT": 0, "NAME": 0, "CONFLICT": 0, "PROXY": 0, "CATEGORY": 0,
                   "NONE_INDEX": 0, "NONE_NO_REF": 0, "SKIPPED": 0}
         cat_hits = {}
+        name_hits = {}
 
         for code, name, category in funds:
             if code in reviewed:
@@ -343,12 +473,31 @@ def main():
             ref = refs.get(norm(name))
             stated = ref[1] if ref else None
             key = norm_bm(stated) if stated else None
+            # What the fund's own NAME says it tracks (index funds and ETFs only).
+            nm_idx, nm_kind, nm_detail = index_from_name(name, amc_of.get(code), phrases, aliases)
 
             # 1. the index the fund itself states
             bid = resolve_index(have, stated) if stated else None
             if bid:
                 rows.append((code, bid, stated, "EXACT", 1.0, None))
                 counts["EXACT"] += 1
+                if nm_idx and index_ids[nm_idx] != bid:
+                    # The statement wins, but two sources disagreeing is worth a human look.
+                    counts["CONFLICT"] += 1
+                    review.append((code, name, category, stated, nm_idx, "CONFLICT",
+                                   "the fund states %s but its name says %s -- check which is right"
+                                   % (stated, nm_idx)))
+                continue
+
+            # 1b. the index an index fund / ETF names in its own name
+            if nm_idx:
+                note = ("tracked index read from the fund's name (%r); %s"
+                        % (nm_detail, "stated benchmark %s is not an index we hold" % stated if stated
+                           else "its own stated benchmark was not available"))
+                rows.append((code, index_ids[nm_idx], stated, "EXACT",
+                             ALIAS_CONFIDENCE if nm_kind == "alias" else NAME_CONFIDENCE, note))
+                counts["NAME"] += 1
+                name_hits.setdefault(nm_idx, []).append(name)
                 continue
 
             # 2. a near-equivalent of it
@@ -393,11 +542,23 @@ def main():
                 counts["NONE_NO_REF"] += 1
                 rows.append((code, None, None, "NONE", 0,
                              "fund not present in the reference files"))
-                review.append((code, name, category, "", "", "NONE",
-                               "not in reference files"))
+                if PASSIVE_MARKERS & set(name_tokens(name)):
+                    # An index fund / ETF whose name we could not turn into an index we hold: say what
+                    # it looks like it tracks. Counted across funds, this is the download list.
+                    why = nm_kind if nm_idx is None else ""
+                    review.append((code, name, category, "", "", "NONE",
+                                   "index fund/ETF: name suggests '%s' (%s) -- download that index, "
+                                   "or check the name" % (tracked_guess(name), why)))
+                else:
+                    review.append((code, name, category, "", "", "NONE",
+                                   "not in reference files"))
 
         total_none = counts["NONE_INDEX"] + counts["NONE_NO_REF"]
         print("  EXACT     %4d   index we hold, as stated by the fund" % counts["EXACT"])
+        print("  NAME      %4d   index fund / ETF: the index its own name says it tracks" % counts["NAME"])
+        if counts["CONFLICT"]:
+            print("  (CONFLICT %4d   stated benchmark and fund name disagree -- see %s)"
+                  % (counts["CONFLICT"], REVIEW_CSV))
         print("  PROXY     %4d   near-equivalent substituted" % counts["PROXY"])
         print("  CATEGORY  %4d   category benchmark, no stated one found"
               % counts["CATEGORY"])
@@ -409,11 +570,49 @@ def main():
         if counts["SKIPPED"]:
             print("  SKIPPED   %4d   human-confirmed, left as-is" % counts["SKIPPED"])
 
+        if name_hits:
+            print("\nIndex funds / ETFs linked by name:")
+            for idx, names in sorted(name_hits.items(), key=lambda kv: -len(kv[1])):
+                print("  %-40s %4d" % (idx, len(names)))
+                if args.list_name_matches:
+                    for n in sorted(names):
+                        print("        %s" % n)
+
         if cat_hits:
             print("\nCategory fallback applied to:")
             for cat, n in sorted(cat_hits.items(), key=lambda kv: -kv[1]):
                 target, conf = CATEGORY_BENCHMARK[norm(cat)]
                 print("  %-26s %4d  -> %-24s conf %.2f" % (cat, n, target, conf))
+
+        # What this run would change against what is stored, so a re-run is never a leap of faith.
+        with conn.cursor() as cur:
+            cur.execute("SELECT scheme_code, benchmark_id, match_type FROM mf_benchmark_map")
+            stored = {c: (b, t) for c, b, t in cur.fetchall()}
+        name_of_id = {b: n for n, b in index_ids.items()}
+        delta = {"same": 0, "gained": 0, "new_none": 0, "relabelled": 0, "switched": [], "lost": []}
+        fund_name = {c: n for c, n, _ in funds}
+        for code, new_bid, _stated, mtype, _conf, _note in rows:
+            old = stored.get(code)
+            if old is None:
+                delta["gained" if new_bid else "new_none"] += 1
+            elif old == (new_bid, mtype):
+                delta["same"] += 1
+            elif old[0] == new_bid:
+                delta["relabelled"] += 1
+            elif old[0] is None:
+                delta["gained"] += 1
+            elif new_bid is None:
+                delta["lost"].append((fund_name[code], name_of_id.get(old[0])))
+            else:
+                delta["switched"].append((fund_name[code], name_of_id.get(old[0]), name_of_id.get(new_bid)))
+        print("\nAgainst what is stored now: %d unchanged | %d GAIN a benchmark | %d new rows with none | "
+              "%d same benchmark, different label | %d SWITCH benchmark | %d LOSE their benchmark"
+              % (delta["same"], delta["gained"], delta["new_none"], delta["relabelled"],
+                 len(delta["switched"]), len(delta["lost"])))
+        for n, o, nw in delta["switched"][:15]:
+            print("   SWITCH  %-60s %s -> %s" % (n[:60], o, nw))
+        for n, o in delta["lost"][:15]:
+            print("   LOSE    %-60s had %s" % (n[:60], o))
 
         with open(REVIEW_CSV, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)

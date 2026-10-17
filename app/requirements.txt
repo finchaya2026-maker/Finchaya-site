@@ -26,6 +26,10 @@ kiteconnect>=5.0     # Zerodha market data (fetch_technicals.py)
 pyotp>=2.8           # Zerodha automatic 2FA
 playwright>=1.40     # headless Zerodha login; also run: playwright install chromium
 
+# --- IPO section (ipo_refresh.py, run daily by cron): reads offer-document PDFs; the NSE needs a Chrome-like handshake ---
+pypdf>=4.0
+curl_cffi>=0.7
+
 # --- Optional features. Neither is installed on the dev machine, and neither is
 # --- needed to serve the site:
 razorpay             # billing: imported lazily, so the site boots without it and

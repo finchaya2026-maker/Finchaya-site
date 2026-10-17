@@ -1,5 +1,5 @@
 """
-create_billing_tables.py -- the two tables payments.py writes to.
+create_billing_tables.py -- the tables payments.py writes to.
 ---------------------------------------------------------------------------
     /opt/mfapi/venv/bin/python3 /opt/mfapi/create_billing_tables.py --check
     /opt/mfapi/venv/bin/python3 /opt/mfapi/create_billing_tables.py --admin doadmin
@@ -10,6 +10,8 @@ billing_subscription   one row per Razorpay subscription we started
 billing_event          one row per webhook delivery; event_id is the PRIMARY
                        KEY, and that is the whole defence against a retried
                        webhook extending somebody's access twice
+billing_invoice        one per captured payment (tax invoice or receipt)
+billing_customer       the customer's own billing name / GSTIN / address
 
 No foreign key to mf_user, on purpose: deleting an account must not silently
 delete the record of what that person was charged.
@@ -25,7 +27,7 @@ from dotenv import load_dotenv
 
 load_dotenv("/opt/mfapi/.env")
 
-TABLES = ["billing_subscription", "billing_event"]
+TABLES = ["billing_subscription", "billing_event", "billing_invoice", "billing_customer"]
 
 CREATE = [
     """
@@ -56,12 +58,74 @@ CREATE = [
     # access still runs to the end of the paid period.
     """ALTER TABLE billing_subscription
          ADD COLUMN IF NOT EXISTS cancel_requested boolean NOT NULL DEFAULT false""",
+    # Tiers (Oct 2026). `scope` on a subscription is the tier it was bought
+    # for ('mf', 'stocks', 'all'), written when it is started so a plan id
+    # renamed in .env later cannot change what somebody paid for. The same
+    # word on the account is what the gates read; NULL there means "all",
+    # so every account granted before tiers existed keeps everything.
+    """ALTER TABLE billing_subscription
+         ADD COLUMN IF NOT EXISTS scope text""",
+    """ALTER TABLE mf_user
+         ADD COLUMN IF NOT EXISTS premium_scope text""",
+    # Invoices (Oct 2026). One per captured payment; payment_id UNIQUE is
+    # what stops a replayed webhook issuing a second invoice. fy + seq is
+    # the gap-free run per financial year that the number is built from.
+    """
+    CREATE TABLE IF NOT EXISTS billing_invoice (
+        invoice_no      text        PRIMARY KEY,
+        fy              text        NOT NULL,
+        seq             integer     NOT NULL,
+        user_id         bigint      NOT NULL,
+        subscription_id text,
+        payment_id      text        NOT NULL UNIQUE,
+        event_id        text,
+        issued_on       date        NOT NULL,
+        tax_invoice     boolean     NOT NULL DEFAULT false,
+        plan_name       text,
+        plan_label      text,
+        scope           text,
+        period_start    date,
+        period_end      date,
+        currency        text        NOT NULL DEFAULT 'INR',
+        gross_paise     bigint      NOT NULL,
+        taxable_paise   bigint      NOT NULL,
+        cgst_paise      bigint      NOT NULL DEFAULT 0,
+        sgst_paise      bigint      NOT NULL DEFAULT 0,
+        igst_paise      bigint      NOT NULL DEFAULT 0,
+        gst_rate        numeric(5,2) NOT NULL DEFAULT 0,
+        place_of_supply text,
+        method          text,
+        supplier        jsonb       NOT NULL,
+        customer        jsonb       NOT NULL,
+        created_at      timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (fy, seq)
+    )
+    """,
+    """CREATE INDEX IF NOT EXISTS ix_billing_invoice_user
+         ON billing_invoice (user_id, issued_on DESC)""",
+    # What the customer wants on the invoice: a business name, GSTIN,
+    # address and state. Filled in from "My subscription"; copied onto
+    # each invoice at issue time, never applied to old ones.
+    """
+    CREATE TABLE IF NOT EXISTS billing_customer (
+        user_id     bigint      PRIMARY KEY,
+        legal_name  text,
+        gstin       text,
+        address     text,
+        state_code  text,
+        updated_at  timestamptz NOT NULL DEFAULT now()
+    )
+    """,
 ]
 
 # payments.py updates subscriptions but only ever inserts events.
 GRANTS = [
     "GRANT SELECT, INSERT, UPDATE ON billing_subscription TO %s",
     "GRANT SELECT, INSERT ON billing_event TO %s",
+    # Invoices are never updated or deleted by the app: a wrong one is
+    # answered with a credit note by hand, not an edit.
+    "GRANT SELECT, INSERT ON billing_invoice TO %s",
+    "GRANT SELECT, INSERT, UPDATE ON billing_customer TO %s",
 ]
 
 
@@ -110,6 +174,12 @@ def report(cur):
         print(f"  {t:<24}present, {n:,} rows, "
               f"read/write by {me}: {'yes' if sel and ins else 'NO'}")
         ok = ok and sel and ins
+    for t, c in (("billing_subscription", "scope"), ("mf_user", "premium_scope")):
+        cur.execute("""SELECT 1 FROM information_schema.columns
+                       WHERE table_name = %s AND column_name = %s""", (t, c))
+        have = cur.fetchone() is not None
+        print(f"  {t + '.' + c:<36}{'present' if have else 'MISSING (tiers need it)'}")
+        ok = ok and have
     return ok
 
 

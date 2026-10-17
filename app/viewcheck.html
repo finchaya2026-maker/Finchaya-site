@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Check your view &mdash; FinChaya</title>
+<meta name="description" content="Tell us whether you are bullish or bearish on a
+  stock and see which chart readings line up with that view and which run
+  against it, on the monthly, weekly and daily candles.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  viewcheck.html -- say what you think, then see both sides of it.
+  ======================================================================
+  WHY THE "AGAINST" LIST COMES FIRST
+      People go looking for what agrees with them, and every chart site
+      will oblige. The reading that is useful is the one they would not
+      have gone looking for -- MACD still down on the weekly while they
+      are bullish on the daily. So the list of readings that run against
+      the view is the first thing under the summary, not a footnote to the
+      list that flatters it.
+
+  WHAT IT DELIBERATELY DOES NOT DO
+      It does not total the two sides into a score, rate the view, or say
+      what to do. "Lines up with" and "runs against" describe where a
+      reading falls relative to what the person said; neither word is
+      "good" or "bad", and the two sides are drawn in colours that are not
+      green and red for the same reason. FinChaya is not a SEBI-registered
+      Research Analyst or Investment Adviser.
+
+  WHO SEES IT
+      Premium members and admins. This page is plain HTML and shows a
+      notice to anyone else; /api/viewcheck refuses them on its own.
+-->
+<style>
+  /* Every class here is prefixed vc-. finchaya.css owns .results, .chip,
+     .card and others, and loads after this block, so an unprefixed name
+     can silently lose the cascade to an unrelated rule. */
+  .vc-form{padding:22px 24px}
+  .vc-step{display:block;font-size:14px;font-weight:600;color:var(--ink-2);
+    margin:0 0 8px}
+  .vc-step + .vc-step,.vc-block + .vc-step{margin-top:20px}
+  .vc-pick{position:relative}
+  .vc-hits{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;
+    background:var(--card);border:1px solid var(--line-firm);
+    border-radius:var(--r);box-shadow:0 10px 30px rgba(11,31,25,.13);
+    max-height:340px;overflow:auto}
+  .vc-hits[hidden]{display:none}
+  .vc-hit{display:flex;justify-content:space-between;gap:12px;width:100%;
+    text-align:left;padding:10px 13px;border:0;border-bottom:1px solid var(--line);
+    background:none;cursor:pointer;font-size:14.5px;line-height:1.35;color:var(--ink)}
+  .vc-hit:last-child{border-bottom:0}
+  .vc-hit:hover,.vc-hit.on{background:var(--brand-wash)}
+  .vc-hit small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+  .vc-hit .px{flex:none;font-variant-numeric:tabular-nums;color:var(--ink-2);
+    font-size:13.5px}
+  .vc-none{padding:12px 14px;color:var(--muted);font-size:14px}
+
+  .vc-chosen{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    margin:10px 0 0;padding:10px 12px;background:var(--brand-wash);
+    border:1px solid var(--brand);border-radius:var(--r)}
+  .vc-chosen[hidden]{display:none}
+  .vc-chosen b{font-size:15px}
+  .vc-chosen span{color:var(--ink-2);font-size:13.5px}
+  .vc-chosen button{margin-left:auto;appearance:none;border:0;background:none;
+    cursor:pointer;color:var(--brand-dark);font-size:13.5px;text-decoration:underline}
+
+  .vc-views{display:flex;gap:10px;flex-wrap:wrap}
+  .vc-view{flex:1 1 180px;appearance:none;cursor:pointer;text-align:left;
+    padding:13px 16px;border:1.5px solid var(--line-firm);border-radius:var(--r);
+    background:var(--card);color:var(--ink);font-size:16px;font-weight:600}
+  .vc-view small{display:block;font-weight:400;font-size:13px;color:var(--muted);
+    margin-top:2px}
+  .vc-view:hover{border-color:var(--brand)}
+  .vc-view[aria-pressed=true]{border-color:var(--brand);background:var(--brand-wash);
+    box-shadow:0 0 0 3px var(--brand-wash)}
+  .vc-go{margin-top:22px;appearance:none;border:0;cursor:pointer;
+    background:var(--brand);color:#fff;font-size:16px;font-weight:600;
+    padding:13px 26px;border-radius:var(--r)}
+  .vc-go:hover:not(:disabled){background:var(--brand-dark)}
+  .vc-go:disabled{background:var(--line-firm);cursor:not-allowed}
+  .vc-hint{font-size:13px;color:var(--muted);margin:10px 0 0;min-height:1.2em}
+
+  /* ---- answer ----------------------------------------------------- */
+  .vc-head{display:flex;justify-content:space-between;align-items:flex-start;
+    gap:16px;flex-wrap:wrap}
+  .vc-head h2{margin:0 0 4px}
+  .vc-meta{font-size:14px;color:var(--ink-2);margin:0}
+  .vc-flip{appearance:none;cursor:pointer;background:none;color:var(--brand-dark);
+    border:1.5px solid var(--line-firm);border-radius:999px;padding:7px 14px;
+    font-size:13.5px}
+  .vc-flip:hover{border-color:var(--brand)}
+  .vc-sum{font-size:15.5px;margin:14px 0 0;max-width:70ch}
+  .vc-sum b{font-variant-numeric:tabular-nums}
+
+  .vc-notes{margin:14px 0 0;display:flex;flex-direction:column;gap:8px}
+  .vc-note{background:var(--note-wash);border:1px solid #f0d6a6;
+    border-radius:var(--r);padding:9px 13px;font-size:14px;color:var(--ink-2)}
+
+  .vc-tfs{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    margin:18px 0 0}
+  .vc-tf{background:var(--surface);border-radius:var(--r);padding:13px 15px}
+  .vc-tf h4{margin:0 0 2px;font-size:15px}
+  .vc-tf .when{font-size:12.5px;color:var(--muted);margin:0 0 9px}
+  .vc-bar{display:flex;height:9px;border-radius:999px;overflow:hidden;
+    background:var(--line)}
+  .vc-bar i{display:block;height:100%}
+  .vc-bar .w{background:var(--brand)} .vc-bar .m{background:#b6c2bd}
+  .vc-bar .a{background:var(--note)}
+  .vc-counts{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin:8px 0 0;
+    color:var(--ink-2)}
+  .vc-counts b{font-variant-numeric:tabular-nums}
+
+  .vc-grid{width:100%;border-collapse:collapse;font-size:14px;margin:6px 0 0}
+  .vc-grid th,.vc-grid td{padding:7px 10px;border-bottom:1px solid var(--line);
+    text-align:center}
+  .vc-grid th:first-child,.vc-grid td:first-child{text-align:left}
+  .vc-grid thead th{font-size:12.5px;color:var(--muted);font-weight:600}
+  .vc-cell{display:inline-block;min-width:26px;border-radius:6px;padding:1px 6px;
+    font-weight:700}
+  .vc-cell.with{background:var(--brand-wash);color:var(--brand-dark)}
+  .vc-cell.against{background:var(--note-wash);color:#9a5d0b}
+  .vc-cell.mixed{background:var(--line);color:var(--ink-2)}
+  .vc-cell.na{color:#b3beb9;font-weight:400}
+  .vc-legend{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+
+  .vc-cols{display:grid;gap:18px;grid-template-columns:1fr 1fr;margin:20px 0 0;
+    align-items:start}
+  @media (max-width:820px){.vc-cols{grid-template-columns:1fr}}
+  .vc-col{background:var(--card);border-radius:var(--r-card);
+    box-shadow:var(--shadow);padding:20px 22px;border-top:4px solid var(--line-firm)}
+  .vc-col.against{border-top-color:var(--note)}
+  .vc-col.with{border-top-color:var(--brand)}
+  .vc-col h3{margin:0 0 2px;font-size:18px}
+  .vc-col .sub{margin:0 0 10px}
+  .vc-tfhead{font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--ink-2);
+    text-transform:uppercase;margin:16px 0 6px}
+  .vc-tfhead small{text-transform:none;font-weight:400;letter-spacing:0;
+    color:var(--muted);margin-left:6px}
+  .vc-list{list-style:none;margin:0;padding:0}
+  .vc-item{display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .vc-item:last-child{border-bottom:0}
+  .vc-mark{flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;
+    align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    margin-top:1px}
+  .vc-item.with .vc-mark{background:var(--brand-wash);color:var(--brand-dark)}
+  .vc-item.against .vc-mark{background:var(--note-wash);color:#9a5d0b}
+  .vc-item.mixed .vc-mark{background:var(--line);color:var(--ink-2)}
+  .vc-item b{display:block;font-size:14.5px;line-height:1.35}
+  .vc-item p{margin:2px 0 0;font-size:13.5px;color:var(--muted);line-height:1.45}
+  .vc-empty{color:var(--ink-2);font-size:14.5px;margin:6px 0 0}
+
+  /* ---- company results table ------------------------------------- */
+  /* Four columns, each figure with its change underneath, so the table fits
+     a phone without sideways scrolling. The wrapper only catches the odd
+     very narrow screen. */
+  .vc-scroll{overflow-x:auto;margin:8px 0 0}
+  .vc-fin{width:100%;border-collapse:collapse;font-size:14px}
+  .vc-fin th,.vc-fin td{padding:8px 8px;border-bottom:1px solid var(--line);
+    text-align:right;font-variant-numeric:tabular-nums;vertical-align:top}
+  .vc-fin th:first-child,.vc-fin td:first-child{text-align:left}
+  .vc-fin thead th{font-size:12.5px;color:var(--muted);font-weight:600;
+    vertical-align:bottom}
+  .vc-fin td small{display:block;color:var(--muted);font-size:12px;font-weight:400}
+  .vc-fin td small.chg{color:var(--ink-2);font-size:12.5px}
+  .vc-fin tr.yr td{border-top:2px solid var(--line-firm)}
+  .vc-finlead{font-size:15px;margin:0 0 4px;max-width:70ch}
+
+  /* ---- my own rules (My trade plan), checked first ---------------------- */
+  .vc-plan{width:100%;max-width:520px;padding:10px 12px;border:1.5px solid var(--line-firm);border-radius:var(--r);
+    background:var(--card);color:var(--ink);font-size:15px}
+  .vc-ask{margin:10px 0 0}
+  .vc-ask > summary{cursor:pointer;font-size:14px;color:var(--brand-dark);padding:4px 0}
+  .vc-askform{display:flex;flex-direction:column;gap:8px;max-width:520px;margin:8px 0 0}
+  .vc-askform select,.vc-askform input,.vc-askform textarea{padding:9px 11px;border:1.5px solid var(--line-firm);border-radius:var(--r);
+    background:var(--card);color:var(--ink);font:inherit;font-size:14.5px}
+  .vc-askform button{align-self:flex-start;appearance:none;cursor:pointer;border:1.5px solid var(--brand);background:var(--card);color:var(--brand-dark);
+    font-size:14px;font-weight:600;padding:8px 16px;border-radius:999px}
+  .vc-rules{border-top:4px solid var(--brand)}
+  .vc-rules h3{margin:0 0 4px}
+  .vc-rules h4{margin:18px 0 6px;font-size:14px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2)}
+  .vc-state{display:inline-block;border-radius:999px;padding:3px 12px;font-size:13.5px;font-weight:700;margin:0 0 0 8px;vertical-align:middle}
+  .vc-state.met{background:var(--brand-wash);color:var(--brand-dark)}
+  .vc-state.not_met{background:var(--note-wash);color:#9a5d0b}
+  .vc-state.unknown{background:var(--line);color:var(--ink-2)}
+  .vc-item.not_met .vc-mark{background:var(--note-wash);color:#9a5d0b}
+  .vc-item.met .vc-mark{background:var(--brand-wash);color:var(--brand-dark)}
+  .vc-item.no_data .vc-mark{background:var(--line);color:var(--ink-2)}
+  .vc-item small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+  .vc-sets{margin:10px 0 0;padding-left:20px;font-size:14px;color:var(--ink-2)}
+  .vc-extra{margin:26px 0 0}
+  .vc-extra h2{margin:0 0 4px;font-size:20px}
+  .vc-also{display:inline-block;margin-left:8px;border-radius:999px;background:var(--line);color:var(--ink-2);font-size:11.5px;font-weight:600;padding:1px 8px;
+    vertical-align:middle}
+  .vc-more{margin:16px 0 0}
+  .vc-more > summary{cursor:pointer;font-weight:600;font-size:15px;padding:6px 0}
+  .vc-more ul{margin:6px 0 0;padding-left:20px;color:var(--ink-2);font-size:14px}
+  .vc-more li{margin:0 0 6px}
+  .vc-busy{color:var(--muted);padding:18px 0}
+  .vc-err{color:#b3261e;margin:14px 0 0}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <p class="eyebrow">Check your view</p>
+  <h1>See both sides of your view</h1>
+  <p class="note">Pick a stock and tell us how you see it. We list the chart
+    readings that line up with your view &mdash; and, just as clearly, the
+    ones that run against it &mdash; on the monthly, weekly and daily
+    candles, and alongside them the company&rsquo;s latest revenue, profit and
+    EPS where it has filed results.</p>
+
+  <div id="vcLock"></div>
+
+  <section class="panel vc-form" id="vcForm" hidden>
+    <label class="vc-step" for="vcSearch">1. Which stock?</label>
+    <div class="vc-pick">
+      <input id="vcSearch" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Search by company name or symbol, e.g. Infosys"
+             role="combobox" aria-expanded="false" aria-controls="vcHits"
+             aria-autocomplete="list">
+      <div class="vc-hits" id="vcHits" role="listbox" hidden></div>
+    </div>
+    <div class="vc-chosen" id="vcChosen" hidden></div>
+
+    <span class="vc-step" id="vcViewLabel">2. How do you see it?</span>
+    <div class="vc-views" role="group" aria-labelledby="vcViewLabel">
+      <button type="button" class="vc-view" data-view="bullish" aria-pressed="false">
+        I am bullish<small>I think the price is more likely to go up</small></button>
+      <button type="button" class="vc-view" data-view="bearish" aria-pressed="false">
+        I am bearish<small>I think the price is more likely to go down</small></button>
+    </div>
+
+    <div id="vcRulesStep" hidden>
+      <label class="vc-step" for="vcPlan" id="vcRulesLabel">3. Check my own rules first</label>
+      <select id="vcPlan" class="vc-plan" aria-describedby="vcPlanHint"></select>
+      <p class="vc-hint" id="vcPlanHint"></p>
+      <details class="vc-ask" id="vcAsk">
+        <summary>A rule or some data you need is missing? Ask us for it</summary>
+        <p class="sub">Your rules can use every reading we hold: the charts (MACD, RSI, Supertrend, moving averages, Dow theory and more), the company&rsquo;s results
+          (profit, revenue, EPS), its ratios (P/E, ROE, debt), who owns it, and when results are due. If something you use is not there, tell us what it is and we will
+          add it to our list &mdash; the more people ask, the sooner it is built.</p>
+        <div class="vc-askform">
+          <select id="vcAskKind" aria-label="What are you asking for">
+            <option value="indicator">A rule, indicator or measure</option>
+            <option value="data">Data or information (for example, hourly prices)</option>
+          </select>
+          <input id="vcAskName" type="text" maxlength="80" placeholder="What is it? e.g. Ichimoku Cloud, promoter buying, dividend yield" aria-label="What is it">
+          <textarea id="vcAskDetails" maxlength="500" rows="2" placeholder="Anything that helps: how you use it, the numbers you look at (optional)" aria-label="Details"></textarea>
+          <button type="button" id="vcAskSend">Send request</button>
+          <p class="vc-hint" id="vcAskMsg" role="status"></p>
+        </div>
+      </details>
+    </div>
+
+    <button type="button" class="vc-go" id="vcGo" disabled>Check my view</button>
+    <p class="vc-hint" id="vcHint" role="status"></p>
+  </section>
+
+  <div id="vcOut" aria-live="polite"></div>
+
+  <p class="foot">This describes what the chart readings currently show. It is
+    not a recommendation to buy, sell or hold anything, and a reading
+    describes the price so far &mdash; it does not predict what comes next.
+    Educational content only, not investment advice. FinChaya is not
+    currently registered with SEBI as an Investment Adviser or Research
+    Analyst. Your view is not saved.</p>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const money = v => v == null ? "–"
+  : "₹" + Number(v).toLocaleString("en-IN", {maximumFractionDigits: 2});
+const fdate = iso => {
+  if (!iso) return "";
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return isNaN(d) ? String(iso)
+    : d.toLocaleDateString("en-IN", {day: "numeric", month: "short", year: "numeric"});
+};
+
+const VIEW_WORD = {bullish: "bullish", bearish: "bearish"};
+const MARK = {with: "✓", against: "✕", mixed: "~"};
+
+let chosen = null;          // {isin, symbol, company_name}
+let view = null;            // "bullish" | "bearish"
+let booted = false;
+let seekTimer = null, seekSeq = 0, hits = [], hitOn = -1;
+
+/* ---- gate: the server decides, this only avoids showing a dead form --- */
+function lock() {
+  $("vcForm").hidden = true;
+  const host = $("vcLock");
+  const s = window.fcAuthState || {};
+  // Unreleased (the default): say so, and do NOT offer a plan -- the tool
+  // is not part of any plan until MF_VIEWCHECK_ACCESS=premium is set.
+  if (s.viewcheck_audience !== "premium") {
+    host.innerHTML = '<p class="empty">Check your view is still being ' +
+      "finished and is not open yet. It will be part of the Stocks plan " +
+      "when it is released.</p>";
+    return;
+  }
+  if (window.fcLocked) {
+    window.fcLocked(host, "Check your view",
+      "This tool is part of the Stocks plan. It reads a stock through the " +
+      "monthly, weekly and daily charts and lists what lines up with " +
+      "your view and what runs against it.", "stocks");
+  } else {
+    host.innerHTML = '<p class="empty">This tool is part of the Stocks plan. ' +
+      "Sign in with an account on that plan to use it.</p>";
+  }
+}
+
+function boot() {
+  const s = window.fcAuthState;
+  if (booted || !s || !s.ready) return;
+  booted = true;
+  if (!s.viewcheck) { lock(); return; }
+  $("vcLock").innerHTML = "";
+  $("vcForm").hidden = false;
+  init();
+}
+// finchaya.js is deferred, so it has not run yet when this line does; it
+// announces the answer to /api/auth/me with this event.
+document.addEventListener("fc-auth", boot);
+if (window.fcAuthState && window.fcAuthState.ready) boot();
+
+/* ---- the form ------------------------------------------------------- */
+function refreshGo() {
+  $("vcGo").disabled = !(chosen && view);
+  $("vcHint").textContent = !chosen ? "Choose a stock to begin."
+    : !view ? "Now choose how you see it." : "";
+}
+
+function setView(v) {
+  view = v;
+  document.querySelectorAll(".vc-view").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+  refreshGo();
+}
+
+function pickStock(s) {
+  chosen = {isin: s.isin, symbol: s.symbol, company_name: s.company_name};
+  closeHits();
+  $("vcSearch").value = "";
+  const box = $("vcChosen");
+  box.hidden = false;
+  box.innerHTML = `<b>${esc(s.company_name)}</b><span>${esc(s.symbol)}</span>
+    <button type="button" id="vcChange">Change</button>`;
+  $("vcChange").addEventListener("click", () => {
+    chosen = null; box.hidden = true; refreshGo(); $("vcSearch").focus();
+  });
+  refreshGo();
+}
+
+function closeHits() {
+  $("vcHits").hidden = true;
+  $("vcSearch").setAttribute("aria-expanded", "false");
+  hits = []; hitOn = -1;
+}
+
+function paintHits(rows, q) {
+  const box = $("vcHits");
+  hits = rows; hitOn = -1;
+  if (!rows.length) {
+    box.innerHTML = `<div class="vc-none">No stock matches &ldquo;${esc(q)}&rdquo;.</div>`;
+  } else {
+    box.innerHTML = rows.map((s, i) => `
+      <button type="button" class="vc-hit" role="option" data-i="${i}">
+        <span>${esc(s.company_name)}<small>${esc(s.symbol)}</small></span>
+        <span class="px">${s.close_price != null ? money(s.close_price) : ""}</span>
+      </button>`).join("");
+    box.querySelectorAll(".vc-hit").forEach(b =>
+      b.addEventListener("click", () => pickStock(hits[Number(b.dataset.i)])));
+  }
+  box.hidden = false;
+  $("vcSearch").setAttribute("aria-expanded", "true");
+}
+
+function markHit(i) {
+  const els = $("vcHits").querySelectorAll(".vc-hit");
+  els.forEach((e, k) => e.classList.toggle("on", k === i));
+  if (els[i]) els[i].scrollIntoView({block: "nearest"});
+}
+
+async function seek(q) {
+  const my = ++seekSeq;
+  try {
+    const r = await fetch("/api/stocks?limit=8&search=" + encodeURIComponent(q));
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    if (my !== seekSeq) return;          // a newer keystroke has answered
+    paintHits(d.stocks || [], q);
+  } catch (e) {
+    if (my !== seekSeq) return;
+    $("vcHits").hidden = false;
+    $("vcHits").innerHTML = '<div class="vc-none">Could not search just now. ' +
+      "Try again in a moment.</div>";
+  }
+}
+
+function init() {
+  const inp = $("vcSearch");
+  inp.addEventListener("input", () => {
+    clearTimeout(seekTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) { seekSeq++; closeHits(); return; }
+    seekTimer = setTimeout(() => seek(q), 200);
+  });
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeHits(); return; }
+    if (!hits.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); hitOn = Math.min(hits.length - 1, hitOn + 1); markHit(hitOn); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); hitOn = Math.max(0, hitOn - 1); markHit(hitOn); }
+    else if (e.key === "Enter") { e.preventDefault(); pickStock(hits[hitOn >= 0 ? hitOn : 0]); }
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".vc-pick")) closeHits();
+  });
+  document.querySelectorAll(".vc-view").forEach(b =>
+    b.addEventListener("click", () => setView(b.dataset.view)));
+  $("vcGo").addEventListener("click", run);
+  loadPlans();
+  $("vcAskSend").addEventListener("click", sendAsk);
+  $("vcPlan").addEventListener("change", () => { try { localStorage.setItem("fc_vc_plan", $("vcPlan").value); } catch (e) {} paintPlanHint(); });
+  refreshGo();
+
+  // A link such as /viewcheck?isin=INE009A01021&view=bearish pre-fills it.
+  const q = new URLSearchParams(location.search);
+  const isin = (q.get("isin") || "").toUpperCase();
+  const v = (q.get("view") || "").toLowerCase();
+  if (/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(isin)) {
+    fetch("/api/stocks/" + encodeURIComponent(isin))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d || !d.stock) return;
+        pickStock(d.stock);
+        if (VIEW_WORD[v]) { setView(v); run(); }
+      }).catch(() => {});
+  }
+}
+
+/* ---- my own rules (My trade plan) ----------------------------------- */
+// The person's saved plans come from My trade plan. Only a plan written for a stock can be checked on one. The choice is remembered in this browser only.
+let plans = [];
+async function loadPlans() {
+  const step = $("vcRulesStep");
+  try {
+    const a = await (await fetch("/api/tradeplan/access", {credentials: "include"})).json();
+    if (!a || !a.allowed) return;                         // My trade plan is not open to this account (or not on this server): no rules step
+    const r = await fetch("/api/tradeplan/plans", {credentials: "include"});
+    if (!r.ok) return;
+    plans = ((await r.json()).plans || []).filter(p => p.ok);
+  } catch (e) { return; }
+  step.hidden = false;
+  const stock = plans.filter(p => p.plan.instrument === "stock");
+  const other = plans.filter(p => p.plan.instrument !== "stock");
+  let saved = "";
+  try { saved = localStorage.getItem("fc_vc_plan") || ""; } catch (e) {}
+  const pick = saved === "none" ? "" : (stock.find(p => String(p.plan_id) === saved) || stock[0] || {}).plan_id;
+  $("vcPlan").innerHTML = '<option value="none">Do not check my rules, just show the readings</option>' +
+    stock.map(p => `<option value="${p.plan_id}">${esc(p.plan.name)} &middot; ${p.plan.conditions.length} condition${p.plan.conditions.length === 1 ? "" : "s"}</option>`).join("") +
+    other.map(p => `<option value="${p.plan_id}" disabled>${esc(p.plan.name)} (written for ${esc(p.plan.instrument_label || p.plan.instrument)}, not a stock)</option>`).join("");
+  $("vcPlan").value = pick == null || pick === "" ? "none" : String(pick);
+  paintPlanHint();
+}
+
+function paintPlanHint() {
+  const v = $("vcPlan").value;
+  const p = plans.find(x => String(x.plan_id) === v);
+  $("vcPlanHint").innerHTML = p
+    ? esc((p.description || {}).sentence || "") + ' <a href="/tradeplan">Edit my rules</a>'
+    : (plans.some(x => x.plan.instrument === "stock")
+        ? 'Your rules are checked first, then everything else we can read is shown as extra information. <a href="/tradeplan">Edit my rules</a>'
+        : 'You have not written any rules for a stock yet. <a href="/tradeplan">Write my rules</a> (for example &ldquo;profit higher than a year ago&rdquo;, &ldquo;monthly MACD rising&rdquo;, ' +
+          '&ldquo;a higher low&rdquo;) and they will be checked here first.');
+}
+
+async function sendAsk() {
+  const name = $("vcAskName").value.trim(), msg = $("vcAskMsg");
+  if (name.length < 2) { msg.textContent = "Say what it is first."; return; }
+  $("vcAskSend").disabled = true;
+  try {
+    const r = await fetch("/api/tradeplan/requests", {method: "POST", credentials: "include", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({kind: $("vcAskKind").value, name, details: ("[Check your view] " + $("vcAskDetails").value.trim()).trim()})});   // the tag tells the owner where it came from
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "It could not be sent just now.");
+    msg.textContent = d.message || "Thank you. We have noted it.";
+    if (!d.exists) { $("vcAskName").value = ""; $("vcAskDetails").value = ""; }
+  } catch (e) {
+    msg.textContent = e.message || "It could not be sent just now.";
+  } finally { $("vcAskSend").disabled = false; }
+}
+
+/* ---- asking --------------------------------------------------------- */
+async function run() {
+  if (!chosen || !view) return;
+  const out = $("vcOut");
+  out.innerHTML = '<p class="vc-busy">Reading the charts&hellip;</p>';
+  $("vcGo").disabled = true;
+  try {
+    const planId = $("vcRulesStep").hidden ? "none" : $("vcPlan").value;
+    const r = await fetch("/api/viewcheck/" + encodeURIComponent(chosen.isin) +
+                          "?view=" + encodeURIComponent(view) + (planId && planId !== "none" ? "&plan_id=" + encodeURIComponent(planId) : ""));
+    if (r.status === 401) {
+      out.innerHTML = "";
+      window.fcSignIn && window.fcSignIn();
+      return;
+    }
+    if (r.status === 403) { out.innerHTML = ""; lock(); return; }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || "Could not read this stock just now.");
+    }
+    const d = await r.json();
+    try { history.replaceState(null, "",
+      "?isin=" + encodeURIComponent(chosen.isin) + "&view=" + view); } catch (e) {}
+    paint(d);
+  } catch (e) {
+    const net = e instanceof TypeError;
+    out.innerHTML = '<p class="vc-err">' + esc(net
+      ? "Could not reach FinChaya. Check your connection and try again."
+      : (e.message || "Something went wrong. Try again in a moment.")) + "</p>";
+  } finally {
+    refreshGo();
+  }
+}
+
+/* ---- the answer ------------------------------------------------------ */
+function itemsHtml(items, side) {
+  if (!items.length) return "";
+  // Grouped by timeframe, biggest picture first -- the order the server sends.
+  const order = [], by = {};
+  items.forEach(i => { if (!by[i.tf]) { by[i.tf] = []; order.push(i.tf); } by[i.tf].push(i); });
+  return order.map(tf => `
+    <h4 class="vc-tfhead">${esc(by[tf][0].tf_label)}</h4>
+    <ul class="vc-list">${by[tf].map(i => `
+      <li class="vc-item ${side}">
+        <span class="vc-mark" aria-hidden="true">${MARK[side]}</span>
+        <div><b>${esc(i.title)}${i.in_rules ? '<span class="vc-also" title="One of your rules already covers this reading">also in your rules</span>' : ""}</b>${i.detail ? `<p>${esc(i.detail)}</p>` : ""}</div>
+      </li>`).join("")}
+    </ul>`).join("");
+}
+
+/* ---- the person's own rules, checked first ---------------------------- */
+const RULE_MARK = {met: "✓", not_met: "✕", no_data: "?"};
+const STATE_WORD = {met: "Met", not_met: "Not met", no_data: "Can't tell yet"};
+function ruleItem(c) {
+  const when = c.as_of ? ` &middot; ${esc(c.as_of)}${c.forming ? " (candle still forming)" : ""}` : "";
+  return `<li class="vc-item ${c.state}">
+    <span class="vc-mark" aria-hidden="true">${RULE_MARK[c.state]}</span>
+    <div><b>${esc(c.text)}</b>
+      ${c.state === "no_data" ? `<p>${esc(c.reason || "No data yet.")}</p>` : `<p>${esc(c.reading || "")}${when}</p>`}
+      ${c.written ? `<small>Written in your plan as: ${esc(c.written)}</small>` : ""}</div>
+  </li>`;
+}
+function rulesHtml(m, d) {
+  const head = '<h3>Your own rules</h3>';
+  if (m.available === false) {
+    return `<section class="panel vc-rules">${head}<p class="vc-empty">${esc(m.reason)}</p></section>`;
+  }
+  if (m.error) {
+    return `<section class="panel vc-rules">${head}<p class="vc-empty">${esc(m.error)}</p>
+      <p class="sub"><a href="/tradeplan">Open My trade plan</a></p></section>`;
+  }
+  const conds = m.conditions || [], o = m.overall || {};
+  const by = k => conds.filter(c => c.state === k);
+  const notMet = by("not_met"), unknown = by("no_data"), met = by("met");
+  const word = VIEW_WORD[d.view];
+  const stateKey = o.state === "unknown" ? "unknown" : o.state;
+  const verdict = {met: "Your rules are met", not_met: "Not all of your rules are met", unknown: "Can't tell yet"}[stateKey] || "";
+  const multi = (m.sets || []).length > 1;
+  const sets = multi ? `<ol class="vc-sets" aria-label="Your sets of conditions">${m.sets.map((s, k) => `<li>Set ${k + 1} (condition${s.indices.length === 1 ? "" : "s"} ${
+    s.indices.map(i => i + 1).join(", ")}): <b>${s.state === "unknown" ? "can't tell yet" : s.state === "not_met" ? "not met" : "met"}</b></li>`).join("")}</ol>` : "";
+  const plan = m.plan || {};
+  return `<section class="panel vc-rules" aria-label="Your own rules">
+    <h3>Your own rules: ${esc(plan.name || "")}<span class="vc-state ${stateKey}">${esc(verdict)}</span></h3>
+    <p class="sub" style="margin:0">${esc(((plan.description || {}).sentence) || "")}</p>
+    <p class="vc-sum"><b>${o.met}</b> of <b>${o.total}</b> condition${o.total === 1 ? " is" : "s are"} met${notMet.length ? `, <b>${notMet.length}</b> not met` : ""}${
+      unknown.length ? `, <b>${unknown.length}</b> we cannot tell yet` : ""}. Read for a ${esc(word)} view.${multi ? " Any one of your sets will do." : ""}</p>
+    ${sets}
+    ${(m.notes || []).length ? `<div class="vc-notes">${m.notes.map(n => `<div class="vc-note">${esc(n)}</div>`).join("")}</div>` : ""}
+    ${notMet.length ? `<h4>Not met (${notMet.length})</h4><ul class="vc-list">${notMet.map(ruleItem).join("")}</ul>` : ""}
+    ${unknown.length ? `<h4>We cannot tell yet (${unknown.length})</h4><ul class="vc-list">${unknown.map(ruleItem).join("")}</ul>` : ""}
+    ${met.length ? `<h4>Met (${met.length})</h4><ul class="vc-list">${met.map(ruleItem).join("")}</ul>` : ""}
+    <p class="sub" style="margin-top:12px">These are your own conditions, checked on the latest figures we hold. <a href="/tradeplan">Edit my rules</a></p>
+  </section>`;
+}
+
+function column(side, title, sub, items, emptyText) {
+  return `<section class="vc-col ${side}" aria-label="${esc(title)}">
+    <h3>${esc(title)} (${items.length})</h3>
+    <p class="sub">${esc(sub)}</p>
+    ${items.length ? itemsHtml(items, side) : `<p class="vc-empty">${esc(emptyText)}</p>`}
+  </section>`;
+}
+
+function tfCard(tf, t, meta) {
+  const n = t.with + t.mixed + t.against || 1;
+  const w = k => (100 * t[k] / n).toFixed(1) + "%";
+  let when = "";
+  if (meta && meta.period_label) {                 // company results, not a candle
+    when = esc(meta.period_label) + " &middot; " + esc(meta.basis.toLowerCase()) +
+      (meta.filed_on ? " &middot; filed " + esc(fdate(meta.filed_on)) : "");
+  } else if (meta) {
+    when = "Reading as of " + esc(fdate(meta.bar_date)) +
+      (meta.in_progress ? " &middot; candle still forming" : "");
+  }
+  return `<div class="vc-tf">
+    <h4>${esc(tf.label)}</h4>
+    <p class="when">${when}</p>
+    <div class="vc-bar" role="img"
+         aria-label="${t.with} line up, ${t.mixed} do not lean, ${t.against} run against">
+      <i class="w" style="width:${w("with")}"></i><i class="m" style="width:${w("mixed")}"></i><i class="a" style="width:${w("against")}"></i>
+    </div>
+    <div class="vc-counts">
+      <span><b>${t.with}</b> line up</span>
+      <span><b>${t.against}</b> run against</span>
+      <span><b>${t.mixed}</b> no lean</span>
+    </div></div>`;
+}
+
+function gridHtml(d) {
+  const cell = (it) => !it
+    ? '<span class="vc-cell na" title="Not read">&middot;</span>'
+    : `<span class="vc-cell ${it.side}" title="${esc(it.title)}">${MARK[it.side]}</span>`;
+  const have = d.timeframes.filter(tf => d.as_of[tf.key]);
+  const rows = d.checks.map(c => {
+    const cells = have.map(tf => d.items.find(i => i.check === c.key && i.tf === tf.key));
+    if (!cells.some(Boolean)) return "";
+    return `<tr><td>${esc(c.label)}</td>${cells.map(it => `<td>${cell(it)}</td>`).join("")}</tr>`;
+  }).join("");
+  return `<table class="vc-grid">
+    <thead><tr><th scope="col">Reading</th>${have.map(tf =>
+      `<th scope="col">${esc(tf.label)}</th>`).join("")}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="vc-legend">${MARK.with} lines up with your view &nbsp;
+      ${MARK.against} runs against it &nbsp; ${MARK.mixed} does not lean either way
+      &nbsp; &middot; not read</p>`;
+}
+
+/* ---- company results ------------------------------------------------- */
+// Rupee crore, Indian grouping, as the Financials tab writes them.
+const crore = v => {
+  if (v == null) return "–";
+  const a = Math.abs(v);
+  const s = a.toLocaleString("en-IN", {
+    minimumFractionDigits: a >= 1000 ? 0 : a >= 100 ? 1 : 2,
+    maximumFractionDigits: a >= 1000 ? 0 : a >= 100 ? 1 : 2});
+  return (v < 0 ? "−" : "") + s;
+};
+const rupee2 = v => v == null ? "–"
+  : (v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-IN",
+      {minimumFractionDigits: 2, maximumFractionDigits: 2});
+// A figure with its change from a year ago underneath. The change is plain
+// text, no colour: up is not "good" and down is not "bad" -- that is for the
+// reader to decide.
+function fig(val, v, why) {
+  if (v == null)
+    return `<td>${val}<small class="chg" title="${esc(why || "Not shown: there is no earlier figure on the same basis, or the earlier figure was zero or a loss.")}">–</small></td>`;
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return `<td>${val}<small class="chg">${sign}${Math.abs(v).toFixed(1)}%</small></td>`;
+}
+
+function resultsHtml(f) {
+  const head = '<h3 style="margin-top:0">Company results</h3>';
+  if (f && f.error) {
+    return `<section class="panel">${head}
+      <p class="vc-empty">Company results could not be loaded just now, so they are
+      not part of this answer. The chart readings above are unaffected. Try again in
+      a moment.</p></section>`;
+  }
+  if (!f || !f.available) {
+    return `<section class="panel">${head}
+      <p class="vc-empty">No company results are on file for this stock yet. They
+      appear here once it has filed them with the stock exchange and we have
+      read them.</p></section>`;
+  }
+  const row = (r, isYear) => `
+    <tr${isYear ? ' class="yr"' : ""}>
+      <td>${esc(r.period_label)}<small>${esc(r.basis)}${
+        r.filed_on ? " &middot; filed " + esc(fdate(r.filed_on)) : ""}</small></td>
+      ${fig(crore(r.revenue_cr), r.revenue_vs_year_ago_pct)}
+      ${fig(crore(r.profit_cr), r.profit_vs_year_ago_pct)}
+      ${fig(rupee2(r.eps), r.eps_vs_year_ago_pct, r.eps_share_count_changed
+        ? "Not compared: the number of shares changed (a bonus or split), so EPS is not like for like." : null)}
+    </tr>`;
+  const q = f.quarterly || [], y = f.yearly || [];
+  return `<section class="panel">${head}
+    ${f.headline ? `<p class="vc-finlead">${esc(f.headline)}</p>` : ""}
+    ${f.title ? `<p class="sub" style="margin:0">${esc(f.title)}.</p>` : ""}
+    <p class="sub" style="margin:10px 0 0">The smaller figure under each amount is its
+      change from a year ago.</p>
+    <div class="vc-scroll"><table class="vc-fin">
+      <thead><tr><th scope="col">Period</th>
+        <th scope="col">Revenue<br>(&#8377; crore)</th>
+        <th scope="col">Profit<br>(&#8377; crore)</th>
+        <th scope="col">EPS<br>(&#8377;)</th></tr></thead>
+      <tbody>${q.map(r => row(r, false)).join("")}${y.map((r, i) => row(r, i === 0)).join("")}</tbody>
+    </table></div>
+    <p class="foot" style="margin-top:10px">As the company filed them with the stock
+      exchange. Rupee amounts are in crore, except EPS. EPS is as reported, not
+      adjusted for later bonus issues or splits, so it is only compared where the
+      share count is unchanged. A dash means there is nothing like-for-like to
+      compare with.</p>
+  </section>`;
+}
+
+function paint(d) {
+  const out = $("vcOut");
+  const s = d.stock || {};
+  const word = VIEW_WORD[d.view];
+  const other = d.view === "bullish" ? "bearish" : "bullish";
+  const against = d.items.filter(i => i.side === "against");
+  const withv = d.items.filter(i => i.side === "with");
+  const mixed = d.items.filter(i => i.side === "mixed");
+  const px = d.price || {};
+
+  const headBlock = `
+      <div class="vc-head">
+        <div>
+          <h2>Your view: ${esc(word)} on ${esc(s.company_name || "")}</h2>
+          <p class="vc-meta">${esc(s.symbol || "")}${px.last != null
+            ? " &middot; last close " + money(px.last) +
+              (px.date ? " on " + esc(fdate(px.date)) : "") : ""}</p>
+        </div>
+        <button type="button" class="vc-flip" id="vcFlip">See it as ${esc(other)} instead</button>
+      </div>`;
+  // With the person's own rules switched on, they come FIRST: the title, then the rules and which of them are not met, and only then everything else we can
+  // read, labelled as extra information. Without them the page is exactly as it was.
+  const head = d.my_rules
+    ? `<section class="panel">${headBlock}</section>
+       ${rulesHtml(d.my_rules, d)}
+       <div class="vc-extra"><h2>More information, not part of your rules</h2>
+         <p class="sub" style="max-width:70ch">Everything else we can read on this stock, whether or not you have a rule for it (a Supertrend, say, that is not in your rules is
+           here). Readings that one of your rules already covers are marked &ldquo;also in your rules&rdquo;.</p></div>
+       <section class="panel" style="margin-top:12px">`
+    : `<section class="panel">${headBlock}`;
+
+  if (d.no_data) {
+    out.innerHTML = head + `<p class="vc-sum">We do not have enough price
+      history for this stock to calculate the chart readings yet. They need a few
+      months of trading, so a recent listing will not have them.</p></section>
+      ${resultsHtml(d.financials)}`;
+  } else {
+    const t = d.totals;
+    const scope = d.per_timeframe.RESULTS
+      ? "Across the chart time frames and the latest company results we could read,"
+      : "Across the time frames we could read,";
+    out.innerHTML = head + `
+      <p class="vc-sum">${scope} <b>${t.with}</b>
+        point${t.with === 1 ? "" : "s"} line${t.with === 1 ? "s" : ""} up with a
+        ${esc(word)} view, <b>${t.against}</b> run${t.against === 1 ? "s" : ""}
+        against it and <b>${t.mixed}</b> do${t.mixed === 1 ? "es" : ""} not lean
+        either way. Each time frame is read on its own below.</p>
+      <p class="sub" style="margin:6px 0 0;max-width:70ch">Several readings overlap
+        &mdash; price below the 20, 50 and 200 EMA is largely one fact counted three
+        times &mdash; so the counts show where the readings fall, not how strong a
+        case either side makes.</p>
+      ${d.notes.length ? `<div class="vc-notes">${d.notes.map(n =>
+        `<div class="vc-note">${esc(n)}</div>`).join("")}</div>` : ""}
+      <div class="vc-tfs">${d.timeframes.concat(d.per_timeframe.RESULTS
+          ? [{key: "RESULTS", label: "Company results"}] : [])
+        .filter(tf => d.per_timeframe[tf.key]).map(tf =>
+          tfCard(tf, d.per_timeframe[tf.key], d.as_of[tf.key])).join("")}</div>
+    </section>
+
+    <div class="vc-cols">
+      ${column("against", "Runs against your view",
+        "Readings that point the other way from a " + word + " view.",
+        against, "None of the readings we checked runs against a " + word + " view right now.")}
+      ${column("with", "Lines up with your view",
+        "Readings that point the same way as a " + word + " view.",
+        withv, "None of the readings we checked lines up with a " + word + " view right now.")}
+    </div>
+
+    ${d.timeframes.some(tf => d.as_of[tf.key]) ? `<section class="panel" style="margin-top:18px">
+      <h3 style="margin-top:0">At a glance</h3>
+      ${gridHtml(d)}
+    </section>` : ""}
+
+    ${resultsHtml(d.financials)}
+
+    ${mixed.length ? `<details class="vc-more panel">
+      <summary>Readings that do not lean either way (${mixed.length})</summary>
+      ${itemsHtml(mixed, "mixed")}</details>` : ""}
+
+    ${d.skipped.length ? `<details class="vc-more panel">
+      <summary>Readings we could not take (${d.skipped.length})</summary>
+      <ul>${d.skipped.map(k =>
+        `<li><b>${esc(k.tf_label)} &middot; ${esc(k.group)}:</b> ${esc(k.why)}.</li>`).join("")}</ul>
+    </details>` : ""}
+
+    <details class="vc-more panel">
+      <summary>How each reading is judged</summary>
+      <ul>${d.rules.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+    </details>`;
+  }
+
+  const flip = $("vcFlip");
+  if (flip) flip.addEventListener("click", () => { setView(other); run(); });
+  out.scrollIntoView({behavior: "smooth", block: "start"});
+}
+</script>
+</body>
+</html>

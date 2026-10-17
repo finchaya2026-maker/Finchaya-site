@@ -1,0 +1,1363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trade plan &mdash; FinChaya</title>
+<meta name="description" content="Write your trading or investing plan once &mdash; the instrument, the time
+  frames and the conditions you look for, joined with AND and OR &mdash; then check it on a stock.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  tradeplan.html -- write a plan once, check it any time.
+  ======================================================================
+  WHAT IT IS
+      A plan is the person's OWN checklist: an instrument, the time frame they trade on, and any number of
+      conditions, each on its own time frame ("hourly MACD above its signal line", "daily RSI above 50"),
+      joined with AND / OR. Checking it on a stock reads the latest candles and says which conditions are met.
+
+  WHAT IT DELIBERATELY DOES NOT DO
+      It does not tell anyone what to do. The words are "met" and "not met", about conditions the person wrote.
+      Colours are green for met and amber for not met, never red, and nothing is totalled into a score.
+      FinChaya is not a SEBI-registered Research Analyst or Investment Adviser.
+
+  WHAT IT TELLS THE TRUTH ABOUT
+      We hold stock candles on daily, weekly and monthly time frames, and nothing for intraday time frames,
+      the indices or commodities. A plan can be written for all of them, and a condition we cannot read says
+      "no data yet" -- it is never rounded to "not met". The builder says up front what is held, and the
+      person can ask for what is missing.
+
+  WHO SEES IT
+      Administrators until it is opened up (MF_TRADEPLAN_ACCESS). This page is plain HTML and asks
+      /api/tradeplan/access itself, so it does not depend on any other script on the site; the API refuses
+      everyone else on its own.
+-->
+<style>
+  /* Every class here is prefixed tp-: finchaya.css owns .panel, .chip, .tabs, .note and others and loads after
+     this block, so an unprefixed name can silently lose the cascade to an unrelated rule. */
+  .tp-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid var(--line-firm);margin:18px 0 22px}
+  .tp-tab{appearance:none;border:0;background:none;cursor:pointer;padding:11px 16px;font-size:15px;
+    font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1.5px}
+  .tp-tab:hover{color:var(--ink)}
+  .tp-tab[aria-selected=true]{color:var(--brand-dark);border-bottom-color:var(--brand)}
+  .tp-pane[hidden]{display:none}
+  .tp-badge{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:999px;
+    background:var(--brand-wash);color:var(--brand-dark);font-size:12px;font-weight:700;text-align:center}
+
+  .tp-card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px;margin:0 0 16px}
+  .tp-card h3{margin:0 0 4px;font-size:18px}
+  .tp-sub{color:var(--muted);font-size:13.5px;margin:0}
+  .tp-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .tp-field{flex:1 1 200px;min-width:0}
+  .tp-field > label,.tp-lab{display:block;font-size:13.5px;font-weight:600;color:var(--ink-2);margin:0 0 5px}
+  .tp-field select,.tp-field input[type=text],.tp-field input[type=number],.tp-field textarea{width:100%}
+  .tp-field textarea{min-height:64px;resize:vertical}
+  .tp-hint{font-size:13px;color:var(--ink-2);margin:8px 0 0;max-width:80ch}
+  .tp-warn{background:var(--note-wash);border:1px solid #f0d6a6;border-radius:var(--r);padding:9px 13px;
+    font-size:13.5px;color:var(--ink-2);margin:10px 0 0}
+  .tp-err{color:#b3261e;font-size:14px;margin:10px 0 0}
+  .tp-ok{color:var(--brand-dark);font-size:14px;margin:10px 0 0}
+
+  .tp-seg{display:flex;gap:10px;flex-wrap:wrap}
+  .tp-segb{flex:1 1 170px;appearance:none;cursor:pointer;text-align:left;padding:11px 14px;border:1.5px solid var(--line-firm);
+    border-radius:var(--r);background:var(--card);color:var(--ink);font-size:15px;font-weight:600}
+  .tp-segb small{display:block;font-weight:400;font-size:12.5px;color:var(--muted);margin-top:2px}
+  .tp-segb:hover{border-color:var(--brand)}
+  .tp-segb[aria-pressed=true]{border-color:var(--brand);background:var(--brand-wash);box-shadow:0 0 0 3px var(--brand-wash)}
+
+  /* ---- conditions --------------------------------------------------- */
+  .tp-cond{border:1.5px solid var(--line-firm);border-radius:var(--r);padding:14px 16px;background:var(--surface);position:relative}
+  .tp-join{display:flex;align-items:center;gap:8px;margin:10px 0}
+  .tp-join:before,.tp-join:after{content:"";flex:1;height:1px;background:var(--line-firm)}
+  .tp-jb{appearance:none;cursor:pointer;border:1.5px solid var(--line-firm);background:var(--card);color:var(--ink-2);
+    padding:3px 12px;font-size:12.5px;font-weight:700;letter-spacing:.04em}
+  .tp-jb:first-of-type{border-radius:999px 0 0 999px}
+  .tp-jb:last-of-type{border-radius:0 999px 999px 0;border-left:0}
+  .tp-jb[aria-pressed=true]{background:var(--brand);border-color:var(--brand);color:#fff}
+  .tp-ctop{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px}
+  .tp-cn{font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .tp-rm{appearance:none;border:0;background:none;cursor:pointer;color:var(--muted);font-size:13px;text-decoration:underline}
+  .tp-rm:hover{color:#b3261e}
+  .tp-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+  .tp-grid .tp-wide{grid-column:1 / -1}
+  .tp-grid label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:0 0 4px}
+  .tp-grid select,.tp-grid input{width:100%;padding:9px 10px;font-size:15px}
+  .tp-nums{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .tp-nums > div{flex:0 1 110px}
+  .tp-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .tp-chip{appearance:none;cursor:pointer;border:1px solid var(--line-firm);background:var(--card);border-radius:999px;
+    padding:2px 10px;font-size:12.5px;color:var(--ink-2)}
+  .tp-chip:hover{border-color:var(--brand);color:var(--ink)}
+  .tp-says{margin:10px 0 0;font-size:14px;color:var(--ink);font-weight:500}
+  .tp-add{appearance:none;cursor:pointer;margin:14px 0 0;border:1.5px dashed var(--brand);background:none;color:var(--brand-dark);
+    font-size:15px;font-weight:600;padding:10px 16px;border-radius:var(--r);width:100%}
+  .tp-add:hover{background:var(--brand-wash)}
+  .tp-ask{margin:12px 0 0;font-size:13.5px;color:var(--muted)}
+  .tp-link{appearance:none;border:0;background:none;cursor:pointer;color:var(--brand-dark);text-decoration:underline;font-size:inherit;padding:0}
+
+  .tp-sets{margin:8px 0 0;padding:0;list-style:none}
+  .tp-sets li{padding:8px 12px;border-left:4px solid var(--brand);background:var(--brand-wash);border-radius:0 var(--r) var(--r) 0;
+    margin:0 0 6px;font-size:14.5px}
+  .tp-sets li b{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-dark);display:block}
+  .tp-or{font-size:12.5px;font-weight:700;color:var(--muted);margin:0 0 6px 4px}
+
+  .tp-btn{appearance:none;border:0;cursor:pointer;background:var(--brand);color:#fff;font-size:15.5px;font-weight:600;
+    padding:12px 22px;border-radius:var(--r)}
+  .tp-btn:hover:not(:disabled){background:var(--brand-dark)}
+  .tp-btn:disabled{background:var(--line-firm);cursor:not-allowed}
+  .tp-btn.quiet{background:none;color:var(--brand-dark);border:1.5px solid var(--line-firm)}
+  .tp-btn.quiet:hover:not(:disabled){background:var(--surface);border-color:var(--brand)}
+  .tp-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 0;align-items:center}
+
+  /* ---- plans list ------------------------------------------------------ */
+  .tp-plan h3{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .tp-tag{display:inline-block;padding:1px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);
+    font-size:12.5px;font-weight:600}
+  .tp-tag.dir{background:var(--brand-wash);color:var(--brand-dark)}
+  .tp-psay{font-size:14.5px;color:var(--ink);margin:10px 0 0;max-width:90ch}
+  .tp-pbtns{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+  .tp-pbtns .tp-btn{padding:8px 16px;font-size:14px}
+  .tp-ex{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:12px 0 0}
+  .tp-exb{appearance:none;cursor:pointer;text-align:left;border:1.5px solid var(--line-firm);background:var(--card);
+    border-radius:var(--r);padding:12px 14px;font-size:14px;color:var(--ink)}
+  .tp-exb b{display:block;font-size:15px;margin-bottom:3px}
+  .tp-exb span{color:var(--muted);font-size:13px}
+  .tp-exb:hover{border-color:var(--brand);background:var(--brand-wash)}
+
+  /* ---- search --------------------------------------------------------------- */
+  .tp-pick{position:relative}
+  .tp-hits{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:var(--card);border:1px solid var(--line-firm);
+    border-radius:var(--r);box-shadow:0 10px 30px rgba(11,31,25,.13);max-height:300px;overflow:auto}
+  .tp-hits[hidden]{display:none}
+  .tp-hit{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:10px 13px;border:0;
+    border-bottom:1px solid var(--line);background:none;cursor:pointer;font-size:14.5px;color:var(--ink)}
+  .tp-hit:last-child{border-bottom:0}
+  .tp-hit:hover,.tp-hit.on{background:var(--brand-wash)}
+  .tp-hit small{display:block;color:var(--muted);font-size:12.5px}
+  .tp-none{padding:12px 14px;color:var(--muted);font-size:14px}
+  .tp-chosen{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 0;padding:9px 12px;background:var(--brand-wash);
+    border:1px solid var(--brand);border-radius:var(--r)}
+  .tp-chosen[hidden]{display:none}
+  .tp-chosen button{margin-left:auto;appearance:none;border:0;background:none;cursor:pointer;color:var(--brand-dark);
+    text-decoration:underline;font-size:13.5px}
+
+  /* ---- the answer -------------------------------------------------------------- */
+  .tp-banner{border-radius:var(--r-card);padding:18px 22px;margin:0 0 16px;border:1.5px solid var(--line-firm);background:var(--card)}
+  .tp-banner.met{background:var(--brand-wash);border-color:var(--brand)}
+  .tp-banner.not_met{background:var(--note-wash);border-color:#f0d6a6}
+  .tp-banner.unknown{background:var(--surface-2)}
+  .tp-banner h3{margin:0 0 4px;font-size:20px}
+  .tp-banner p{margin:0;color:var(--ink-2);font-size:14.5px}
+  .tp-set{border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);padding:16px 20px;margin:0 0 6px;
+    border-left:5px solid var(--line-firm)}
+  .tp-set.met{border-left-color:var(--brand)}
+  .tp-set.not_met{border-left-color:var(--note)}
+  .tp-set h4{margin:0 0 6px;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .tp-state{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;padding:2px 10px;border-radius:999px;
+    white-space:nowrap}
+  .tp-state.met{background:var(--brand-wash);color:var(--brand-dark)}
+  .tp-state.not_met{background:var(--note-wash);color:#9a5d0b}
+  .tp-state.no_data,.tp-state.unknown{background:var(--line);color:var(--ink-2)}
+  .tp-res{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+  .tp-res:first-of-type{border-top:0}
+  .tp-res .tp-state{align-self:flex-start;margin-top:2px;min-width:78px;justify-content:center}
+  .tp-rt{font-size:15px;font-weight:600;line-height:1.35}
+  .tp-rt s{color:var(--muted);font-weight:400}
+  .tp-rr{font-size:13.5px;color:var(--ink-2);margin:2px 0 0}
+  .tp-rm2{font-size:12.5px;color:var(--muted);margin:2px 0 0}
+  .tp-notes{display:flex;flex-direction:column;gap:8px;margin:14px 0 0}
+  .tp-note{background:var(--note-wash);border:1px solid #f0d6a6;border-radius:var(--r);padding:9px 13px;font-size:14px;color:var(--ink-2)}
+  .tp-busy{color:var(--muted);padding:18px 0}
+
+  /* ---- alerts ------------------------------------------------------------------ */
+  .tp-alertbtn{margin-top:6px;font-size:13.5px}
+  .tp-sethead{margin:0 0 0 auto;font-size:14px;font-weight:600}              /* on a set's header, at the right */
+  .tp-alertform ul{margin:0 0 8px;padding-left:20px;font-size:14px;color:var(--ink-2)}
+  .tp-alertform{background:var(--surface);border:1px solid var(--line-firm);border-radius:var(--r);padding:12px 14px;margin:6px 0 10px}
+  .tp-alertform p{margin:0 0 8px;font-size:14px;color:var(--ink-2)}
+  .tp-alertform label{display:flex;gap:8px;align-items:flex-start;font-size:14px;cursor:pointer;margin:8px 0}
+  .tp-alertform label input{width:auto;margin-top:4px}
+  .tp-alertform .tp-actions{margin:10px 0 0}
+  .tp-alertform .tp-btn{padding:8px 16px;font-size:14px}
+  .tp-health{border-radius:var(--r-card);padding:14px 18px;margin:0 0 16px;border:1.5px solid var(--line-firm);background:var(--card);font-size:14.5px}
+  .tp-health.bad{background:var(--note-wash);border-color:#f0d6a6}
+  .tp-health b{display:block;font-size:15.5px;margin-bottom:2px}
+  .tp-health ul{margin:6px 0 0;padding-left:20px}
+  .tp-al{display:flex;gap:14px;justify-content:space-between;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+  .tp-al:first-child{border-top:0}
+  .tp-al .what{font-weight:600;font-size:15px;line-height:1.35}
+  .tp-al .meta{font-size:13px;color:var(--muted);margin-top:2px}
+  .tp-al .stat{margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tp-al button{flex:none}
+
+  /* ---- open your broker (only when the plan's conditions are met) ----------- */
+  .tp-act{border:1.5px solid var(--brand);background:var(--brand-wash);border-radius:var(--r-card);padding:18px 22px;margin:16px 0 6px}
+  .tp-act h3{margin:0 0 4px;font-size:18px}
+  .tp-act p{margin:0 0 8px;font-size:14.5px;color:var(--ink-2);max-width:78ch}
+  .tp-sym{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:14.5px;margin:10px 0 0}
+  .tp-bks{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  .tp-bk{appearance:none;cursor:pointer;border:1.5px solid var(--line-firm);background:var(--card);border-radius:999px;
+    padding:7px 16px;font-size:14.5px;font-weight:600;color:var(--ink)}
+  .tp-bk:hover{border-color:var(--brand)}
+  .tp-bk[aria-pressed=true]{border-color:var(--brand);background:var(--brand);color:#fff}
+  a.tp-btn,a.tp-btn:visited{display:inline-block;text-decoration:none;color:#fff}
+  .tp-act .tp-fine{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+  .tp-bkform{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:6px 0 4px}
+  .tp-bkform > div{flex:1 1 220px;min-width:0}
+  .tp-bkform label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin:0 0 4px}
+  .tp-bkform input{width:100%}
+  .tp-act-setup{border-color:var(--line-firm);background:var(--card);margin:16px 0 0}
+  .tp-act-setup h3{font-size:16px}
+  .tp-act-test{border-style:dashed}
+  .tp-bkhint{margin:14px 0 0}
+
+  .tp-tbl{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 0}
+  .tp-tbl th,.tp-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  .tp-tbl th{font-size:12.5px;color:var(--muted);font-weight:600}
+  .tp-tbl td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .tp-scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <p class="eyebrow">Trade plan</p>
+  <h1>Write your plan once, check it any time</h1>
+  <p class="note">Say what you trade, on which time frames, and which conditions you look for &mdash; for
+    example hourly MACD and daily RSI, joined with AND or OR. Then pick a stock and see which of your
+    conditions are met.</p>
+
+  <div id="tpLock"></div>
+
+  <div id="tpApp" hidden>
+    <div class="tp-tabs" role="tablist" id="tpTabs">
+      <button type="button" class="tp-tab" role="tab" data-tab="plans" aria-selected="true">My plans<span class="tp-badge" id="tpCount">0</span></button>
+      <button type="button" class="tp-tab" role="tab" data-tab="build" aria-selected="false">Build a plan</button>
+      <button type="button" class="tp-tab" role="tab" data-tab="check" aria-selected="false">Check a plan</button>
+      <button type="button" class="tp-tab" role="tab" data-tab="alerts" aria-selected="false">Alerts<span class="tp-badge" id="tpAlertCount">0</span></button>
+      <button type="button" class="tp-tab" role="tab" data-tab="requests" aria-selected="false">Request an indicator</button>
+    </div>
+
+    <p class="tp-ok" id="tpToast" role="status" aria-live="polite" hidden></p>
+
+    <!-- ====== MY PLANS ====== -->
+    <section class="tp-pane" data-pane="plans">
+      <div id="tpPlanList"></div>
+      <div class="tp-card" id="tpExamples">
+        <h3>Start from an example</h3>
+        <p class="tp-sub">These are only starting points to show how a plan is put together. Change anything.</p>
+        <div class="tp-ex" id="tpExGrid"></div>
+      </div>
+    </section>
+
+    <!-- ====== BUILD ====== -->
+    <section class="tp-pane" data-pane="build" hidden>
+      <div class="tp-card">
+        <h3 id="tpBuildTitle">Your plan</h3>
+        <div class="tp-row" style="margin-top:12px">
+          <div class="tp-field" style="flex:2 1 260px">
+            <label for="tpName">Name</label>
+            <input type="text" id="tpName" maxlength="80" placeholder="e.g. Hourly MACD with daily RSI" autocomplete="off">
+          </div>
+          <div class="tp-field">
+            <label for="tpInstr">Instrument</label>
+            <select id="tpInstr"></select>
+          </div>
+          <div class="tp-field" id="tpLabelBox" hidden>
+            <label for="tpInstrLabel">Name the instrument</label>
+            <input type="text" id="tpInstrLabel" maxlength="60" placeholder="e.g. USD/INR" autocomplete="off">
+          </div>
+        </div>
+        <p class="tp-hint" id="tpCover"></p>
+
+        <div class="tp-row" style="margin-top:16px">
+          <div class="tp-field" style="flex:2 1 300px">
+            <span class="tp-lab" id="tpDirLab">This plan is written for a</span>
+            <div class="tp-seg" role="group" aria-labelledby="tpDirLab" id="tpDir">
+              <button type="button" class="tp-segb" data-dir="bullish" aria-pressed="true">Bullish view<small>Conditions you want to see when you expect a rise</small></button>
+              <button type="button" class="tp-segb" data-dir="bearish" aria-pressed="false">Bearish view<small>Conditions you want to see when you expect a fall</small></button>
+            </div>
+          </div>
+          <div class="tp-field">
+            <label for="tpTradeTf">I trade on</label>
+            <select id="tpTradeTf"></select>
+          </div>
+        </div>
+        <p class="tp-hint">Checking the plan for the <em>other</em> view turns every condition round
+          (RSI above 50 becomes RSI below 50), so one plan can serve both.</p>
+
+        <div style="margin-top:14px">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:14.5px;cursor:pointer">
+            <input type="checkbox" id="tpClosed" style="width:auto;margin-top:4px">
+            <span>Use closed candles only<br><span class="tp-sub">Leaves out a weekly, monthly or intraday candle that is still forming, and reads the one before it.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="tp-card">
+        <h3>Your conditions</h3>
+        <p class="tp-sub">Each condition has its own time frame. Join them with <b>AND</b> (both must hold) or <b>OR</b>
+          (either will do). AND is applied before OR, so <em>A and B or C</em> means &ldquo;(A and B) or C&rdquo;.</p>
+        <div id="tpConds" style="margin-top:14px"></div>
+        <button type="button" class="tp-add" id="tpAdd">+ Add a condition</button>
+        <p class="tp-ask">Not in the list? <button type="button" class="tp-link" id="tpAskInd">Request an indicator</button>
+          &mdash; for example Ichimoku Cloud or Stochastic.</p>
+      </div>
+
+      <div class="tp-card">
+        <h3>How your plan reads</h3>
+        <div id="tpPreview"><p class="tp-sub">Add a condition to see it here.</p></div>
+        <div class="tp-field" style="margin-top:14px">
+          <label for="tpNotes">Notes to yourself (optional)</label>
+          <textarea id="tpNotes" maxlength="500" placeholder="Anything you want to remember about this plan"></textarea>
+        </div>
+        <div class="tp-actions">
+          <button type="button" class="tp-btn" id="tpSave" disabled>Save plan</button>
+          <button type="button" class="tp-btn quiet" id="tpSaveCheck" disabled>Save and check it</button>
+          <button type="button" class="tp-btn quiet" id="tpCheckDraft" disabled>Check without saving</button>
+          <button type="button" class="tp-link" id="tpCancel">Cancel</button>
+        </div>
+        <p class="tp-err" id="tpBuildErr" role="alert" hidden></p>
+      </div>
+    </section>
+
+    <!-- ====== CHECK ====== -->
+    <section class="tp-pane" data-pane="check" hidden>
+      <div class="tp-card">
+        <h3>Check a plan</h3>
+        <p class="tp-sub">Pick a plan, the stock, and how you see it. We read the latest candles and tell you which of your
+          conditions are met.</p>
+        <div class="tp-row" style="margin-top:12px">
+          <div class="tp-field" style="flex:2 1 260px">
+            <label for="tpChkPlan">Plan</label>
+            <select id="tpChkPlan"></select>
+          </div>
+        </div>
+        <div id="tpChkStockBox" style="margin-top:14px">
+          <label class="tp-lab" for="tpSeek">Stock</label>
+          <div class="tp-pick">
+            <input type="text" id="tpSeek" autocomplete="off" spellcheck="false" placeholder="Search by company name or symbol, e.g. Infosys"
+                   role="combobox" aria-expanded="false" aria-controls="tpHits" aria-autocomplete="list">
+            <div class="tp-hits" id="tpHits" role="listbox" hidden></div>
+          </div>
+          <div class="tp-chosen" id="tpChosen" hidden></div>
+        </div>
+        <p class="tp-hint" id="tpChkInst" hidden></p>
+        <div style="margin-top:16px">
+          <span class="tp-lab" id="tpViewLab">How do you see it?</span>
+          <div class="tp-seg" role="group" aria-labelledby="tpViewLab" id="tpView">
+            <button type="button" class="tp-segb" data-view="bullish" aria-pressed="false">I am bullish<small>I think the price is more likely to go up</small></button>
+            <button type="button" class="tp-segb" data-view="bearish" aria-pressed="false">I am bearish<small>I think the price is more likely to go down</small></button>
+          </div>
+        </div>
+        <div class="tp-actions">
+          <button type="button" class="tp-btn" id="tpRun" disabled>Check my plan</button>
+          <span class="tp-sub" id="tpRunHint" role="status"></span>
+        </div>
+      </div>
+      <div class="tp-act tp-act-setup" id="tpBrokerCard"></div>
+      <div id="tpResult" aria-live="polite"></div>
+    </section>
+
+    <!-- ====== ALERTS ====== -->
+    <section class="tp-pane" data-pane="alerts" hidden>
+      <div id="tpAlertStatus"></div>
+      <div class="tp-card">
+        <h3>Your alerts</h3>
+        <p class="tp-sub">An alert watches one condition, or a whole plan, on a stock, and emails you <b>once</b> the first time
+          it is met. Set one from the <b>Check a plan</b> tab, on any condition that is not met yet.</p>
+        <div id="tpAlertList" style="margin-top:12px"><p class="tp-sub">Nothing yet.</p></div>
+      </div>
+    </section>
+
+    <!-- ====== REQUESTS ====== -->
+    <section class="tp-pane" data-pane="requests" hidden>
+      <div class="tp-card">
+        <h3>Request an indicator</h3>
+        <p class="tp-sub">Use an indicator that is not in the list &mdash; Ichimoku Cloud, Stochastic, VWAP, anything? Tell us.
+          We count how many people ask for each one, and that decides what we add next.</p>
+        <div class="tp-row" style="margin-top:12px">
+          <div class="tp-field" style="flex:2 1 260px">
+            <label for="tpReqName">Indicator</label>
+            <input type="text" id="tpReqName" maxlength="80" placeholder="e.g. Ichimoku Cloud" autocomplete="off">
+          </div>
+          <div class="tp-field">
+            <label for="tpReqTf">Time frame you use it on (optional)</label>
+            <select id="tpReqTf"></select>
+          </div>
+        </div>
+        <div class="tp-field" style="margin-top:12px">
+          <label for="tpReqDetails">How do you use it? (optional)</label>
+          <textarea id="tpReqDetails" maxlength="500" placeholder="The settings you use and what you look for, e.g. 9, 26, 52 and price above the cloud"></textarea>
+        </div>
+        <div class="tp-actions">
+          <button type="button" class="tp-btn" id="tpReqGo">Send request</button>
+        </div>
+        <p class="tp-ok" id="tpReqMsg" role="status" aria-live="polite" hidden></p>
+      </div>
+      <div class="tp-card">
+        <h3>What you have asked for</h3>
+        <div id="tpMine"><p class="tp-sub">Nothing yet.</p></div>
+      </div>
+      <div class="tp-card" id="tpAdminBox" hidden>
+        <h3>What everyone has asked for</h3>
+        <p class="tp-sub">Administrators only. Most-asked first.</p>
+        <div id="tpAdminReq"></div>
+      </div>
+    </section>
+  </div>
+
+  <p class="foot">These are your own conditions, checked against the latest candles we hold. &ldquo;Met&rdquo; and
+    &ldquo;not met&rdquo; describe the conditions, not what to do: this is not a recommendation to buy, sell or hold
+    anything, and an indicator describes the price so far &mdash; it does not predict what comes next. Educational
+    content only, not investment advice. FinChaya is not currently registered with SEBI as an Investment Adviser or
+    Research Analyst.</p>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const money = v => v == null ? "" : "₹" + Number(v).toLocaleString("en-IN", {maximumFractionDigits: 2});
+
+let ACCESS = null, CAT = null, PLANS = [], DRAFT = null, PLANS_FAIL = null;   // PLANS_FAIL: why the saved plans could not be loaded
+let ALERTS = [], ALERT_INFO = null, LAST_CHECK = null, ALERT_FAIL = null;   // ALERT_FAIL: why the alerts could not be loaded or saved
+let TAB = "plans";
+const CHECK = {planId: null, useDraft: false, stock: null, view: null};
+let previewSeq = 0, previewTimer = null;
+const MARK = {met: "✓", not_met: "✕", no_data: "?", unknown: "?"};
+const STATE_WORD = {met: "Met", not_met: "Not met", no_data: "No data yet", unknown: "Can't tell"};
+
+/* ---- small helpers ------------------------------------------------------ */
+const clone = o => JSON.parse(JSON.stringify(o));
+const indOf = k => CAT.indicators.find(i => i.key === k);
+const testOf = (ind, k) => ind && ind.tests.find(t => t.key === k);
+const tfLabel = k => (CAT.timeframes.find(t => t.key === k) || {}).label || k;
+const instOf = k => CAT.instruments.find(i => i.key === k);
+const defaults = list => { const o = {}; (list || []).forEach(p => { o[p.name] = p.default; }); return o; };
+const num = v => (v === "" || v == null) ? null : Number(v);
+function say(msg, bad) {
+  const el = $("tpToast");
+  el.textContent = msg; el.hidden = !msg;
+  el.className = bad ? "tp-err" : "tp-ok";
+  clearTimeout(say.t);
+  if (msg) say.t = setTimeout(() => { el.hidden = true; }, 6000);
+}
+async function api(path, opts) {
+  const r = await fetch("/api/tradeplan" + path, opts);
+  let body = null;
+  try { body = await r.json(); } catch (e) { /* not JSON */ }
+  if (r.status === 401 || r.status === 403) { relock(); throw new Error("access"); }
+  if (!r.ok) throw new Error((body && body.detail) || "Something went wrong (" + r.status + "). Try again in a moment.");
+  return body;
+}
+const post = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+
+/* ---- gate: the server decides; this only avoids showing a dead page --------- */
+function lock(a) {
+  $("tpApp").hidden = true;
+  const host = $("tpLock");
+  let title, body, btn = "";
+  if (a && a.enabled === false) {
+    title = "Trade plan is switched off"; body = "It is not available at the moment.";
+  } else if (!a || !a.signed_in) {
+    title = "Sign in to use trade plans";
+    body = "Trade plans are saved against your account.";
+    btn = '<p class="fc-lock-act"><button type="button" class="fc-authb" id="tpSign">Sign in</button></p>';
+  } else {
+    title = "Trade plan is not open yet";
+    body = "It is available to " + esc(a.who || "administrators") + " for now.";
+  }
+  host.innerHTML = '<div class="fc-lock"><h3>' + esc(title) + "</h3><p>" + body + "</p>" + btn + "</div>";
+  const b = $("tpSign");
+  if (b) b.addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+}
+async function relock() {
+  try { lock(await (await fetch("/api/tradeplan/access")).json()); } catch (e) { lock({}); }
+}
+
+/* ---- tabs ------------------------------------------------------------------ */
+function showTab(name) {
+  if (name === "build" && !DRAFT) { startBuild(null); return; }      // the Build tab opened straight from the tab bar: give it a plan to edit
+  TAB = name;
+  document.querySelectorAll(".tp-tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll(".tp-pane").forEach(p => { p.hidden = p.dataset.pane !== name; });
+  if (name === "check") renderCheck();
+  if (name === "requests") loadRequests();
+  if (name === "alerts") loadAlerts();
+  try { history.replaceState(null, "", "#" + name); } catch (e) { /* ignore */ }
+  window.scrollTo({top: 0});
+}
+
+/* ======================= MY PLANS ======================================== */
+function planMeta(r) {                                 // r = a row from /plans: {plan, description, ...}
+  const p = r.plan;
+  const inst = instOf(p.instrument) || {label: p.instrument};
+  const label = p.instrument === "other" ? (p.instrument_label || "Other") : inst.label.replace(/ \(.*\)$/, "");
+  return {label, tfs: (r.description && r.description.timeframes) || []};
+}
+function renderPlans() {
+  $("tpCount").textContent = PLANS.length;
+  const host = $("tpPlanList");
+  if (PLANS_FAIL) {                                    // say why, in words, instead of a list that looks empty or a page that does nothing
+    host.innerHTML = `<div class="tp-card"><h3>Your plans could not be loaded</h3>
+      <p class="tp-err">${esc(PLANS_FAIL)}</p>
+      <p class="tp-sub">You can still write a plan and check it against a stock without saving it.</p>
+      <div class="tp-actions"><button type="button" class="tp-btn" id="tpFirst">Build a plan</button></div></div>`;
+    $("tpFirst").addEventListener("click", () => startBuild(null));
+    return;
+  }
+  if (!PLANS.length) {
+    host.innerHTML = `<div class="tp-card"><h3>No plans yet</h3>
+      <p class="tp-sub">A plan is a checklist you write once: the conditions you look for before you act.</p>
+      <div class="tp-actions"><button type="button" class="tp-btn" id="tpFirst">Build your first plan</button></div></div>`;
+    $("tpFirst").addEventListener("click", () => startBuild(null));
+    return;
+  }
+  host.innerHTML = '<div class="tp-actions" style="margin:0 0 14px"><button type="button" class="tp-btn" id="tpNew">New plan</button></div>' +
+    PLANS.map(r => {
+      const p = r.plan, m = planMeta(r);
+      return `<div class="tp-card tp-plan" data-id="${r.plan_id}">
+        <h3>${esc(p.name)} <span class="tp-tag">${esc(m.label)}</span>
+          <span class="tp-tag dir">${esc(p.direction)} view</span>
+          <span class="tp-tag">trades on ${esc(tfLabel(p.trade_tf))}</span></h3>
+        ${r.ok ? `<p class="tp-psay">${esc(r.description.sentence)}</p>
+          <p class="tp-sub" style="margin-top:6px">Time frames used: ${esc(m.tfs.join(", "))}${p.closed_only ? " &middot; closed candles only" : ""}</p>`
+          : `<p class="tp-err">This plan can no longer be read: ${esc(r.problem)} Edit it, or delete it.</p>`}
+        ${p.notes ? `<p class="tp-sub" style="margin-top:6px">Notes: ${esc(p.notes)}</p>` : ""}
+        <div class="tp-pbtns">
+          <button type="button" class="tp-btn" data-act="check"${r.ok ? "" : " disabled"}>Check it</button>
+          <button type="button" class="tp-btn quiet" data-act="edit">Edit</button>
+          <button type="button" class="tp-btn quiet" data-act="copy">Duplicate</button>
+          <button type="button" class="tp-btn quiet" data-act="del">Delete</button>
+        </div></div>`;
+    }).join("");
+  $("tpNew").addEventListener("click", () => startBuild(null));
+  host.querySelectorAll(".tp-plan").forEach(card => {
+    const id = Number(card.dataset.id);
+    card.addEventListener("click", e => {
+      const act = e.target.closest("[data-act]");
+      if (!act) return;
+      const r = PLANS.find(x => x.plan_id === id);
+      if (act.dataset.act === "check") { CHECK.planId = id; CHECK.useDraft = false; CHECK.stock = null; CHECK.view = null; showTab("check"); }
+      if (act.dataset.act === "edit") startBuild(r);
+      if (act.dataset.act === "copy") { const c = clone(r.plan); c.name = (c.name + " (copy)").slice(0, 80); startBuild({plan: c, plan_id: null}); }
+      if (act.dataset.act === "del") removePlan(r);
+    });
+  });
+}
+async function removePlan(r) {
+  if (!confirm("Delete “" + r.plan.name + "”? This cannot be undone.")) return;
+  try { await post("/plans/" + r.plan_id + "/delete"); await loadPlans(); say("Plan deleted."); }
+  catch (e) { if (e.message !== "access") say(e.message, true); }
+}
+async function loadPlans() {
+  try {
+    const d = await api("/plans");
+    PLANS = d.plans || []; PLANS_FAIL = null;
+  } catch (e) {
+    if (e.message === "access") throw e;
+    PLANS = []; PLANS_FAIL = e.message;                // the page stays alive: building and checking a draft need no saved plan
+  }
+  renderPlans();
+  fillCheckPlans();
+}
+
+const EXAMPLES = [
+  {title: "Hourly MACD with daily RSI", text: "MACD on the hourly chart above its signal line, and RSI on the daily chart above 50.",
+   plan: {name: "Hourly MACD with daily RSI", instrument: "stock", direction: "bullish", trade_tf: "1h", conditions: [
+     {tf: "1h", indicator: "macd", test: "above_signal", join: "and"},
+     {tf: "D", indicator: "rsi", test: "above", inputs: {level: 50}, join: "and"}]}},
+  {title: "Weekly trend, daily trigger", text: "Weekly Supertrend pointing up, and the daily MACD crossing above its signal line.",
+   plan: {name: "Weekly trend, daily trigger", instrument: "stock", direction: "bullish", trade_tf: "D", conditions: [
+     {tf: "W", indicator: "supertrend", test: "up", join: "and"},
+     {tf: "D", indicator: "macd", test: "cross_up", inputs: {bars: 3}, join: "and"}]}},
+  {title: "Profitable and growing, in an uptrend", text: "The company made a profit and it is higher than a year ago, the monthly MACD is rising, and the price has made a higher low — "
+    + "company figures and charts in one plan. Check it in Check your view.",
+   plan: {name: "Profitable and growing", instrument: "stock", direction: "bullish", trade_tf: "D", conditions: [
+     {tf: "R", indicator: "profit", test: "profit_q", join: "and"},
+     {tf: "R", indicator: "profit", test: "up_yoy", inputs: {pct: 0}, join: "and"},
+     {tf: "M", indicator: "macd", test: "rising", join: "and"},
+     {tf: "D", indicator: "dow", test: "higher_low", params: {swing: 2}, inputs: {bars: 5}, join: "and"}]}},
+  {title: "Reasonable price, strong business", text: "P/E below 25, return on equity above 15%, debt to equity below 1 and the promoters hold more than 40%.",
+   plan: {name: "Reasonable price, strong business", instrument: "stock", direction: "bullish", trade_tf: "D", conditions: [
+     {tf: "R", indicator: "pe", test: "below", inputs: {level: 25}, join: "and"},
+     {tf: "R", indicator: "roe", test: "above", inputs: {level: 15}, join: "and"},
+     {tf: "R", indicator: "de", test: "below", inputs: {level: 1}, join: "and"},
+     {tf: "R", indicator: "promoter", test: "above", inputs: {level: 40}, join: "and"}]}},
+  {title: "Either of two setups", text: "A breakout on rising volume, OR the 5 EMA crossing above the 50 EMA — shows how AND and OR combine.",
+   plan: {name: "Either of two setups", instrument: "stock", direction: "bullish", trade_tf: "D", conditions: [
+     {tf: "D", indicator: "breakout", test: "above_high", join: "and"},
+     {tf: "D", indicator: "volume", test: "above_avg", join: "and"},
+     {tf: "D", indicator: "ema_cross", test: "cross_up", inputs: {bars: 3}, join: "or"}]}},
+];
+function renderExamples() {
+  $("tpExGrid").innerHTML = EXAMPLES.map((e, i) =>
+    `<button type="button" class="tp-exb" data-i="${i}"><b>${esc(e.title)}</b><span>${esc(e.text)}</span></button>`).join("");
+  $("tpExGrid").querySelectorAll(".tp-exb").forEach(b => b.addEventListener("click", () => {
+    const e = EXAMPLES[Number(b.dataset.i)];
+    const p = fullPlan(clone(e.plan));
+    startBuild({plan: p, plan_id: null});
+  }));
+}
+
+/* ======================= BUILD ===================================== */
+function defaultCond(tf, join) {
+  const ind = CAT.indicators[0], t = ind.tests[0];
+  return {tf: tf || "D", indicator: ind.key, params: defaults(ind.params), test: t.key, inputs: defaults(t.inputs), join: join || "and"};
+}
+// A plan from an example or a copy, with every default filled in, so the form shows real numbers.
+function fullPlan(p) {
+  p.notes = p.notes || ""; p.closed_only = !!p.closed_only; p.instrument_label = p.instrument_label || "";
+  p.direction = p.direction || "bullish"; p.trade_tf = p.trade_tf || "D"; p.instrument = p.instrument || "stock";
+  p.conditions = (p.conditions || []).map(c => {
+    const ind = indOf(c.indicator) || CAT.indicators[0], t = testOf(ind, c.test) || ind.tests[0];
+    return {tf: c.tf || "D", indicator: ind.key, test: t.key, join: c.join || "and",
+            params: Object.assign(defaults(ind.params), c.params || {}),
+            inputs: Object.assign(defaults(t.inputs), c.inputs || {})};
+  });
+  return p;
+}
+function startBuild(r) {
+  if (r && r.plan) {
+    DRAFT = fullPlan(clone(r.plan));
+    DRAFT.plan_id = r.plan_id == null ? null : r.plan_id;
+  } else {
+    DRAFT = fullPlan({name: "", conditions: [defaultCond("D")]});
+    DRAFT.plan_id = null;
+  }
+  showTab("build");
+  paintBuilder();
+}
+function paintBuilder() {
+  $("tpBuildTitle").textContent = DRAFT.plan_id ? "Edit your plan" : "Your plan";
+  $("tpName").value = DRAFT.name;
+  $("tpInstr").innerHTML = CAT.instruments.map(i => `<option value="${i.key}">${esc(i.label)}</option>`).join("");
+  $("tpInstr").value = DRAFT.instrument;
+  $("tpInstrLabel").value = DRAFT.instrument_label || "";
+  $("tpTradeTf").innerHTML = CAT.timeframes.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join("");
+  $("tpTradeTf").value = DRAFT.trade_tf;
+  $("tpClosed").checked = DRAFT.closed_only;
+  $("tpNotes").value = DRAFT.notes || "";
+  paintDir(); paintInstr(); paintConds(); schedulePreview(true);
+}
+function paintDir() {
+  document.querySelectorAll("#tpDir .tp-segb").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.dir === DRAFT.direction)));
+}
+function paintInstr() {
+  const inst = instOf(DRAFT.instrument);
+  $("tpLabelBox").hidden = DRAFT.instrument !== "other";
+  const held = CAT.timeframes.filter(t => !inst.coverage[t.key]).map(t => t.label.toLowerCase());
+  const andList = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  let msg;
+  if (held.length) {
+    msg = "We hold " + andList(held) + " candles for " + (inst.kind === "stock" ? "stocks" : inst.label) +
+      ". Other time frames can be part of the plan but will read “no data yet” until we hold them.";
+  } else {
+    msg = "We do not hold price candles for " + (inst.kind === "other" ? "this instrument" : inst.label) +
+      " yet. You can still write and save the plan; every condition will read “no data yet” until we do.";
+  }
+  $("tpCover").textContent = msg;
+}
+
+const CHIPS = {rsi: {level: [30, 40, 50, 60, 70]}, adx: {level: [15, 20, 25, 30, 40]}};
+function inputHtml(pm, value, kind, i) {
+  const step = pm.type === "int" ? 1 : "any";
+  return `<div><label>${esc(pm.label)}</label>
+    <input type="number" step="${step}" min="${pm.min}" max="${pm.max}" value="${value == null ? "" : value}"
+      data-i="${i}" data-${kind}="${esc(pm.name)}" aria-label="${esc(pm.label)}"></div>`;
+}
+function condHtml(c, i) {
+  const ind = indOf(c.indicator), t = testOf(ind, c.test);
+  const groups = {};
+  CAT.indicators.forEach(x => { (groups[x.group] = groups[x.group] || []).push(x); });
+  const indOpts = Object.keys(groups).map(g => `<optgroup label="${esc(g)}">` +
+    groups[g].map(x => `<option value="${x.key}"${x.key === c.indicator ? " selected" : ""}>${esc(x.label)}</option>`).join("") + "</optgroup>").join("");
+  // A company's profit, ratios or shareholding are read from its filings, not from candles, so they have no time frame to choose: the box says "Company data".
+  const isCo = ind.data === "company";
+  const tfOpts = isCo ? `<option value="${CAT.company_timeframe.key}" selected>${esc(CAT.company_timeframe.label)}</option>`
+    : CAT.timeframes.map(x => `<option value="${x.key}"${x.key === c.tf ? " selected" : ""}>${esc(x.label)}</option>`).join("");
+  const testOpts = ind.tests.map(x => {
+    const short = x.short.replace(/\{(\w+)(?::g)?\}/g, "($1)");
+    return `<option value="${x.key}"${x.key === c.test ? " selected" : ""}>${esc(short)}</option>`;
+  }).join("");
+  const chips = ((CHIPS[ind.key] || {}).level && t.inputs.some(p => p.name === "level"))
+    ? `<div class="tp-chips" aria-label="Common levels">${CHIPS[ind.key].level.map(v => `<button type="button" class="tp-chip" data-i="${i}" data-chip="${v}">${v}</button>`).join("")}</div>` : "";
+  const hasNums = ind.params.length || t.inputs.length;
+  return `<div class="tp-cond" data-i="${i}">
+    <div class="tp-ctop"><span class="tp-cn">Condition ${i + 1}</span>
+      ${DRAFT.conditions.length > 1 ? `<button type="button" class="tp-rm" data-rm="${i}">Remove</button>` : ""}</div>
+    <div class="tp-grid">
+      <div><label>Time frame</label><select data-i="${i}" data-f="tf" aria-label="Time frame of condition ${i + 1}"${isCo ? " disabled" : ""}>${tfOpts}</select></div>
+      <div><label>Indicator</label><select data-i="${i}" data-f="indicator" aria-label="Indicator of condition ${i + 1}">${indOpts}</select></div>
+      <div class="tp-wide"><label>Check that it</label><select data-i="${i}" data-f="test" aria-label="Test of condition ${i + 1}">${testOpts}</select></div>
+      ${hasNums ? `<div class="tp-wide"><div class="tp-nums">
+        ${ind.params.map(pm => inputHtml(pm, c.params[pm.name], "p", i)).join("")}
+        ${t.inputs.map(pm => inputHtml(pm, c.inputs[pm.name], "in", i)).join("")}</div>${chips}</div>` : ""}
+    </div>
+    <p class="tp-says" id="tpSays${i}"></p></div>`;
+}
+function paintConds() {
+  const host = $("tpConds");
+  host.innerHTML = DRAFT.conditions.map((c, i) => (i === 0 ? "" : `<div class="tp-join" role="group" aria-label="How condition ${i + 1} joins the one before">
+      <button type="button" class="tp-jb" data-i="${i}" data-join="and" aria-pressed="${c.join !== "or"}">AND</button><button type="button" class="tp-jb" data-i="${i}" data-join="or" aria-pressed="${c.join === "or"}">OR</button></div>`) + condHtml(c, i)).join("");
+  $("tpAdd").hidden = DRAFT.conditions.length >= CAT.limits.max_conditions;
+}
+
+// Events on the conditions are delegated: the list is redrawn when its shape changes (indicator, test, join,
+// add, remove) but NOT on every keystroke, so a number being typed never loses focus.
+function onCondChange(e) {
+  const el = e.target, i = Number(el.dataset.i);
+  const c = DRAFT.conditions[i];
+  if (!c) return;
+  if (el.dataset.f === "tf") { c.tf = el.value; schedulePreview(); return; }
+  if (el.dataset.f === "indicator") {
+    const ind = indOf(el.value);
+    c.indicator = ind.key; c.params = defaults(ind.params); c.test = ind.tests[0].key; c.inputs = defaults(ind.tests[0].inputs);
+    // company figures have no time frame of their own; coming back to a chart indicator, go back to a real one
+    if (ind.data === "company") c.tf = CAT.company_timeframe.key;
+    else if (c.tf === CAT.company_timeframe.key) c.tf = CAT.timeframes.some(t => t.key === DRAFT.trade_tf) ? DRAFT.trade_tf : "D";
+    paintConds(); schedulePreview(); return;
+  }
+  if (el.dataset.f === "test") {
+    const t = testOf(indOf(c.indicator), el.value);
+    c.test = t.key; c.inputs = defaults(t.inputs);
+    paintConds(); schedulePreview(); return;
+  }
+  if (el.dataset.p) { c.params[el.dataset.p] = num(el.value); schedulePreview(); return; }
+  if (el.dataset.in) { c.inputs[el.dataset.in] = num(el.value); schedulePreview(); return; }
+}
+function onCondClick(e) {
+  const rm = e.target.closest("[data-rm]");
+  if (rm) { DRAFT.conditions.splice(Number(rm.dataset.rm), 1); DRAFT.conditions[0].join = "and"; paintConds(); schedulePreview(); return; }
+  const jb = e.target.closest("[data-join]");
+  if (jb) { DRAFT.conditions[Number(jb.dataset.i)].join = jb.dataset.join; paintConds(); schedulePreview(); return; }
+  const chip = e.target.closest("[data-chip]");
+  if (chip) {
+    const i = Number(chip.dataset.i), c = DRAFT.conditions[i];
+    c.inputs.level = Number(chip.dataset.chip);
+    const inp = document.querySelector(`input[data-i="${i}"][data-in="level"]`);
+    if (inp) inp.value = chip.dataset.chip;
+    schedulePreview();
+  }
+}
+
+function payload() {
+  const p = clone(DRAFT);
+  delete p.plan_id;
+  if (p.instrument !== "other") p.instrument_label = null;
+  return p;
+}
+function schedulePreview(now) {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, now ? 0 : 250);
+}
+async function refreshPreview() {
+  const my = ++previewSeq;
+  let d;
+  try { d = await post("/describe", payload()); } catch (e) { return; }
+  if (my !== previewSeq) return;                       // a newer edit has answered
+  const host = $("tpPreview");
+  const ok = !!d.ok;
+  const named = DRAFT.name.trim().length > 0;
+  $("tpSave").disabled = !(ok && named);
+  $("tpSaveCheck").disabled = !(ok && named);
+  $("tpCheckDraft").disabled = !ok;
+  DRAFT.conditions.forEach((c, i) => {
+    const el = $("tpSays" + i);
+    if (el) el.textContent = ok ? d.description.conditions[i] : "";
+  });
+  if (!ok) {
+    host.innerHTML = '<p class="tp-err">' + esc(d.error) + "</p>";
+    return;
+  }
+  const ds = d.description;
+  let html = `<p class="tp-sub">${ds.sets.length > 1 ? "Any one of these sets will do. Inside a set, every condition must hold." : (ds.sets[0].indices.length > 1 ? "All of these must hold." : "This one condition.")}</p><ul class="tp-sets">` +
+    ds.sets.map((s, k) => `${k ? '<li class="tp-or" style="background:none;border:0;padding:0"><b style="color:var(--muted)">or</b></li>' : ""}<li><b>${ds.sets.length > 1 ? "Set " + (k + 1) : "Your condition" + (s.indices.length > 1 ? "s" : "")}</b>${esc(s.text)}</li>`).join("") + "</ul>";
+  html += `<p class="tp-sub" style="margin-top:8px">Time frames used: ${esc(ds.timeframes.join(", "))}.</p>`;
+  if (ds.missing && ds.missing.length) {
+    html += '<div class="tp-warn"><b>Not available to check yet:</b> ' + ds.missing.map(m => esc(m.label) + " (" + esc(m.reason) + ")").join(" ") +
+      ' You can still save the plan; those conditions will read “no data yet”. <button type="button" class="tp-link" id="tpAskData">Ask us for this data</button></div>';
+  }
+  host.innerHTML = html;
+  const ask = $("tpAskData");
+  if (ask) ask.addEventListener("click", () => askData(ds.missing[0].tf, instLabel(DRAFT)));
+}
+function instLabel(p) {
+  return p.instrument === "other" ? (p.instrument_label || "other instrument") : (instOf(p.instrument) || {}).label.replace(/ \(.*\)$/, "");
+}
+async function askData(tf, label) {
+  try {
+    const d = await post("/requests", {kind: "data", name: tfLabel(tf) + " candles for " + label, timeframe: tf, instrument: label});
+    say(d.message || "Noted.");
+  } catch (e) { if (e.message !== "access") say(e.message, true); }
+}
+
+async function savePlan(thenCheck) {
+  $("tpBuildErr").hidden = true;
+  const body = payload();
+  if (DRAFT.plan_id) body.plan_id = DRAFT.plan_id;
+  $("tpSave").disabled = $("tpSaveCheck").disabled = true;
+  try {
+    const d = await post("/plans", body);
+    await loadPlans();
+    const saved = d.plan;
+    if (thenCheck) { CHECK.planId = saved.plan_id; CHECK.useDraft = false; CHECK.stock = null; CHECK.view = null; showTab("check"); }
+    else { showTab("plans"); }
+    say("Plan saved.");
+  } catch (e) {
+    if (e.message !== "access") { $("tpBuildErr").textContent = e.message; $("tpBuildErr").hidden = false; }
+    schedulePreview(true);
+  }
+}
+
+/* ======================= CHECK ===================================== */
+function fillCheckPlans() {
+  const sel = $("tpChkPlan");
+  if (!sel) return;
+  let opts = PLANS.filter(r => r.ok).map(r => `<option value="${r.plan_id}">${esc(r.plan.name)}</option>`);
+  if (CHECK.useDraft && DRAFT) opts.unshift('<option value="draft">' + esc((DRAFT.name || "Untitled plan") + " (not saved)") + "</option>");
+  sel.innerHTML = opts.length ? opts.join("") : '<option value="">You have no plans yet</option>';
+  if (CHECK.useDraft) sel.value = "draft";
+  else if (CHECK.planId != null && PLANS.some(r => r.plan_id === CHECK.planId)) sel.value = String(CHECK.planId);
+  else if (opts.length) { const v = sel.value; if (v !== "draft") CHECK.planId = Number(v) || null; }
+}
+function checkPlan() {
+  if (CHECK.useDraft && DRAFT) return DRAFT;
+  const r = PLANS.find(x => x.plan_id === CHECK.planId);
+  return r ? r.plan : null;
+}
+function renderCheck() {
+  fillCheckPlans();
+  const p = checkPlan();
+  const isStock = !p || p.instrument === "stock";
+  $("tpChkStockBox").hidden = !isStock;
+  const info = $("tpChkInst");
+  info.hidden = isStock || !p;
+  if (p && !isStock) info.textContent = "This plan is for " + instLabel(p) + ", so there is no stock to choose.";
+  if (p && CHECK.view == null) CHECK.view = p.direction;
+  document.querySelectorAll("#tpView .tp-segb").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.view === CHECK.view)));
+  paintChosen();
+  refreshRun();
+  repaintBrokers();
+}
+function paintChosen() {
+  const box = $("tpChosen");
+  if (!CHECK.stock) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<b>${esc(CHECK.stock.company_name)}</b><span class="tp-sub">${esc(CHECK.stock.symbol)}</span><button type="button" id="tpChange">Change</button>`;
+  $("tpChange").addEventListener("click", () => { CHECK.stock = null; paintChosen(); refreshRun(); $("tpSeek").focus(); });
+}
+function refreshRun() {
+  const p = checkPlan();
+  const needStock = p && p.instrument === "stock";
+  const ok = !!p && !!CHECK.view && (!needStock || !!CHECK.stock);
+  $("tpRun").disabled = !ok;
+  $("tpRunHint").textContent = !p ? "Choose a plan." : (needStock && !CHECK.stock) ? "Choose a stock." : !CHECK.view ? "Say how you see it." : "";
+}
+
+let seekTimer = null, seekSeq = 0, hits = [], hitOn = -1;
+function closeHits() { $("tpHits").hidden = true; $("tpSeek").setAttribute("aria-expanded", "false"); hits = []; hitOn = -1; }
+function pickStock(s) {
+  CHECK.stock = {isin: s.isin, symbol: s.symbol, company_name: s.company_name};
+  closeHits(); $("tpSeek").value = ""; paintChosen(); refreshRun();
+}
+async function seek(q) {
+  const my = ++seekSeq;
+  const box = $("tpHits");
+  try {
+    const r = await fetch("/api/stocks?limit=8&search=" + encodeURIComponent(q));
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    if (my !== seekSeq) return;
+    hits = d.stocks || []; hitOn = -1;
+    box.innerHTML = hits.length ? hits.map((s, i) => `<button type="button" class="tp-hit" role="option" data-i="${i}"><span>${esc(s.company_name)}<small>${esc(s.symbol)}</small></span><span>${s.close_price != null ? money(s.close_price) : ""}</span></button>`).join("")
+      : `<div class="tp-none">No stock matches “${esc(q)}”.</div>`;
+    box.querySelectorAll(".tp-hit").forEach(b => b.addEventListener("click", () => pickStock(hits[Number(b.dataset.i)])));
+    box.hidden = false; $("tpSeek").setAttribute("aria-expanded", "true");
+  } catch (e) {
+    if (my !== seekSeq) return;
+    box.hidden = false; box.innerHTML = '<div class="tp-none">Could not search just now. Try again in a moment.</div>';
+  }
+}
+
+async function runCheck() {
+  const p = checkPlan();
+  if (!p || !CHECK.view) return;
+  const body = {view: CHECK.view};
+  if (CHECK.useDraft) { body.plan = payloadOf(p); } else { body.plan_id = CHECK.planId; }
+  if (p.instrument === "stock") body.isin = CHECK.stock.isin;
+  const out = $("tpResult");
+  out.innerHTML = '<p class="tp-busy">Reading the candles&hellip;</p>';
+  $("tpRun").disabled = true;
+  try {
+    const d = await post("/check", body);
+    LAST_CHECK = {body, d};                              // what an alert set from this result is made from
+    renderResult(d);
+  } catch (e) {
+    out.innerHTML = e.message === "access" ? "" : '<p class="tp-err">' + esc(e.message) + "</p>";
+  } finally { refreshRun(); }
+}
+function payloadOf(p) { const x = clone(p); delete x.plan_id; if (x.instrument !== "other") x.instrument_label = null; return x; }
+
+function overallText(d) {
+  const o = d.overall, multi = d.sets.length > 1;
+  if (o.state === "met") return multi ? "At least one of your sets is fully met." : o.total > 1 ? "All of your conditions are met." : "Your condition is met.";
+  if (o.state === "not_met") return multi ? "None of your sets is fully met." : o.total > 1 ? "Your conditions are not all met." : "Your condition is not met.";
+  return "We cannot tell yet: some conditions have no data, and the rest do not settle it.";
+}
+function resRow(c) {
+  const mirrored = c.written && c.written !== c.text;
+  return `<div class="tp-res"><span class="tp-state ${c.state}"><span aria-hidden="true">${MARK[c.state]}</span> ${STATE_WORD[c.state]}</span>
+    <div><div class="tp-rt">${esc(c.text)}</div>
+      ${mirrored ? `<div class="tp-rm2">Your plan says: <s>${esc(c.written)}</s></div>` : ""}
+      ${c.state === "no_data" ? `<div class="tp-rr">${esc(c.reason || "No data.")}</div>` : `<div class="tp-rr">${esc(c.reading || "")}</div>`}
+      ${c.as_of ? `<div class="tp-rm2">Read on the ${esc(c.tf_label.toLowerCase())} candle of ${esc(c.as_of)}${c.forming ? " &middot; candle still forming" : ""}</div>` : ""}
+      ${c.state === "not_met" ? `<button type="button" class="tp-link tp-alertbtn" data-idx="${c.index}">Alert me when this is met</button>` : ""}
+    </div></div>`;
+}
+/* ---- open your broker -----------------------------------------------------------------------------
+   A PLAIN LINK, and nothing more. No order is placed or prefilled, no login is handled, no referral code is added,
+   and nothing records which broker is opened: the link has no click handler and no ping. Whether the broker then
+   shows its terminal or its own sign-in depends on whether THIS browser already holds that broker's session -- the
+   broker's business, and not something this page can see or change. The person's choice (and the address of a broker
+   they name themselves) is kept in this browser only; the server never learns which broker anyone uses. */
+const BK_KEY = "fc_tp_broker";
+let BROKER = null, BK_LOADED = false;                   // {key, other?: {name, url}}
+function bkLoad() {
+  try {
+    const v = JSON.parse(localStorage.getItem(BK_KEY) || "null");
+    if (!v || typeof v.key !== "string") return null;
+    const out = {key: v.key};
+    const o = v.other;
+    if (o && typeof o.name === "string" && typeof o.url === "string" && /^https:\/\/[A-Za-z0-9.\-]+\/[^\s<>"']*$/.test(o.url))
+      out.other = {name: o.name.slice(0, 40), url: o.url};
+    if (out.key === "other") return out.other ? out : null;
+    return (CAT.brokers || []).some(b => b.key === out.key) ? out : null;
+  } catch (e) { return null; }
+}
+function bkGet() { if (!BK_LOADED) { BROKER = bkLoad(); BK_LOADED = true; } return BROKER; }
+function bkSave() {
+  try {
+    if (BROKER) localStorage.setItem(BK_KEY, JSON.stringify({key: BROKER.key, other: BROKER.other}));
+    else localStorage.removeItem(BK_KEY);
+  } catch (e) { /* private mode: it just will not be remembered */ }
+}
+/* the broker this person has linked, as {name, url}, or null */
+function bkLinked() {
+  const b = bkGet();
+  if (!b) return null;
+  if (b.key === "other") return b.other ? {name: b.other.name, url: b.other.url} : null;
+  const hit = (CAT.brokers || []).find(x => x.key === b.key);
+  return hit ? {name: hit.name, url: hit.url} : null;
+}
+
+/* Two places show the broker: the "Your broker" card on the Check a plan tab (always there, so the broker can be linked
+   before anything is checked) and, only when a plan's conditions are all met, the "Open your broker's terminal" card
+   inside the result. Both paint from the same saved choice, and a change in one repaints the other. */
+function brokerCardHtml(d) {
+  if (d.overall.state === "met") return '<div class="tp-act" id="tpAct"></div>';
+  if (ACCESS && ACCESS.admin) return '<div class="tp-act tp-act-test" id="tpAct"></div>';      // administrators can try the link before a plan is met
+  return '<p class="tp-sub tp-bkhint" id="tpBkHint"></p>';
+}
+function paintBrokerHint() {
+  const host = $("tpBkHint");
+  if (!host) return;
+  const cur = bkLinked();
+  host.innerHTML = cur
+    ? `Your broker: <b>${esc(cur.name)}</b>. A button to open its terminal appears here once all your conditions are met.`
+    : 'Want a shortcut to your broker when your conditions are met? <button type="button" class="tp-link" id="tpBkJump">Link your broker</button>';
+  const j = $("tpBkJump");
+  if (j) j.addEventListener("click", () => {
+    const card = $("tpBrokerCard");
+    card.scrollIntoView({behavior: "smooth", block: "center"});
+    const first = card.querySelector(".tp-bk");
+    if (first) first.focus({preventScroll: true});
+  });
+}
+function repaintBrokers() {
+  paintBrokerInto($("tpBrokerCard"), null, "setup");
+  const act = $("tpAct");
+  if (act && LAST_CHECK && LAST_CHECK.d) paintBrokerInto(act, LAST_CHECK.d, LAST_CHECK.d.overall.state === "met" ? "met" : "test");
+  paintBrokerHint();
+}
+function paintBrokerInto(host, d, mode) {
+  if (!host) return;
+  bkGet();
+  const px = host.id;                                   // keeps the field ids unique when both cards are on the page
+  const list = (CAT.brokers || []);
+  const cur = BROKER && BROKER.key !== "other" ? list.find(b => b.key === BROKER.key) : null;
+  const other = BROKER && BROKER.key === "other" ? BROKER.other : null;
+  const editing = host.dataset.editing === "1";
+  const sym = mode !== "setup" && d && d.stock ? d.stock.symbol : null;
+  const what = d && d.stock ? `<b>${esc(d.stock.symbol)}</b> (${esc(d.stock.name)}), NSE` : d ? `<b>${esc(d.plan.instrument_label)}</b>` : "";
+  const pills = list.map(b => `<button type="button" class="tp-bk" data-bk="${esc(b.key)}" aria-pressed="${!!cur && cur.key === b.key}">${esc(b.name)}</button>`).join("") +
+    `<button type="button" class="tp-bk" data-bk="other" aria-pressed="${!!BROKER && BROKER.key === "other"}">Other broker</button>`;
+  const link = (name, url) => `<a class="tp-btn tp-bkopen" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open ${esc(name)} terminal</a>`;
+  let action = "";
+  if (cur) {
+    action = `${link(cur.name, cur.url)}${mode === "setup" ? '<button type="button" class="tp-link tp-bkunlink" style="margin-left:12px">Remove my broker</button>' : ""}
+      <p class="tp-fine">If you are already signed in to ${esc(cur.name)} in this browser, it opens straight to your terminal. If not, ${esc(cur.name)} shows its own sign-in first. Most brokers sign you out every day, so you may need to sign in again. It opens in a new tab.</p>`;
+  } else if (BROKER && BROKER.key === "other") {
+    if (other && !editing) {
+      action = `${link(other.name, other.url)}
+        <button type="button" class="tp-link tp-bkchange" style="margin-left:12px">Change broker address</button>${mode === "setup" ? '<button type="button" class="tp-link tp-bkunlink" style="margin-left:12px">Remove my broker</button>' : ""}
+        <p class="tp-fine">If you are already signed in to ${esc(other.name)} in this browser, it should open straight to your terminal; if not, it shows its own sign-in. It opens in a new tab at ${esc(other.url)}</p>`;
+    } else {
+      action = `<div class="tp-bkform">
+          <div><label for="${px}Name">Broker's name</label><input type="text" class="tp-bkname" id="${px}Name" maxlength="40" autocomplete="off" value="${esc(other ? other.name : "")}" placeholder="e.g. Upstox"></div>
+          <div style="flex:2 1 320px"><label for="${px}Url">Address of your trading terminal</label><input type="text" class="tp-bkurl" id="${px}Url" autocomplete="off" spellcheck="false" value="${esc(other ? other.url : "")}" placeholder="https://… (the page you normally open to trade)"></div>
+          <div style="flex:0 0 auto"><button type="button" class="tp-btn tp-bksave">Save broker</button></div>
+        </div>
+        <p class="tp-fine">Paste the address you usually open to trade. Only the address itself is kept: anything after a ? or # is dropped, so a session token in a pasted link is never stored.</p>
+        <p class="tp-err tp-bkerr" role="alert" hidden></p>`;
+    }
+  } else {
+    action = '<p class="tp-fine" style="margin-top:0">Choose your broker to get a link to its terminal.</p>';
+  }
+  const head = mode !== "setup"
+    ? `<h3>Open your broker's terminal${mode === "test" ? " (test)" : ""}</h3>
+       <p>${mode === "test"
+         ? "Your plan's conditions are not all met, so this button would normally not be here. You see it because you are an administrator trying the broker link. Nothing is placed or prefilled."
+         : "Your plan's conditions are met. If you decide to act on your plan, your broker's own terminal is where you place the order. FinChaya does not place orders, never sees your broker login, and earns nothing from these links."}</p>
+       <div class="tp-sym"><span>Look up ${what} in the terminal.</span>${sym ? '<button type="button" class="tp-btn quiet tp-copysym" style="padding:6px 14px;font-size:13.5px">Copy symbol</button>' : ""}</div>`
+    : `<h3>Your broker</h3>
+       <p>Link your broker once. When all the conditions in a plan are met, the result shows a button that opens your broker's terminal, so you can decide there whether to act. FinChaya does not place orders and never sees your broker login.</p>`;
+  host.innerHTML = `${head}
+    <div class="tp-bks" role="group" aria-label="Your broker">${pills}</div>
+    ${action}
+    <p class="tp-fine">${esc(CAT.broker_disclosure || "")} Your choice is remembered in this browser only.</p>`;
+
+  host.querySelectorAll(".tp-bk").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.bk;
+    BROKER = Object.assign({key: k}, BROKER && BROKER.other ? {other: BROKER.other} : {});
+    host.dataset.editing = "0";
+    bkSave(); repaintBrokers();
+    if (k === "other" && !BROKER.other) { const n = host.querySelector(".tp-bkname"); if (n) n.focus(); }
+  }));
+  const copy = host.querySelector(".tp-copysym");
+  if (copy) copy.addEventListener("click", async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(sym); ok = true; } catch (e) {
+      try {                                             // older browsers, or no permission: select-and-copy
+        const t = document.createElement("textarea"); t.value = sym; t.style.position = "fixed"; t.style.opacity = "0";
+        document.body.appendChild(t); t.select(); ok = document.execCommand("copy"); t.remove();
+      } catch (e2) { ok = false; }
+    }
+    say(ok ? "Copied " + sym + "." : "Could not copy. The symbol is " + sym + ".", !ok);
+  });
+  const ch = host.querySelector(".tp-bkchange");
+  if (ch) ch.addEventListener("click", () => { host.dataset.editing = "1"; paintBrokerInto(host, d, mode); const n = host.querySelector(".tp-bkurl"); if (n) n.focus(); });
+  const un = host.querySelector(".tp-bkunlink");
+  if (un) un.addEventListener("click", () => { BROKER = null; host.dataset.editing = "0"; bkSave(); repaintBrokers(); say("Your broker was removed from this browser."); });
+  const sv = host.querySelector(".tp-bksave");
+  if (sv) sv.addEventListener("click", async () => {
+    const err = host.querySelector(".tp-bkerr");
+    err.hidden = true;
+    sv.disabled = true;
+    try {
+      const r = await post("/broker-link", {name: host.querySelector(".tp-bkname").value, url: host.querySelector(".tp-bkurl").value});
+      if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
+      BROKER = {key: "other", other: {name: r.name, url: r.url}};
+      host.dataset.editing = "0";
+      bkSave(); repaintBrokers();
+      if (r.notes && r.notes.length) say(r.notes.join(" "));
+    } catch (e) {
+      if (e.message !== "access") { err.textContent = e.message; err.hidden = false; }
+    } finally { sv.disabled = false; }
+  });
+}
+
+function renderResult(d) {
+  const out = $("tpResult");
+  const o = d.overall, multi = d.sets.length > 1;
+  const who = d.stock ? d.stock.name + " (" + d.stock.symbol + ")" : d.plan.instrument_label;
+  const counts = o.met + " of " + o.total + " condition" + (o.total === 1 ? "" : "s") + " met" +
+    (o.unknown ? ", " + o.unknown + " with no data yet" : "");
+  let html = `<div class="tp-banner ${o.state}"><h3>${esc(overallText(d))}</h3>
+    <p><b>${esc(d.plan.name)}</b> on ${esc(who)}, read for a ${esc(d.view)} view &mdash; ${esc(counts)}.</p>
+    ${o.state === "not_met" && multi ? '<button type="button" class="tp-link tp-alertbtn" data-idx="plan" style="margin-top:8px">Alert me when any of the sets is met</button>' : ""}</div>`;
+  html += d.sets.map((s, k) => {
+    const head = multi ? `Set ${k + 1}` : (s.indices.length > 1 ? "All of these must hold" : "Your condition");
+    return (k ? '<p class="tp-or">OR</p>' : "") + `<div class="tp-set ${s.state}"><h4>${head}
+      <span class="tp-state ${s.state === "unknown" ? "unknown" : s.state}">${s.state === "met" ? MARK.met + " Met" : s.state === "not_met" ? MARK.not_met + " Not met" : "? Can't tell"}</span>
+      ${s.state === "not_met" && s.indices.length > 1 ? `<button type="button" class="tp-link tp-alertbtn tp-sethead" data-idx="set:${k}">Alert me when all of these are met</button>` : ""}</h4>
+      ${s.indices.map(i => resRow(d.conditions[i])).join("")}</div>`;
+  }).join("");
+  html += brokerCardHtml(d);                             // only when the plan's conditions are met
+  if (d.missing_data && d.missing_data.length) {
+    html += '<div class="tp-notes"><div class="tp-note"><b>No candles for:</b> ' +
+      d.missing_data.map(m => esc(m.label) + " — " + esc(m.reason || "")).join("; ") +
+      ' <button type="button" class="tp-link" id="tpAskMissing">Ask us to add this data</button> <span id="tpAskMsg"></span></div></div>';
+  }
+  if (d.notes && d.notes.length) html += '<div class="tp-notes">' + d.notes.map(n => `<div class="tp-note">${esc(n)}</div>`).join("") + "</div>";
+  if (d.stock) {
+    html += `<p class="tp-sub" style="margin-top:14px"><a href="/viewcheck?isin=${encodeURIComponent(d.stock.isin)}&view=${encodeURIComponent(d.view)}">Open the full view check for ${esc(d.stock.symbol)}</a> &mdash; every chart reading and the company&rsquo;s results, not only your conditions.</p>`;
+  }
+  out.innerHTML = html;
+  repaintBrokers();
+  const ask = $("tpAskMissing");
+  if (ask) ask.addEventListener("click", async () => {
+    const m = d.missing_data[0];
+    try {
+      const r = await post("/requests", {kind: "data", name: m.label + " candles for " + d.plan.instrument_label, timeframe: m.tf, instrument: d.plan.instrument_label});
+      $("tpAskMsg").textContent = r.message || "Noted.";
+    } catch (e) { if (e.message !== "access") $("tpAskMsg").textContent = e.message; }
+  });
+  out.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+/* ======================= ALERTS ===================================== */
+// "Email me when this is met". The page never implies cover that does not exist: it asks the server whether email is
+// set up and whether the checker has run lately, and says so, in full weight, before and after an alert is set.
+let MY_EMAIL = null;
+function fmtWhen(s) {
+  if (!s) return "";
+  const t = String(s);
+  const d = new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(t) ? t.replace(" ", "T") : t.replace(" ", "T") + "Z");
+  return isNaN(d) ? t : d.toLocaleString("en-IN", {day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"});
+}
+function healthProblems(info) {
+  if (!info) return [];
+  const out = [];
+  if (!info.email.configured)
+    out.push("<b>Email is not set up on this server yet.</b> An alert is saved and will show here when it is met, but no email will be sent until email is set up." +
+      (info.email.why ? ' <span class="tp-sub">(' + esc(info.email.why) + ")</span>" : ""));
+  const ck = info.checker || {};
+  if (ck.known === false) out.push("<b>We could not tell whether alerts are being checked.</b> Try again in a moment.");
+  else if (ck.never_run) out.push("<b>The alert checker has not run yet.</b> Nothing is being watched yet. An alert you set is saved, and starts being checked once the checker runs.");
+  else if (ck.stale) out.push("<b>The alert checker last ran " + esc(fmtWhen(ck.last_run_at)) + ".</b> That is more than a day and a half ago, so alerts may be late.");
+  return out;
+}
+function healthHtml(info) {
+  if (!info) return "";
+  const probs = healthProblems(info);
+  if (probs.length)
+    return '<div class="tp-health bad" role="alert">' + probs.map(p => '<p style="margin:0 0 6px">' + p + "</p>").join("") + "</div>";
+  const ck = info.checker || {};
+  return `<div class="tp-health"><b>Alerts are being watched.</b> Last checked ${esc(fmtWhen(ck.last_run_at))}, and email is set up.</div>`;
+}
+
+function failHtml(msg) {
+  return '<div class="tp-health bad" role="alert"><p style="margin:0"><b>Alerts are not working right now.</b> ' + esc(msg) + "</p></div>";
+}
+function alertState(a) {
+  if (a.status === "paused") return {cls: "no_data", text: "Paused", more: a.note || ""};
+  if (a.status === "active")
+    return {cls: "unknown", text: "Watching", more: a.last_checked_at ? "Last looked at " + fmtWhen(a.last_checked_at) : "Not looked at yet"};
+  const max = (ALERT_INFO && ALERT_INFO.max_email_attempts) || 6;
+  const email = a.email_status === "sent" ? "Email sent " + fmtWhen(a.email_sent_at) + "."
+    : a.email_status === "failed" ? (a.email_attempts >= max ? "The email could not be sent." : "The email has not gone yet; we will keep trying.")
+    : "The email is waiting to be sent.";
+  return {cls: "met", text: "Met", more: "Met " + fmtWhen(a.triggered_at) + ". " + email, problem: a.email_status !== "sent"};
+}
+function renderAlerts() {
+  const active = ALERTS.filter(a => a.status === "active").length;
+  $("tpAlertCount").textContent = active;
+  $("tpAlertStatus").innerHTML = ALERT_FAIL ? failHtml(ALERT_FAIL) : healthHtml(ALERT_INFO);
+  const host = $("tpAlertList");
+  if (!ALERTS.length) { host.innerHTML = '<p class="tp-sub">Nothing yet.</p>'; return; }
+  host.innerHTML = ALERTS.map(a => {
+    const s = alertState(a);
+    const who = a.symbol ? (a.company_name ? a.company_name + " (" + a.symbol + ")" : a.symbol) : a.instrument;
+    const read = (a.reading || []).filter(r => r.reading).map(r => `<div class="meta">${esc(r.reading)}${r.as_of ? " &middot; " + esc(r.tf_label.toLowerCase()) + " candle of " + esc(r.as_of) : ""}</div>`).join("");
+    return `<div class="tp-al" data-id="${a.alert_id}"><div>
+        <div class="what">${esc(a.sentence)}</div>
+        <div class="meta">${esc(who)} &middot; read for a ${esc(a.for_view)} view &middot; plan &ldquo;${esc(a.plan_name)}&rdquo; &middot; ${a.scope === "plan" ? "whole plan" : a.scope === "set" ? "all of a set" : "one condition"} &middot; ${a.closed_only ? "waits for the candle to close" : "does not wait for the candle to close"} &middot; set ${esc(fmtDay(a.created_at))}</div>
+        <div class="stat"><span class="tp-state ${s.cls}">${s.cls === "met" ? MARK.met + " " : ""}${s.text}</span><span class="tp-sub"${s.problem ? ' style="color:#9a5d0b"' : ""}>${esc(s.more)}</span></div>
+        ${read}</div>
+      <button type="button" class="tp-btn quiet" data-del="${a.alert_id}" style="padding:7px 14px;font-size:13.5px">Remove</button></div>`;
+  }).join("");
+  host.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Remove this alert? You will not be emailed about it.")) return;
+    try { await post("/alerts/" + b.dataset.del + "/delete"); await loadAlerts(); say("Alert removed."); }
+    catch (e) { if (e.message !== "access") say(e.message, true); }
+  }));
+}
+async function loadAlerts(quiet) {
+  try {
+    const d = await api("/alerts");
+    ALERTS = d.alerts || [];
+    ALERT_FAIL = null;
+    ALERT_INFO = {email: d.email, checker: d.checker, max_alerts: d.max_alerts, max_email_attempts: d.max_email_attempts};
+    MY_EMAIL = d.my_email || MY_EMAIL;
+    renderAlerts();
+  } catch (e) {
+    if (e.message !== "access") { ALERT_FAIL = e.message; renderAlerts(); if (!quiet) say(e.message, true); }
+  }
+}
+
+async function openAlertForm(btn) {
+  if (!LAST_CHECK) return;
+  document.querySelectorAll(".tp-alertform").forEach(n => n.remove());
+  if (!ALERT_INFO || ALERT_FAIL) await loadAlerts(true);
+  const d = LAST_CHECK.d, idx = btn.dataset.idx;
+  const scope = idx === "plan" ? "plan" : idx.startsWith("set:") ? "set" : "condition";
+  const setNo = scope === "set" ? Number(idx.slice(4)) : null;
+  const text = scope === "plan" ? "any of the sets in your plan, “" + d.plan.name + "”, is met"
+    : scope === "set" ? "all of these hold at the same time" : d.conditions[Number(idx)].text;
+  const list = scope === "set" ? "<ul>" + d.sets[setNo].indices.map(i => "<li>" + esc(d.conditions[i].text) + "</li>").join("") + "</ul>" : "";
+  const who = d.stock ? d.stock.name + " (" + d.stock.symbol + ")" : d.plan.instrument_label;
+  const box = document.createElement("div");
+  box.className = "tp-alertform";
+  const probs = healthProblems(ALERT_INFO);
+  box.innerHTML = `<p><b>Email me when:</b> ${esc(text)}</p>${list}
+    <p>on ${esc(who)}. We will email <b>${esc(MY_EMAIL || "the address on your account")}</b> the first time it is met${scope === "set" ? ", which means every one of them holding together on the same look, not each having been true at some point" : ""} &mdash; one email, and then the alert is finished.</p>
+    ${ALERT_FAIL ? failHtml(ALERT_FAIL) : probs.length ? '<div class="tp-health bad" role="alert">' + probs.map(p => '<p style="margin:0 0 6px">' + p + "</p>").join("") + "</div>" : ""}
+    <label><input type="checkbox" id="tpAlClosed" checked><span>Wait for the candle to close<br><span class="tp-sub">A weekly or monthly candle that is still forming can meet a condition on Tuesday and not by Friday&rsquo;s close. Leave this ticked to be told only when it holds on a finished candle.</span></span></label>
+    <div class="tp-actions"><button type="button" class="tp-btn" id="tpAlCreate">Create alert</button><button type="button" class="tp-link" id="tpAlCancel">Cancel</button></div>
+    <p id="tpAlMsg" role="status" hidden></p>`;
+  (scope === "plan" ? btn.closest(".tp-banner") : scope === "set" ? btn.closest(".tp-set").querySelector("h4") : btn.closest(".tp-res")).after(box);
+  $("tpAlCancel").addEventListener("click", () => box.remove());
+  $("tpAlCreate").addEventListener("click", async () => {
+    const msg = $("tpAlMsg");
+    msg.hidden = true;
+    $("tpAlCreate").disabled = true;
+    const body = Object.assign({}, LAST_CHECK.body, {scope, closed_only: $("tpAlClosed").checked});
+    if (scope === "condition") body.index = Number(idx);
+    if (scope === "set") body.set = setNo;
+    try {
+      const r = await post("/alerts", body);
+      if (r.email) ALERT_INFO = Object.assign({}, ALERT_INFO, {email: r.email, checker: r.checker});
+      msg.className = "tp-ok";
+      msg.innerHTML = "<b>&#10003; " + esc(r.already ? r.message : "Alert saved. It is now on your Alerts tab, and we will email you the first time it is met.") + "</b>" +
+        ' <button type="button" class="tp-link" id="tpAlSee">See your alerts</button>';
+      msg.hidden = false;
+      $("tpAlSee").addEventListener("click", () => showTab("alerts"));
+      box.querySelector(".tp-actions").hidden = true;
+      btn.textContent = "Alert set";
+      btn.disabled = true;
+      await loadAlerts(true);
+    } catch (e) {
+      if (e.message !== "access") { msg.className = "tp-err"; msg.textContent = "The alert was NOT saved. " + e.message; msg.hidden = false; }
+      $("tpAlCreate").disabled = false;
+    }
+  });
+}
+
+/* ======================= REQUESTS ================================== */
+function fmtDay(s) {
+  if (!s) return "";
+  const d = new Date(String(s).replace(" ", "T"));
+  return isNaN(d) ? String(s).slice(0, 10) : d.toLocaleDateString("en-IN", {day: "numeric", month: "short", year: "numeric"});
+}
+async function loadRequests() {
+  try {
+    const d = await api("/requests/mine");
+    const rows = d.requests || [];
+    $("tpMine").innerHTML = rows.length
+      ? '<div class="tp-scroll"><table class="tp-tbl"><thead><tr><th>What</th><th>Kind</th><th>Status</th><th>Asked</th></tr></thead><tbody>' +
+        rows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.kind === "data" ? "Data" : "Indicator"}</td><td>${esc(r.status)}</td><td>${esc(fmtDay(r.created_at))}</td></tr>`).join("") + "</tbody></table></div>"
+      : '<p class="tp-sub">Nothing yet.</p>';
+  } catch (e) { /* the gate handled it */ }
+  if (ACCESS && ACCESS.admin) {
+    $("tpAdminBox").hidden = false;
+    try {
+      const d = await api("/requests");
+      const rows = d.requests || [];
+      $("tpAdminReq").innerHTML = rows.length
+        ? '<div class="tp-scroll"><table class="tp-tbl"><thead><tr><th class="n">People</th><th>What</th><th>Kind</th><th>Time frames</th><th>Details</th><th>Latest</th></tr></thead><tbody>' +
+          rows.map(r => `<tr><td class="n"><b>${r.people}</b></td><td>${esc(r.name)}</td><td>${r.kind === "data" ? "Data" : "Indicator"}</td><td>${esc((r.timeframes || []).map(tfLabel).join(", "))}</td><td>${esc((r.details || []).join(" | "))}</td><td>${esc(fmtDay(r.latest))}</td></tr>`).join("") + "</tbody></table></div>"
+        : '<p class="tp-sub">No requests yet.</p>';
+    } catch (e) { /* ignore */ }
+  }
+}
+async function sendRequest() {
+  const msg = $("tpReqMsg");
+  msg.hidden = true;
+  const name = $("tpReqName").value.trim();
+  if (name.length < 2) { msg.textContent = "Type the name of the indicator you need."; msg.className = "tp-err"; msg.hidden = false; return; }
+  $("tpReqGo").disabled = true;
+  try {
+    const d = await post("/requests", {kind: "indicator", name, details: $("tpReqDetails").value.trim(), timeframe: $("tpReqTf").value || null});
+    msg.textContent = d.message || "Thank you."; msg.className = "tp-ok"; msg.hidden = false;
+    if (d.ok && !d.exists && !d.already) { $("tpReqName").value = ""; $("tpReqDetails").value = ""; }
+    loadRequests();
+  } catch (e) {
+    if (e.message !== "access") { msg.textContent = e.message; msg.className = "tp-err"; msg.hidden = false; }
+  } finally { $("tpReqGo").disabled = false; }
+}
+
+/* ======================= START ===================================== */
+function wire() {
+  document.querySelectorAll(".tp-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+  $("tpName").addEventListener("input", e => { DRAFT.name = e.target.value; schedulePreview(); });
+  $("tpInstr").addEventListener("change", e => { DRAFT.instrument = e.target.value; paintInstr(); schedulePreview(); });
+  $("tpInstrLabel").addEventListener("input", e => { DRAFT.instrument_label = e.target.value; schedulePreview(); });
+  $("tpTradeTf").addEventListener("change", e => { DRAFT.trade_tf = e.target.value; });
+  $("tpClosed").addEventListener("change", e => { DRAFT.closed_only = e.target.checked; });
+  $("tpNotes").addEventListener("input", e => { DRAFT.notes = e.target.value; });
+  document.querySelectorAll("#tpDir .tp-segb").forEach(b => b.addEventListener("click", () => { DRAFT.direction = b.dataset.dir; paintDir(); }));
+  $("tpConds").addEventListener("change", onCondChange);
+  $("tpConds").addEventListener("input", e => { if (e.target.matches("input")) onCondChange(e); });
+  $("tpConds").addEventListener("click", onCondClick);
+  $("tpAdd").addEventListener("click", () => {
+    DRAFT.conditions.push(defaultCond(DRAFT.trade_tf, "and")); paintConds(); schedulePreview();
+  });
+  $("tpAskInd").addEventListener("click", () => { showTab("requests"); $("tpReqName").focus(); });
+  $("tpSave").addEventListener("click", () => savePlan(false));
+  $("tpSaveCheck").addEventListener("click", () => savePlan(true));
+  $("tpCheckDraft").addEventListener("click", () => { CHECK.useDraft = true; CHECK.planId = null; CHECK.stock = null; CHECK.view = DRAFT.direction; showTab("check"); });
+  $("tpCancel").addEventListener("click", () => showTab("plans"));
+
+  $("tpChkPlan").addEventListener("change", e => {
+    if (e.target.value === "draft") { CHECK.useDraft = true; CHECK.planId = null; }
+    else { CHECK.useDraft = false; CHECK.planId = Number(e.target.value) || null; }
+    CHECK.view = null; $("tpResult").innerHTML = ""; renderCheck();
+  });
+  document.querySelectorAll("#tpView .tp-segb").forEach(b => b.addEventListener("click", () => { CHECK.view = b.dataset.view; renderCheck(); }));
+  const inp = $("tpSeek");
+  inp.addEventListener("input", () => {
+    clearTimeout(seekTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) { seekSeq++; closeHits(); return; }
+    seekTimer = setTimeout(() => seek(q), 200);
+  });
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeHits(); return; }
+    if (!hits.length) return;
+    const els = $("tpHits").querySelectorAll(".tp-hit");
+    const mark = () => { els.forEach((x, k) => x.classList.toggle("on", k === hitOn)); if (els[hitOn]) els[hitOn].scrollIntoView({block: "nearest"}); };
+    if (e.key === "ArrowDown") { e.preventDefault(); hitOn = Math.min(hits.length - 1, hitOn + 1); mark(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); hitOn = Math.max(0, hitOn - 1); mark(); }
+    else if (e.key === "Enter") { e.preventDefault(); pickStock(hits[hitOn >= 0 ? hitOn : 0]); }
+  });
+  document.addEventListener("click", e => { if (!e.target.closest(".tp-pick")) closeHits(); });
+  $("tpRun").addEventListener("click", runCheck);
+  $("tpResult").addEventListener("click", e => { const b = e.target.closest(".tp-alertbtn"); if (b && !b.disabled) openAlertForm(b); });
+
+  $("tpReqGo").addEventListener("click", sendRequest);
+  $("tpReqTf").innerHTML = '<option value="">Any / not sure</option>' + CAT.timeframes.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join("");
+}
+
+async function boot() {
+  let a;
+  try { a = await (await fetch("/api/tradeplan/access")).json(); } catch (e) { lock({}); return; }
+  ACCESS = a;
+  MY_EMAIL = a.email || null;
+  if (!a.allowed) { lock(a); return; }
+  try { CAT = await api("/catalog"); }
+  catch (e) {
+    if (e.message !== "access") {
+      $("tpApp").hidden = true;
+      $("tpLock").innerHTML = '<div class="fc-lock"><h3>Trade plan could not start</h3><p>' + esc(e.message) +
+        " Reload the page in a minute; if it keeps happening, tell us.</p></div>";
+    }
+    return;
+  }
+  $("tpLock").innerHTML = "";
+  $("tpApp").hidden = false;
+  wire();
+  renderExamples();
+  try { await loadPlans(); } catch (e) { return; }       // only a lost sign-in gets here: loadPlans reports every other failure on the page
+  loadAlerts(true);                                     // for the tab's count; quiet if it fails
+  const want = (location.hash || "").replace("#", "");
+  showTab(["plans", "requests", "alerts"].includes(want) ? want : "plans");     // build and check need state, so a link cannot open them
+}
+// finchaya.js is deferred and adds the site header; this page needs nothing from it to decide who may see what.
+boot();
+</script>
+</body>
+</html>

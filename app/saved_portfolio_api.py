@@ -31,6 +31,7 @@ THE SHAPE, AND WHY
     this same feature.
 """
 
+import math
 import os
 from collections import defaultdict
 from bisect import bisect_right
@@ -339,6 +340,7 @@ class AddFunds(BaseModel):
 
 
 INVEST_MODES = ("lumpsum", "sip")
+MAX_AMOUNT = 1e11            # 10,000 crore rupees: far beyond any portfolio here, and small enough that no sum or return overflows
 
 
 def _clean_invest(f):
@@ -355,7 +357,7 @@ def _clean_invest(f):
 
     if on is None and mode is None and amt is None:
         return None
-    if on is None or mode not in INVEST_MODES or amt is None or amt <= 0:
+    if on is None or mode not in INVEST_MODES or amt is None or not (0 < amt <= MAX_AMOUNT):
         return False
     try:
         d = date.fromisoformat(on)
@@ -399,6 +401,13 @@ def create_portfolio(body: CreatePortfolio, request: Request):
             raise HTTPException(
                 400, f"That is more than {MAX_PORTFOLIOS} portfolios. "
                      "Delete one first.")
+
+        # A portfolio can be filed only under one of THIS person's own clients. Without the check anybody could file one under
+        # somebody else's client id, and it then showed up in that distributor's client view.
+        if body.client_id is not None and not _q(
+                cur, "SELECT 1 AS ok FROM client WHERE client_id = %(c)s AND owner_user_id = %(uid)s",
+                {"c": body.client_id, "uid": user_id}, one=True):
+            raise HTTPException(404, "No such client.")
 
         row = _q(cur, """
             INSERT INTO portfolio (owner_user_id, client_id, name)
@@ -557,7 +566,7 @@ def get_portfolio(portfolio_id: int, request: Request):
             # scores, so it goes when scores are switched off. Absent here
             # is "not shown", which the page treats like "no portfolio
             # loaded" -- it draws nothing.
-            "split": splits.get(code) if _scores_on() else None,
+            "split": splits.get(code) if _scores_on(request) else None,
             "holdings_as_of": dates.get(code),
         })
 
@@ -577,7 +586,7 @@ def get_portfolio(portfolio_id: int, request: Request):
         "can_lookthrough": complete,
         # So the page can drop the rising / sideways / falling column
         # without waiting on anything else to learn that scores are off.
-        "scores_enabled": _scores_on(),
+        "scores_enabled": _scores_on(request),
         # Funds disclose on their own schedule. Showing the spread lets the
         # page say so instead of implying one snapshot date.
         "holdings_dates": sorted({f["holdings_as_of"] for f in funds
@@ -594,9 +603,9 @@ def add_funds(portfolio_id: int, body: AddFunds, request: Request):
         raise HTTPException(400, "No funds sent.")
 
     for f in body.funds:
-        if f.amount is not None and f.amount <= 0:
+        if f.amount is not None and not (0 < f.amount <= MAX_AMOUNT):      # also refuses NaN, which compares false both ways
             raise HTTPException(
-                400, f"Amount for {f.scheme_code} must be more than zero.")
+                400, f"Amount for {f.scheme_code} must be more than zero and no more than {MAX_AMOUNT:,.0f}.")
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         _owned(cur, portfolio_id, user_id)
@@ -1249,24 +1258,64 @@ def get_goal(portfolio_id: int, request: Request):
             "progress": _progress(g, valued)}
 
 
+def _goal_date(value, what):
+    """An ISO date, or a 400 in words. The text goes into SQL as a date: a bad one used to be a 500."""
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except ValueError:
+        raise HTTPException(400, f"{what} must be a date like 2036-01-01.")
+
+
+def _goal_money(value, what, *, allow_zero=False):
+    """A finite amount between 0 and MAX_AMOUNT. NaN and Infinity are accepted by the JSON reader and compare false both ways,
+    so they used to slip past every `<= 0` check and fail later in the database."""
+    ok = value is not None and math.isfinite(value) and (0 <= value if allow_zero else 0 < value) and value <= MAX_AMOUNT
+    if not ok:
+        raise HTTPException(400, f"{what} must be {'zero or more' if allow_zero else 'more than zero'} and no more than {MAX_AMOUNT:,.0f}.")
+
+
 @router.put("/{portfolio_id}/goal")
 def put_goal(portfolio_id: int, body: GoalIn, request: Request):
     user_id = _user_id(request)
-    if body.target_amount <= 0:
-        raise HTTPException(400, "The target has to be more than zero.")
+    _goal_money(body.target_amount, "The target")
+    for v, what in ((body.sip_amount, "The monthly amount"), (body.lumpsum_amount, "The lump sum")):
+        _goal_money(v, what, allow_zero=True)
     if body.sip_amount <= 0 and body.lumpsum_amount <= 0:
         raise HTTPException(400, "Enter a monthly amount, a lump sum, or both.")
+    today = date.today()
+    target = _goal_date(body.target_date, "The target date")
+    # A date that has already passed is NOT refused: the page re-saves a goal whose date has gone by when somebody only updates its
+    # valuation, and that has to keep working. Only a date that cannot mean anything is.
+    if target.year < 1993:
+        raise HTTPException(400, "The target date has to be after 1992.")
+    if target > today + timedelta(days=366 * 60):
+        raise HTTPException(400, "The target date can be at most 60 years away.")
+    if body.started_on:
+        started = _goal_date(body.started_on, "The start date")
+        if started > target or started.year < 1993:
+            raise HTTPException(400, "The start date has to be after 1992 and before the target date.")
     if (body.current_value is None) != (body.valued_on is None):
         # The check constraint enforces this too; catching it here gives a
         # sentence instead of a database error.
         raise HTTPException(400, "A current value needs the date it was true.")
+    if body.current_value is not None:
+        _goal_money(body.current_value, "The current value", allow_zero=True)
+        if _goal_date(body.valued_on, "The valuation date") > today:
+            raise HTTPException(400, "The valuation date cannot be in the future.")
     if body.income_mode is not None and body.income_mode not in ("keep", "spend"):
         raise HTTPException(400, "income_mode is 'keep' or 'spend'.")
+    if body.income_amount is not None:
+        _goal_money(body.income_amount, "The income", allow_zero=True)
+    if body.draw_years is not None and not 0 <= body.draw_years <= 60:
+        raise HTTPException(400, "The number of years to spend the capital over has to be between 1 and 60.")
     if body.income_mode == "spend" and not (body.draw_years or 0) > 0:
         # Drawing down over no years is not a plan, and stored that way it
         # would come back as an income lasting zero months.
         raise HTTPException(400, "Spending the capital down needs a number "
                                  "of years to spend it over.")
+    for text, what in ((body.purpose, "The purpose"), (body.risk_band, "The risk band")):
+        if text is not None and len(text) > 60:
+            raise HTTPException(400, f"{what} can be up to 60 characters.")
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         _owned(cur, portfolio_id, user_id)
@@ -1478,7 +1527,7 @@ def lookthrough_saved(portfolio_id: int, request: Request,
     # no plan is still priced on the one they hold.
     default_plan = "REGULAR" if p.get("client_id") else "DIRECT"
 
-    return _lookthrough(LookthroughRequest(
+    return _lookthrough(request=request, req=LookthroughRequest(
         holdings=[Holding(
             key=str(h["scheme_code"]),
             amount=float(h["amount"]) if h["amount"] is not None else None,
@@ -1587,15 +1636,16 @@ ALERT_RULES = [
         "needs": "mf_fund_trend", "window": 4,
     },
     {
-        "key": "behind_benchmark", "group": "Returns since you invested",
-        "name": "A fund falls behind its own benchmark",
-        "what": "Since the day you invested, the fund has returned less "
-                "than the index it is measured against.",
-        "why": "A fund behind its own index handed you less than simply "
-               "buying that index would have -- over your holding period, "
-               "not over a calendar window you were not invested for.",
+        "key": "behind_benchmark", "group": "How the funds are doing",
+        "name": "A fund trails its benchmark three month ends in a row",
+        "what": "At each of the last three month ends, the fund's return over "
+                "the year was lower than the index it is measured against.",
+        "why": "One month behind is noise. Three month ends in a row is a "
+               "pattern worth knowing about. Measured on month-end figures, "
+               "so it can only change once a month.",
         "unit": None, "default": None,
         "needs": "mf_nav", "window": 1,
+        "live": True, "on_by_default": True,
     },
     {
         "key": "below_category", "group": "Returns since you invested",
@@ -1609,26 +1659,35 @@ ALERT_RULES = [
         "needs": "mf_nav", "window": 1,
     },
     {
-        "key": "rank_slip", "group": "Returns since you invested",
-        "name": "A fund drops out of the better half of its category",
-        "what": "Its placing among funds doing the same job falls below "
-                "halfway, having been above it when you invested.",
-        "why": "Slower to move than a single month's return, and harder to "
-               "explain away as a bad patch for the whole category.",
-        "unit": None, "default": None,
-        "needs": "mf_returns", "window": 1,
+        "key": "rank_slip", "group": "How the funds are doing",
+        "name": "A fund falls down its category three month ends in a row",
+        "what": "At each of the last three month ends, the fund was in this "
+                "quarter of its category, or lower, on 1-year return. The "
+                "category is every fund doing the same job, in the same kind "
+                "of plan (Direct against Direct, Regular against Regular).",
+        "why": "The category is the fairer yardstick when a whole segment has "
+               "a bad patch: it asks whether this fund is doing worse than "
+               "the others doing the same job. 1 is the top quarter, 4 the "
+               "bottom; the default of 3 means the lower half.",
+        "unit": "quarter", "default": 3, "min": 2, "max": 4, "integer": True,
+        "pre": "Tell me when a fund is in quarter", "post": "or lower (1 = top, 4 = bottom)",
+        "needs": "mf_nav", "window": 1,
+        "live": True, "on_by_default": True,
     },
     {
-        "key": "overlap_high", "group": "The portfolio as a whole",
-        "name": "Two funds start holding the same companies",
-        "what": "Any two funds you hold overlap by more than this much of "
-                "their weight, having been below it when you invested.",
+        "key": "overlap_high", "group": "Is the plan still diversified",
+        "name": "Two funds hold more of the same companies than your line",
+        "what": "Any two funds in this plan hold more than this share of the "
+                "same companies, measured on the latest portfolios both have "
+                "published (the same way the Plan page measures it).",
         "why": "Two funds that overlap this much do less for spreading risk "
                "than two names suggest. Managers drift towards each other "
                "without telling anyone, which is why this is worth watching "
                "rather than checking once.",
-        "unit": "% overlap", "default": 50, "min": 25, "max": 90,
+        "unit": "% overlap", "default": 50, "min": 25, "max": 90, "integer": True,
+        "pre": "Tell me when any two funds overlap by more than", "post": "% of their holdings",
         "needs": "mf_holding", "window": 1,
+        "live": True, "on_by_default": True,
     },
     {
         "key": "mix_drift", "group": "The portfolio as a whole",
@@ -1665,22 +1724,74 @@ ALERT_RULES = [
     },
 ]
 
+# Email is the only way anything is sent (mailer.py). WhatsApp and push were
+# listed before delivery existed; they are not offered until they work, so
+# nobody ticks a box that does nothing. Old rows for them are harmless.
 ALERT_CHANNELS = [
     {"key": "email", "name": "Email"},
-    {"key": "whatsapp", "name": "WhatsApp"},
-    {"key": "push", "name": "App notification"},
 ]
 
-# The two "rising score" rules read the stock-score trend, so they are
-# withdrawn while scores are switched off (MF_SCORES_ENABLED). Filtered here,
-# before RULE_KEYS is built, so the screen, the validation and the saved
-# settings all agree on which rules exist.
-SCORE_RULE_KEYS = {"rising_drop", "rising_streak"}
-if not _scores_on():
-    ALERT_RULES = [r for r in ALERT_RULES if r["key"] not in SCORE_RULE_KEYS]
+# ONLY THE RULES portfolio_monitor.py ACTUALLY EVALUATES ARE SHOWN.
+# The catalogue above also holds rules nothing evaluates yet (live False).
+# They stay in the file so their wording is not lost, and stay off the
+# screen so no switch is drawn for a machine that is not connected.
+MONTHLY_REPORT = {
+    "name": "A monthly check by email",
+    "what": "Once a month, between the 11th and 15th (fund houses publish "
+            "their portfolios by the 10th): whether each fund is still "
+            "beating its benchmark, whether it is still in the top quarter "
+            "of its category, whether the plan is still diversified, and "
+            "what changed since last month.",
+}
 
-RULE_KEYS = {r["key"] for r in ALERT_RULES}
+# The two "rising score" rules read the stock-score trend, so they are
+# withdrawn for anyone scores are switched off for (MF_SCORES_ENABLED, plus
+# the per-person allowlist). That has to be decided PER REQUEST: filtering
+# the list once at startup would hide these rules from the people the
+# allowlist exists to show them to. _visible_alert_rules() is the one place
+# that decides, so the screen, the validation and the saved settings all
+# agree on which rules exist for a given caller.
+SCORE_RULE_KEYS = {"rising_drop", "rising_streak"}
 CHANNEL_KEYS = {c["key"] for c in ALERT_CHANNELS}
+
+
+def _visible_alert_rules(request):
+    live = [r for r in ALERT_RULES if r.get("live")]
+    if _scores_on(request):
+        return live
+    return [r for r in live if r["key"] not in SCORE_RULE_KEYS]
+
+
+def _delivery_state(cur):
+    """Is anything actually being sent? Measured, not declared: email must be set up on this server AND the checker must have run
+    recently without error. Either missing and the screen says so in words instead of showing live-looking switches."""
+    try:
+        import mailer
+        cfg = mailer.mail_config()
+    except Exception:                                                  # noqa: BLE001
+        return {"live": False, "why": "Email is not set up on this server yet."}
+    if not cfg.get("configured"):
+        return {"live": False, "why": "Email is not set up on this server yet."}
+    ok = _q(cur, "SELECT to_regclass('public.portfolio_monitor_run') IS NOT NULL AS ok", {}, one=True)
+    if not ok or not ok["ok"]:
+        return {"live": False, "why": "The checker has not been installed yet."}
+    last = _q(cur, """SELECT finished_at, error FROM portfolio_monitor_run
+                      WHERE kind = 'alerts' ORDER BY started_at DESC LIMIT 1""", {}, one=True)
+    if not last or not last["finished_at"]:
+        return {"live": False, "why": "The checker has not run yet."}
+    if last["error"]:
+        return {"live": False, "why": "The last check did not finish. It will try again tonight."}
+    if (date.today() - last["finished_at"].date()).days > 3:
+        return {"live": False, "why": "The checker has not run in the last few days."}
+    return {"live": True, "why": ""}
+
+
+def _mask_email(addr):
+    try:
+        name, dom = addr.split("@", 1)
+        return (name[:1] + "***" + "@" + dom) if name else addr
+    except Exception:                                                  # noqa: BLE001
+        return ""
 
 
 def _alert_readiness(cur):
@@ -1771,6 +1882,7 @@ def _alert_readiness(cur):
 class AlertSettings(BaseModel):
     rules: dict = {}          # {rule_key: {"enabled": bool, "threshold": num}}
     channels: dict = {}       # {channel_key: bool}
+    monthly: Optional[bool] = None    # the monthly check by email; None leaves it as it was
 
 
 @router.get("/{portfolio_id}/alerts")
@@ -1789,13 +1901,42 @@ def get_alerts(portfolio_id: int, request: Request):
             FROM portfolio_alert_channel WHERE portfolio_id = %(pid)s
         """, {"pid": portfolio_id})}
         ready = _alert_readiness(cur)
+        state = _delivery_state(cur)
+
+        # The tables the checker writes may not exist yet on a server that has
+        # not been migrated. Asked, not attempted (see _alert_readiness).
+        have = _q(cur, """
+            SELECT to_regclass('public.portfolio_report_pref') IS NOT NULL AS pref,
+                   to_regclass('public.portfolio_report_log')  IS NOT NULL AS log,
+                   to_regclass('public.portfolio_alert_event') IS NOT NULL AS ev
+        """, {}, one=True)
+        monthly, last_report, open_alerts = True, None, []
+        if have["pref"]:
+            row = _q(cur, "SELECT monthly FROM portfolio_report_pref WHERE portfolio_id = %(pid)s",
+                     {"pid": portfolio_id}, one=True)
+            if row is not None:
+                monthly = bool(row["monthly"])
+        if have["log"]:
+            row = _q(cur, """SELECT report_month, sent_at FROM portfolio_report_log
+                             WHERE portfolio_id = %(pid)s AND status = 'sent'
+                             ORDER BY report_month DESC LIMIT 1""", {"pid": portfolio_id}, one=True)
+            if row:
+                last_report = {"month": str(row["report_month"]), "sent_at": row["sent_at"].isoformat() if row["sent_at"] else None}
+        if have["ev"]:
+            open_alerts = [{"rule_key": r["rule_key"], "sentence": r["sentence"], "since": str(r["first_seen_on"])}
+                           for r in _q(cur, """SELECT rule_key, sentence, first_seen_on FROM portfolio_alert_event
+                                               WHERE portfolio_id = %(pid)s AND state = 'open' ORDER BY event_id""", {"pid": portfolio_id})]
+        email_to = _q(cur, "SELECT u.email FROM mf_user u JOIN portfolio p ON p.owner_user_id = u.user_id WHERE p.portfolio_id = %(pid)s",
+                      {"pid": portfolio_id}, one=True)
 
     rules = []
-    for r in ALERT_RULES:
+    for r in _visible_alert_rules(request):
         got = chosen.get(r["key"])
+        # A rule nobody has touched uses the catalogue's default, and the
+        # checker (portfolio_monitor.plan_settings) reads the same default.
         rules.append(dict(
             r,
-            enabled=bool(got["enabled"]) if got else False,
+            enabled=bool(got["enabled"]) if got else bool(r.get("on_by_default")),
             threshold=(float(got["threshold"]) if got and got["threshold"]
                        is not None else r.get("default")),
             **ready.get(r["key"], {"status": "ready", "note": ""}),
@@ -1803,11 +1944,15 @@ def get_alerts(portfolio_id: int, request: Request):
 
     return {
         "rules": rules,
-        "channels": [dict(c, enabled=bool(channels.get(c["key"], False)))
+        "channels": [dict(c, enabled=bool(channels.get(c["key"], True)))
                      for c in ALERT_CHANNELS],
+        "monthly": dict(MONTHLY_REPORT, enabled=monthly, last=last_report),
+        "open_alerts": open_alerts,
+        "email_to": _mask_email(email_to["email"]) if email_to else "",
         # Said once, by the server, so every client shows the same thing
         # and nobody has to remember to update a hard-coded sentence.
-        "delivery_live": False,
+        "delivery_live": state["live"],
+        "delivery_why": state["why"],
     }
 
 
@@ -1820,7 +1965,8 @@ def put_alerts(portfolio_id: int, body: AlertSettings, request: Request):
     """
     user_id = _user_id(request)
 
-    bad = set(body.rules) - RULE_KEYS
+    visible = _visible_alert_rules(request)
+    bad = set(body.rules) - {r["key"] for r in visible}
     if bad:
         raise HTTPException(400, "Unknown alert rule: %s"
                             % ", ".join(sorted(bad)))
@@ -1829,7 +1975,7 @@ def put_alerts(portfolio_id: int, body: AlertSettings, request: Request):
         raise HTTPException(400, "Unknown channel: %s"
                             % ", ".join(sorted(bad_c)))
 
-    by_key = {r["key"]: r for r in ALERT_RULES}
+    by_key = {r["key"]: r for r in visible}
     rows = []
     for key, spec in body.rules.items():
         rule = by_key[key]
@@ -1844,6 +1990,8 @@ def put_alerts(portfolio_id: int, body: AlertSettings, request: Request):
             # a form that refuses, and the bounds are the catalogue's.
             lo, hi = rule.get("min", 0), rule.get("max", 100)
             threshold = max(lo, min(hi, threshold))
+            if rule.get("integer"):
+                threshold = float(round(threshold))     # a quarter is 2, 3 or 4; an overlap line is a whole percent
         elif not rule.get("unit"):
             threshold = None          # nothing to tune on this rule
         rows.append((key, enabled, threshold))
@@ -1868,7 +2016,25 @@ def put_alerts(portfolio_id: int, body: AlertSettings, request: Request):
                 ON CONFLICT (portfolio_id, channel) DO UPDATE
                    SET enabled = EXCLUDED.enabled, updated_at = now()
             """, {"pid": portfolio_id, "c": key, "e": bool(on)})
+        if body.monthly is not None:
+            have = _q(cur, "SELECT to_regclass('public.portfolio_report_pref') IS NOT NULL AS ok", {}, one=True)
+            if have and have["ok"]:
+                cur.execute("""
+                    INSERT INTO portfolio_report_pref (portfolio_id, monthly) VALUES (%(pid)s, %(m)s)
+                    ON CONFLICT (portfolio_id) DO UPDATE SET monthly = EXCLUDED.monthly, updated_at = now()
+                """, {"pid": portfolio_id, "m": bool(body.monthly)})
         conn.commit()
+        state = _delivery_state(cur)
 
     on = sum(1 for _, e, _ in rows if e)
-    return {"saved": True, "rules_on": on, "delivery_live": False}
+    return {"saved": True, "rules_on": on, "delivery_live": state["live"]}
+
+
+@router.get("/delivery/state")
+def delivery_state():
+    """Is the monthly check / alert email actually being sent right now? Carries no personal data, so it needs no sign-in.
+
+    The lock dialog on the Plan page asks this before it tells somebody that FinChaya will write to them, so the sentence on screen
+    is true on the day it is read and not on the day somebody last edited the page."""
+    with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
+        return {"live": _delivery_state(cur)["live"]}

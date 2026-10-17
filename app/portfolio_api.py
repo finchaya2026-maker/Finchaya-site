@@ -416,7 +416,7 @@ def search_funds(q: str):
         return []
 
     words = [re.sub(r"[^a-z0-9]", "", w.lower()) for w in q.split()]
-    words = [w for w in words if w][:6]          # cap it; 6 is generous
+    words = [w[:40] for w in words if w][:6]     # cap it; 6 words of 40 letters is generous. A 5,000-letter "word" took 7 seconds in the fuzzy match.
     if not words:
         return []
 
@@ -460,7 +460,7 @@ def search_funds(q: str):
         #    pg_trgm may not be installed -- if it is not, this raises and
         #    we return the empty list rather than failing the request.
         try:
-            return _q(cur, FUZZY, {"q": "".join(words)})
+            return _q(cur, FUZZY, {"q": "".join(words)[:80]})
         except psycopg.Error:
             conn.rollback()
             return []
@@ -481,8 +481,12 @@ def _score_access(request):
         return False
 
 
-def _has_subscription(request):
+def _has_subscription(request, area=None):
     """Is the caller subscribed? The question for the PAID PRODUCTS.
+
+    `area` is which side of the site is asking: "mf" for the look-through,
+    fund screener and plan, "stocks" for the stock-side change log. The
+    subscription's tier must cover it; None accepts any live subscription.
 
     Separate from _score_access on purpose: scores can be switched off for
     everyone (MF_SCORES_ENABLED), and that must not lock subscribers out of
@@ -491,17 +495,26 @@ def _has_subscription(request):
     """
     try:
         from api import current_user, has_subscription
-        return has_subscription(current_user(request))
+        return has_subscription(current_user(request), area)
     except Exception:
         return False
 
 
-def _scores_on():
-    """Are scores switched on at all, for anybody? Used by routes that are
-    score-derived through and through, so they can refuse outright."""
+def _scores_on(request=None):
+    """Are scores switched on? With a request: for THAT caller (on for
+    everyone when the public switch is on, otherwise only for people on the
+    allowlist). Without one: only whether they are on for everybody.
+
+    Used by routes that are score-derived through and through, so they can
+    refuse outright. Fails closed, like _score_access.
+    """
     try:
-        from api import SCORES_ENABLED
-        return bool(SCORES_ENABLED)
+        from api import SCORES_ENABLED, current_user, scores_on_for
+        if SCORES_ENABLED:
+            return True
+        if request is None:
+            return False
+        return bool(scores_on_for(current_user(request)))
     except Exception:
         return False
 
@@ -509,16 +522,19 @@ def _scores_on():
 def _require_scores(request):
     """For routes whose ONLY content is score-derived (the rising split's
     history and its batch form). With scores switched off there is nothing
-    to return, so the route answers 404 for everyone rather than 402 --
+    to return, so the route answers 404 rather than 402 --
     "subscribe" would be the wrong message for something nobody can buy.
     """
-    if not _scores_on():
+    if not _scores_on(request):
         raise HTTPException(404, "Not available yet.")
     _require_subscription(request)
 
 
-def _require_subscription(request):
-    """403 unless the caller has a live subscription.
+_PLAN_WORD = {"mf": "Mutual funds plan", "stocks": "Stocks plan"}
+
+
+def _require_subscription(request, area=None):
+    """402 unless the caller has a live subscription that covers `area`.
 
     RAISES rather than degrading, for the endpoints where a partial answer
     would be worse than none: half a look-through is not a cheaper
@@ -527,7 +543,12 @@ def _require_subscription(request):
     The message is deliberately plain and mentions no price. The page
     decides how to sell; this only decides who is let in.
     """
-    if not _has_subscription(request):
+    if not _has_subscription(request, area):
+        if area in _PLAN_WORD:
+            raise HTTPException(
+                402, "This is part of the %s. Sign in with an account on "
+                     "that plan or on Mutual funds + stocks to see it."
+                     % _PLAN_WORD[area])
         raise HTTPException(
             402, "This is part of the subscription. Sign in with a "
                  "subscribed account to see it.")
@@ -906,7 +927,7 @@ def screen_universe(request: Request, period: str = "3Y", risk_window: int = 3):
     # Same gate as /screen, which this exists to drive. It carries the
     # per-fund figures for the entire universe, so it is more of the paid
     # product than the screen is, not less.
-    _require_subscription(request)
+    _require_subscription(request, "mf")
 
     if period not in ("1Y", "3Y", "5Y", "7Y", "10Y"):
         raise HTTPException(400, "Unsupported period.")
@@ -1035,7 +1056,7 @@ def screen(body: ScreenRequest, request: Request):
     """
     # The goal and what-it-needs tabs are open to everyone; the funds tab
     # is where the paid product starts.
-    _require_subscription(request)
+    _require_subscription(request, "mf")
 
     if body.period not in ("1Y", "3Y", "5Y", "7Y", "10Y"):
         raise HTTPException(400, "Unsupported period.")
@@ -1596,8 +1617,9 @@ def stock_changes(isin: str, request: Request):
     SUBSCRIPTION ONLY, like the list of funds that hold a stock: it names
     the funds, which is the paid half. The fund-side change log
     (/fund-changes) is about one fund's own portfolio and stays open.
+    It lives on the stock page, so it is the STOCKS tier.
     """
-    _require_subscription(request)
+    _require_subscription(request, "stocks")
     key = str(isin).strip().upper()
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         dates = [r["as_of_date"] for r in
@@ -2429,7 +2451,7 @@ def lookthrough(req: LookthroughRequest, request: Request):
     # This endpoint had no authentication of ANY kind -- not signed-in,
     # not subscribed, not even a Request object to check. Anyone who found
     # the URL got the whole look-through.
-    _require_subscription(request)
+    _require_subscription(request, "mf")
     # The look-through is not a score and stays on for subscribers. The
     # score rank, peer count, coverage and rising split inside it ARE, and
     # are left out while scores are switched off.
@@ -2445,6 +2467,17 @@ def lookthrough(req: LookthroughRequest, request: Request):
             raise HTTPException(
                 400, f"{h.key} needs either what it is worth today, or the "
                      f"date and amount you have been investing.")
+        # NaN and Infinity are accepted by the JSON reader and slip past every comparison; an absurd size breaks the sums downstream
+        for what, v in (("what it is worth today", h.amount), ("the amount invested", h.invest_amount)):
+            if v is not None and (v != v or abs(v) > 1e11):
+                raise HTTPException(400, f"{h.key}: {what} must be a number no larger than 100,000,000,000.")
+
+    # as_of goes straight into SQL as a date: anything that is not one was a 500 ("Internal Server Error") for the person.
+    if req.as_of:
+        try:
+            req.as_of = date.fromisoformat(str(req.as_of).strip()[:10]).isoformat()
+        except ValueError:
+            raise HTTPException(400, "as_of must be a date like 2026-09-30.")
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
         target = req.as_of or _q(

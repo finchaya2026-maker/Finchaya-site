@@ -73,9 +73,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB = os.getenv("FINCHAYA_DB",
-               "host=localhost port=5432 dbname=finchaya "
-               "user=postgres password=Finchaya@2026")
+DB = os.getenv("FINCHAYA_DB")
+if not DB:
+    raise SystemExit("FINCHAYA_DB is not set. Put it in .env (see .env.example).")
 
 ALGO_VERSION = "stock-v3"
 # The ungated ADX rule this replaces. Kept runnable under --v2 so the old

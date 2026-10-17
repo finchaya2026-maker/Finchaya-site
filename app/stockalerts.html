@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My stock alerts &mdash; FinChaya</title>
+<meta name="description" content="Get one email when a stock you follow does what you are watching for: a price level, a close above a recent high,
+  a pullback to a moving average, a change of trend, an indicator, or the next results.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<script src="/stockalerts.js" defer></script>
+<!--
+  stockalerts.html -- "My stock alerts": the list of what a member is watching, whether the email can actually reach them,
+  and a way to start a new one without going to a stock page first.
+  ======================================================================
+  SETTING AN ALERT is the window in stockalerts.js ("Set alert" on any stock page, or the search box here). This page lists them:
+  Watching (still waiting), Happened (it fired; the email is shown as sent or not), Paused (something changed that made the
+  alert meaningless, with the reason).
+
+  IT SAYS WHAT IS ACTUALLY SET UP. The server reports whether email can be sent at all and when the checker last ran; this page
+  puts that at the top in plain words, with a "send me a test email" button, so nobody believes they are covered when they are not.
+
+  DATA: /api/stockalerts/access, /api/stockalerts, /api/stockalerts/{id}/delete, /api/stockalerts/test-email (stockalerts_api.py)
+        and /api/stocks?search= (the stock finder). Members on the Stocks plan and administrators only; the server checks every call.
+-->
+<style>
+  /* Every class is prefixed sl-: finchaya.css owns .panel, .chip, .tabs, .note and more and loads after this block. */
+  [hidden]{display:none !important}
+  .sl-lock .fc-lock{margin-top:8px}
+  .sl-box{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:18px 20px;margin:16px 0 0}
+  .sl-box h2{margin:0 0 4px;font-size:1.05rem}
+  .sl-sub{color:var(--muted);font-size:14px;margin:0}
+  .sl-find{display:flex;gap:10px;margin-top:12px}
+  .sl-find input{flex:1 1 auto;min-width:0;padding:10px 12px;font-size:15.5px;border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink)}
+  .sl-hits{margin:8px 0 0;padding:0;list-style:none}
+  .sl-hits li{border-top:1px solid var(--line)}
+  .sl-hits button{appearance:none;background:none;border:0;width:100%;text-align:left;padding:10px 6px;cursor:pointer;font-size:15px;color:var(--ink);border-radius:var(--r)}
+  .sl-hits button:hover,.sl-hits button:focus-visible{background:var(--brand-wash)}
+  .sl-hits small{color:var(--muted);margin-left:6px}
+
+  .sl-status{display:grid;gap:10px;margin-top:16px}
+  .sl-note{border-radius:var(--r);padding:11px 14px;font-size:14.5px;background:var(--note-wash);color:var(--ink);border:1px solid var(--note)}
+  .sl-note b{color:var(--ink)}
+  .sl-good{border-radius:var(--r);padding:11px 14px;font-size:14.5px;background:var(--brand-wash);color:var(--ink);border:1px solid var(--line-firm)}
+  .sl-btn{appearance:none;cursor:pointer;font-weight:700;font-size:14.5px;padding:8px 16px;border-radius:var(--r);border:1.5px solid var(--brand);background:var(--card);color:var(--brand-dark)}
+  .sl-btn:hover{background:var(--brand-wash)}
+  .sl-btn:disabled{opacity:.5;cursor:default}
+  .sl-test{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .sl-testmsg{font-size:14px}
+
+  .sl-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid var(--line-firm);margin:22px 0 6px}
+  .sl-tab{appearance:none;border:0;background:none;cursor:pointer;padding:10px 14px;font-size:15.5px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1.5px}
+  .sl-tab:hover{color:var(--ink)}
+  .sl-tab[aria-selected=true]{color:var(--brand-dark);border-bottom-color:var(--brand)}
+  .sl-n{display:inline-block;min-width:22px;padding:0 7px;margin-left:6px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:700;text-align:center}
+
+  .sl-card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:14px 18px;margin:12px 0 0;display:flex;gap:14px;justify-content:space-between;align-items:flex-start}
+  .sl-main{min-width:0}
+  .sl-name{font-weight:700;font-size:16.5px}
+  .sl-name a{color:inherit;text-decoration:none}
+  .sl-name a:hover{text-decoration:underline}
+  .sl-sym{color:var(--muted);font-size:13px;font-weight:500;margin-left:6px}
+  .sl-kind{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:99px;padding:1px 9px;background:var(--surface-2);color:var(--ink-2);margin-right:8px}
+  .sl-say{margin:6px 0 0;font-size:15px;color:var(--ink)}
+  .sl-meta{margin:6px 0 0;font-size:13px;color:var(--muted)}
+  .sl-read{margin:8px 0 0;font-size:14px;color:var(--ink-2);background:var(--brand-wash);border-radius:var(--r);padding:8px 12px}
+  .sl-bad{color:var(--neg);font-weight:600}
+  .sl-del{appearance:none;background:none;border:0;cursor:pointer;color:var(--neg);font-size:13.5px;font-weight:600;padding:4px 2px;white-space:nowrap}
+  .sl-empty{color:var(--muted);padding:26px 4px}
+  .sl-err{color:var(--neg);padding:14px 4px}
+  .sl-sr{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Stock alerts</p>
+  <h1>My stock alerts</h1>
+  <p class="note">Open any stock and press <b>Set alert</b>, or find one below. Pick what to be told about &mdash; a price level, a close above a
+    recent high, a pullback to a moving average, a change of trend, an indicator, or the next results &mdash; and we email you <b>once</b>, when it happens.</p>
+
+  <div id="slLock" class="sl-lock"></div>
+
+  <div id="slApp" hidden>
+    <div class="sl-box">
+      <h2>Set a new alert</h2>
+      <p class="sl-sub">Find the stock first. (You can also press <b>Set alert</b> at the top of any stock page.)</p>
+      <div class="sl-find"><input id="slSearch" type="search" placeholder="Search a stock, for example Infosys" aria-label="Search a stock" autocomplete="off"></div>
+      <ul class="sl-hits" id="slHits"></ul>
+    </div>
+
+    <div class="sl-status" id="slStatus"></div>
+
+    <div class="sl-tabs" role="tablist" id="slTabs">
+      <button type="button" class="sl-tab" role="tab" data-tab="active" aria-selected="true">Watching<span class="sl-n" id="slN1">0</span></button>
+      <button type="button" class="sl-tab" role="tab" data-tab="triggered" aria-selected="false">Happened<span class="sl-n" id="slN2">0</span></button>
+      <button type="button" class="sl-tab" role="tab" data-tab="paused" aria-selected="false">Paused<span class="sl-n" id="slN3">0</span></button>
+    </div>
+    <div id="slList"><p class="sl-empty">Loading&hellip;</p></div>
+  </div>
+
+  <p class="foot">An alert is one email, once; set another if you want to be told again. We hold end-of-day prices, so price alerts are judged on a
+    day's <b>close</b>, and weekly or monthly alerts wait for the week or month to finish. FinChaya is not a SEBI-registered Research Analyst or
+    Investment Adviser. An alert reports a condition you chose; it is not a recommendation to buy, sell or hold anything.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dmy = v => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() : ""; };
+  const dmyTime = v => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? dmy(v) + ", " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : ""; };
+  const rupees = v => "₹" + Number(v).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const state = {tab: "active", data: null};
+
+  // ------------------------------------------------------------ the gate
+  const INTRO = "Get one email when a stock does what you are watching for.";
+  function authReady() {
+    return new Promise(res => {
+      if (window.fcAuthState && window.fcAuthState.ready) return res();
+      document.addEventListener("fc-auth", () => res(), {once: true});
+      setTimeout(res, 4000);
+    });
+  }
+  async function lock(a) {
+    a = a || {};
+    $("slApp").hidden = true;
+    const host = $("slLock");
+    const box = (t, m, extra) => '<div class="sl-box"><h2>' + esc(t) + "</h2><p class=\"sl-sub\">" + esc(m) + "</p>" + (extra || "") + "</div>";
+    if (a.enabled === false) host.innerHTML = box("Stock alerts are switched off", "They are not available at the moment.");
+    else if (a.signed_in === false) {
+      host.innerHTML = box("Stock alerts are part of the Stocks plan", INTRO + " Sign in with an account on that plan to set one.",
+        '<p><button type="button" class="sl-btn" id="slSign" style="margin-top:10px">Sign in</button></p>');
+      $("slSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+    } else if (a.audience === "premium" && window.fcLocked) {
+      await authReady();
+      window.fcLocked(host, "Stock alerts", INTRO, "stocks");
+    } else host.innerHTML = box("Stock alerts are not open to your account", "They are available to " + (a.who || "subscribers") + ". " + INTRO);
+  }
+  async function relock() { try { await lock(await (await fetch("/api/stockalerts/access")).json()); } catch (e) { await lock({}); } }
+
+  // ------------------------------------------------------------ data
+  async function api(path, opts) {
+    const r = await fetch("/api/stockalerts" + path, opts);
+    let body = null; try { body = await r.json(); } catch (e) { /* not json */ }
+    if (r.status === 401 || r.status === 403) { relock(); throw new Error("access"); }
+    if (!r.ok) throw new Error((body && body.detail) || "Something went wrong (" + r.status + "). Try again in a moment.");
+    return body;
+  }
+
+  async function load() {
+    try { state.data = await api(""); draw(); }
+    catch (e) { if (e.message !== "access") $("slList").innerHTML = '<p class="sl-err" role="alert">Your alerts could not be loaded. ' + esc(e.message) + "</p>"; }
+  }
+
+  // ------------------------------------------------------------ drawing
+  function drawStatus(d) {
+    let h = "";
+    const em = d.email || {}, ck = d.checker || {};
+    if (!em.configured) {
+      h += '<div class="sl-note"><b>Email is not set up on this server yet.</b> Your alerts are saved, but they cannot reach you until it is.' +
+        (em.why ? " <span class=\"sl-sub\">(" + esc(em.why) + ")</span>" : "") + "</div>";
+    }
+    if (ck.known !== false && ck.never_run) {
+      h += '<div class="sl-note"><b>The alert checker has not run yet</b>, so nothing is being watched until it does.</div>';
+    } else if (ck.known !== false && ck.stale) {
+      h += '<div class="sl-note"><b>The alert checker has not run since ' + esc(dmyTime(ck.last_run_at)) + "</b>, so recent moves may not have been looked at yet.</div>";
+    } else if (ck.known === false) {
+      h += '<div class="sl-note"><b>We could not tell whether alerts are being checked.</b> Try again in a moment.</div>';
+    }
+    if (em.configured && ck.known !== false && !ck.never_run && !ck.stale) {
+      h += '<div class="sl-good">Alerts are being checked (last look: ' + esc(dmyTime(ck.last_run_at)) + ") and emails go to <b>" + esc(d.my_email || "your account") + "</b>.</div>";
+    }
+    h += '<div class="sl-test"><button type="button" class="sl-btn" id="slTest"' + (em.configured ? "" : " disabled") + '>Send me a test email</button><span class="sl-testmsg" id="slTestMsg" role="status"></span></div>';
+    $("slStatus").innerHTML = h;
+    const b = $("slTest");
+    if (b) b.addEventListener("click", testMail);
+  }
+  async function testMail() {
+    const b = $("slTest"), m = $("slTestMsg");
+    b.disabled = true; m.textContent = "Sending…"; m.className = "sl-testmsg";
+    try {
+      const d = await api("/test-email", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+      m.className = "sl-testmsg" + (d.ok ? "" : " sl-bad");
+      m.textContent = d.ok ? "Sent to " + d.to + ". Check your inbox (and spam) in a minute." : "Not sent. " + (d.detail || "");
+    } catch (e) { m.className = "sl-testmsg sl-bad"; m.textContent = e.message === "access" ? "" : e.message; }
+    b.disabled = false;
+  }
+
+  function emailLine(a) {
+    if (a.status !== "triggered") return "";
+    if (a.email_status === "sent") return "Email sent " + esc(dmyTime(a.email_sent_at)) + ".";
+    if (a.email_status === "failed") return '<span class="sl-bad">The email could not be sent' + (a.email_attempts >= 6 ? " (we gave up after 6 tries)." : "; we will try again.") + "</span>";
+    return "Email waiting to be sent.";
+  }
+  function card(a) {
+    const here = a.last_close != null ? "Last close " + rupees(a.last_close) + (a.last_close_date ? " on " + dmy(a.last_close_date) : "") : "";
+    let gap = "";
+    if (a.kind === "price" && a.status === "active" && a.last_close != null && a.level) {
+      const pct = (a.level - a.last_close) / a.last_close * 100;
+      gap = " · the level is " + Math.abs(pct).toFixed(1) + "% " + (pct >= 0 ? "above" : "below") + " the last close";
+    }
+    return '<div class="sl-card" data-id="' + a.alert_id + '"><div class="sl-main">' +
+      '<div class="sl-name"><span class="sl-kind">' + esc(a.kind_title) + '</span><a href="/#/stock/' + encodeURIComponent(a.isin) + '">' + esc(a.company_name || a.symbol || a.isin) + "</a>" +
+      (a.symbol ? '<span class="sl-sym">' + esc(a.symbol) + "</span>" : "") + "</div>" +
+      '<p class="sl-say">' + esc(a.symbol || "") + " " + esc(a.sentence) + "</p>" +
+      (a.status === "triggered" && a.trigger_reading ? '<p class="sl-read">' + esc(a.trigger_reading) + "</p>" : "") +
+      '<p class="sl-meta">Set ' + esc(dmy(a.created_at)) + (a.status === "triggered" ? " · happened " + esc(dmy(a.trigger_as_of || a.triggered_at)) + " · " + emailLine(a) :
+        a.status === "paused" ? "" : (a.last_checked_at ? " · last looked at " + esc(dmyTime(a.last_checked_at)) : " · not looked at yet")) +
+      (here && a.status === "active" ? " · " + esc(here) + esc(gap) : "") + "</p>" +
+      (a.note ? '<p class="sl-meta sl-bad">' + esc(a.note) + "</p>" : "") +
+      '</div><button type="button" class="sl-del" data-del="' + a.alert_id + '">Remove</button></div>';
+  }
+  function draw() {
+    const d = state.data; if (!d) return;
+    drawStatus(d);
+    const by = {active: [], triggered: [], paused: []};
+    d.alerts.forEach(a => (by[a.status] || by.active).push(a));
+    $("slN1").textContent = by.active.length; $("slN2").textContent = by.triggered.length; $("slN3").textContent = by.paused.length;
+    const list = by[state.tab];
+    const empty = {active: "You are not watching anything yet. Find a stock above, or press <b>Set alert</b> on a stock page.",
+      triggered: "Nothing has happened yet. When an alert fires it moves here, with what it read and whether the email went.",
+      paused: "Nothing is paused. An alert is paused only when something makes it meaningless, such as a split or a bonus issue after you set a price level."}[state.tab];
+    $("slList").innerHTML = list.length ? list.map(card).join("") : '<p class="sl-empty">' + empty + "</p>";
+  }
+
+  document.addEventListener("click", async e => {
+    const t = e.target.closest(".sl-tab");
+    if (t) { state.tab = t.dataset.tab; document.querySelectorAll(".sl-tab").forEach(x => x.setAttribute("aria-selected", String(x === t))); draw(); return; }
+    const b = e.target.closest("[data-del]");
+    if (b) {
+      b.disabled = true;
+      try { await api("/" + b.dataset.del + "/delete", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); await load(); }
+      catch (err) { b.disabled = false; if (err.message !== "access") alert(err.message); }
+    }
+  });
+  window.addEventListener("sa-changed", load);
+
+  // ------------------------------------------------------------ the stock finder
+  let typing = null, finding = 0;
+  $("slSearch").addEventListener("input", () => {
+    clearTimeout(typing);
+    const q = $("slSearch").value.trim();
+    if (q.length < 2) { $("slHits").innerHTML = ""; return; }
+    typing = setTimeout(async () => {
+      const mine = ++finding;
+      try {
+        const r = await fetch("/api/stocks?search=" + encodeURIComponent(q) + "&limit=8");
+        const d = r.ok ? await r.json() : {stocks: []};
+        if (mine !== finding) return;
+        const rows = d.stocks || [];
+        $("slHits").innerHTML = rows.length ? rows.map((s, i) => '<li><button type="button" data-i="' + i + '">' + esc(s.company_name) + "<small>" + esc(s.symbol) +
+          (s.close_price != null ? " · " + rupees(s.close_price) : "") + "</small></button></li>").join("") : '<li><span class="sl-sub" style="padding:10px 6px;display:block">No stock matches that.</span></li>';
+        $("slHits").onclick = ev => {
+          const bt = ev.target.closest("button[data-i]"); if (!bt) return;
+          const s = rows[+bt.dataset.i];
+          if (window.fcStockAlerts) window.fcStockAlerts.open({isin: s.isin, symbol: s.symbol, name: s.company_name, price: s.close_price});
+        };
+      } catch (err) { /* the finder is a convenience */ }
+    }, 260);
+  });
+
+  // ------------------------------------------------------------ boot
+  async function boot() {
+    let a;
+    try { a = await (await fetch("/api/stockalerts/access", {headers: {Accept: "application/json"}})).json(); }
+    catch (e) { $("slLock").innerHTML = '<p class="sl-err" role="alert">Could not reach FinChaya. Check your connection and reload the page.</p>'; return; }
+    if (!a.allowed) { await lock(a); return; }
+    $("slLock").innerHTML = ""; $("slApp").hidden = false;
+    load();
+  }
+  if (document.readyState === "complete") boot(); else window.addEventListener("load", boot);
+})();
+</script>
+</body>
+</html>

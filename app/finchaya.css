@@ -215,6 +215,46 @@ h3{font-size:17px;font-weight:650;letter-spacing:-.005em;
    same trap as .modal on the plan page. */
 .fc-menu[hidden]{display:none}
 
+/* ---------- the menu on a phone ---------------------------------------
+   On a phone the four links and the "More" list wrapped onto two rows and the rest of the pages hid behind a small "More" button. Under
+   761px the whole header is: the brand, Sign in (when signed out) and a "Menu" button that opens ONE list with every page and the
+   account entries. Wider screens are untouched. */
+.fc-head{position:relative;z-index:60}
+.fc-burger,.fc-drawer{display:none}
+@media (max-width:760px){
+  .fc-head{flex-wrap:nowrap;gap:var(--s2)}
+  .fc-nav,.fc-more,.fc-auth .fc-who,.fc-auth .fc-authb.quiet{display:none}
+  .fc-authb.fc-trialpill{padding:8px 11px;font-size:13px}
+  .fc-burger{display:inline-flex;align-items:center;gap:9px;height:42px;padding:0 13px;flex:none;
+    font:inherit;font-size:15px;font-weight:650;color:var(--ink);cursor:pointer;
+    background:var(--card);border:1.5px solid var(--line-firm);border-radius:var(--r-sm)}
+  .fc-burger:hover,.fc-head.fc-open .fc-burger{background:var(--brand-wash);border-color:var(--brand);color:var(--brand)}
+  .fc-burger .bars{position:relative;display:block;width:18px;height:12px}
+  .fc-burger .bars i{position:absolute;left:0;right:0;height:2px;border-radius:2px;background:currentColor;
+    transition:transform .18s ease,opacity .12s ease,top .18s ease}
+  .fc-burger .bars i:nth-child(1){top:0}
+  .fc-burger .bars i:nth-child(2){top:5px}
+  .fc-burger .bars i:nth-child(3){top:10px}
+  .fc-head.fc-open .fc-burger .bars i:nth-child(1){top:5px;transform:rotate(45deg)}
+  .fc-head.fc-open .fc-burger .bars i:nth-child(2){opacity:0}
+  .fc-head.fc-open .fc-burger .bars i:nth-child(3){top:5px;transform:rotate(-45deg)}
+  .fc-drawer:not([hidden]){display:flex;flex-direction:column;position:absolute;left:0;right:0;top:100%;
+    background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow-lg);
+    max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);overflow-y:auto;overscroll-behavior:contain;padding:4px 0 0}
+  .fc-drawer a{display:block;padding:12px 18px;font-size:16.5px;font-weight:600;color:var(--ink);text-decoration:none;
+    border-bottom:1px solid var(--line)}
+  .fc-drawer a:active,.fc-drawer a:hover{background:var(--surface)}
+  .fc-drawer a[aria-current=page]{color:var(--brand);background:var(--brand-wash)}
+  .fc-dlabel{padding:14px 18px 6px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  /* the account entries are a bar at the bottom of the menu that stays in view however long the list above it is */
+  .fc-dacct{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;padding:10px 18px 14px;
+    background:var(--card);border-top:1px solid var(--line-firm)}
+  .fc-dwho{flex:1 0 100%;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fc-dacct button{flex:1 1 auto;font:inherit;font-size:15px;font-weight:600;padding:11px 14px;border-radius:var(--r-sm);cursor:pointer;
+    background:var(--card);border:1.5px solid var(--line-firm);color:var(--ink-2);text-align:center}
+  .fc-dacct button.fc-dprimary{background:var(--brand);border-color:var(--brand);color:#fff}
+}
+
 /* ---------- portfolio overlap, on three pages -------------------- */
 /* Two funds, one identity encoding. The pair plus the lens was validated
    against this surface: worst normal-vision separation 25.4, worst CVD
@@ -270,7 +310,12 @@ h3{font-size:17px;font-weight:650;letter-spacing:-.005em;
 .fc-lock p{color:var(--ink-2);font-size:15px;margin:0 0 var(--s2);
   max-width:58ch}
 .fc-lock .fc-lock-act{margin:var(--s3) 0 0;display:flex;gap:10px;
-  flex-wrap:wrap;align-items:center}
+  flex-wrap:wrap;align-items:center;
+  /* `.fc-lock p` above caps paragraphs at 58ch for reading. This is a
+     paragraph element only by accident: it holds the comparison table and the
+     price, which size themselves (680px at most), so the cap would only
+     squeeze them. */
+  max-width:none}
 .fc-lock .sub{font-size:13px;color:var(--muted)}
 
 /* ---------- what changed since last month ------------------------ */
@@ -314,6 +359,8 @@ h3{font-size:17px;font-weight:650;letter-spacing:-.005em;
 .fc-authb.quiet{background:var(--card);border-color:var(--line-firm);
   color:var(--ink-2);font-weight:550}
 .fc-authb.quiet:hover{background:var(--surface);color:var(--ink);filter:none}
+/* "Trial: 5 days left" beside the account buttons while a free trial runs; it opens the plans */
+.fc-authb.fc-trialpill{background:#e0a33c;border-color:#e0a33c;color:#123027;font-weight:700}
 
 /* Prefixed throughout: pages define their own .modal, and two rules of
    that name on one screen is how a dialogue ends up half-styled. */
@@ -355,6 +402,17 @@ h3{font-size:17px;font-weight:650;letter-spacing:-.005em;
 .tabs button[aria-selected=true]{background:var(--brand-deep);color:#fff}
 .tabs button:disabled{opacity:.35;cursor:default}
 .tabs .step{opacity:.6;margin-right:6px;font-variant-numeric:tabular-nums}
+/* ON A PHONE the strip WRAPS (every step or section in view, two or three to a row) and stops being sticky: a strip that scrolls sideways hides its last
+   tabs and nobody knows to push it, and a sticky one of three rows would take a fifth of a small screen. */
+@media (max-width:640px){
+  .tabs{position:static;flex-wrap:wrap;overflow:visible;gap:4px;padding:6px}
+  .tabs button{flex:1 1 auto;text-align:center;padding:10px 12px;font-size:14.5px}
+}
+/* Text fields at 16px on a phone: below that, iPhone browsers zoom the page when one is tapped. */
+@media (max-width:700px){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),select,textarea{font-size:16px !important}
+  .fc-brand{display:inline-block;padding:10px 0}                /* the logo is the way home: a bigger target */
+}
 
 /* ---------- controls --------------------------------------------- */
 label{display:block;font-size:14px;font-weight:550;color:var(--ink-2);

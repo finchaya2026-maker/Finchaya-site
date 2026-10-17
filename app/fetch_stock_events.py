@@ -50,10 +50,20 @@ WHY THE PER-STOCK ANNOUNCEMENT FEED STILL EXISTS
 
 SAFE TO RE-RUN. Upserts on (isin, kind, event_date, source_ref).
 
+HOW OFTEN IT RUNS (this was missing, and it is why the "coming up" lists went stale)
+    Nothing used to run this script; it was run by hand and last on 28 Sep 2026, so any company that
+    announced a results date, dividend or split after that was simply absent (6 of the 7 companies
+    reporting on 9 Oct). Now:
+      * nightly.sh runs it every night with --bulk-only (dividends, splits, bonus, rights, results);
+      * result_watcher.py, which runs every 30 minutes, refreshes the results dates from the same
+        calendars (sync_results_calendar), so a date announced at 11 am is on the site by noon.
+    The per-stock announcement history (the long part) is the only thing still run by hand.
+
 USAGE
     python fetch_stock_events.py --symbols RELIANCE,TCS   # spot check
     python fetch_stock_events.py --limit 50 --dry-run     # scale test
-    python fetch_stock_events.py                          # full universe
+    python fetch_stock_events.py --bulk-only              # the quick part, what nightly runs
+    python fetch_stock_events.py                          # full universe, with per-stock history
 """
 
 import argparse
@@ -141,15 +151,41 @@ def classify_announcement(text):
     return "announcement"
 
 
-def fetch_nse_corporate_actions():
+def fetch_nse_corporate_actions(from_date=None, to_date=None):
+    """NSE's corporate actions: with no dates, the forthcoming ones; with a date window, every action
+    whose ex-date falls inside it (verified 9 Oct 2026: 5,430 rows for 1 Aug 2024 .. 9 Oct 2026 in one call,
+    including 118 splits, 118 bonuses, 33 demergers and 4,101 dividends)."""
+    params = {"index": "equities"}
+    if from_date and to_date:
+        params.update(from_date=from_date.strftime("%d-%m-%Y"), to_date=to_date.strftime("%d-%m-%Y"))
     try:
         r = nse.get("https://www.nseindia.com/api/corporates-corporateActions",
-                     params={"index": "equities"}, timeout=20)
+                     params=params, timeout=60 if from_date else 20)
         if not r.ok:
             return []
         return r.json() or []
     except (requests.RequestException, ValueError):
         return []
+
+
+def ingest_action_history(cur, known_isins, since, today=None, dry_run=False, window_days=365):
+    """Load the history of dividends, splits, bonuses and demergers from `since` to now (a year per call).
+    The price chart needs the splits and bonuses to stop a split looking like a crash, the valuation block
+    needs the dividends, and the old per-stock announcement feed only ever reached back about a year.
+    Returns (rows found in our list, rows written)."""
+    today = today or date.today()
+    lo, found, written = since, 0, 0
+    while lo <= today:
+        hi = min(lo + timedelta(days=window_days - 1), today + timedelta(days=60))
+        rows = action_rows_from_nse(fetch_nse_corporate_actions(lo, hi), known_isins)
+        found += len(rows)
+        if not dry_run:
+            for row in rows:
+                cur.execute(UPSERT, row)
+                written += 1
+        lo = hi + timedelta(days=1)
+        time.sleep(1.0)
+    return found, written
 
 
 def fetch_bse_forthcoming_results():
@@ -197,23 +233,122 @@ def action_rows_from_nse(rows, known_isins):
     return out
 
 
-def result_rows_from_bse(rows, isin_by_symbol):
-    out = []
-    for r in rows:
-        symbol = (r.get("short_name") or "").strip().upper()
-        isin = isin_by_symbol.get(symbol)
-        if not isin:
-            continue
+NSE_CALENDAR_URL = "https://www.nseindia.com/api/event-calendar"
+NSE_CALENDAR_REFERER = "https://www.nseindia.com/companies-listing/corporate-filings-board-meetings"
+
+# A calendar that comes back with fewer BSE rows than this is treated as a bad answer, not as "nothing
+# is scheduled": it never triggers the clean-up of rescheduled meetings below. (BSE lists ~200-300.)
+MIN_CALENDAR_ROWS_FOR_CLEANUP = 50
+
+
+def fetch_nse_results_calendar():
+    try:
+        r = nse.get(NSE_CALENDAR_URL, params={"index": "equities"}, timeout=25,
+                    headers={"Referer": NSE_CALENDAR_REFERER})
+        if not r.ok:
+            return []
+        return r.json() or []
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def results_calendar_rows(bse_rows, nse_rows, stocks):
+    """The 'board meeting to consider results' dates of our stocks, from BOTH exchanges' calendars.
+    Returns (rows, unmatched_bse, unmatched_nse). No network, no database.
+
+    WHY BOTH, AND WHY BY SCRIP CODE. This used to read BSE's calendar only and match a row to a
+    stock only when BSE's short name equalled the NSE symbol, which misses any company whose two
+    short names differ. A BSE row is now matched on its scrip code first (the key we hold for
+    every BSE-listed stock), then on the short name; an NSE row on its symbol. A company on both
+    calendars on the same day is one row."""
+    by_scrip = {s["bse_scrip_code"]: s["isin"] for s in stocks if s.get("bse_scrip_code")}
+    by_symbol = {s["symbol"]: s["isin"] for s in stocks}
+    found = {}                                   # (isin, date) -> row
+    unmatched_bse = unmatched_nse = 0
+    for r in bse_rows:
         d = parse_date(r.get("meeting_date"))
         if not d:
             continue
-        out.append(dict(
-            isin=isin, kind="result", event_date=d,
-            headline="Board meeting to consider results", detail=None,
-            period=None, attachment_url=r.get("URL"), source="BSE",
-            source_ref=ref_hash(isin, d, "results"),
-        ))
-    return out
+        isin = by_scrip.get(str(r.get("scrip_Code"))) or by_symbol.get((r.get("short_name") or "").strip().upper())
+        if not isin:
+            unmatched_bse += 1
+            continue
+        found[(isin, d)] = dict(isin=isin, kind="result", event_date=d,
+                                headline="Board meeting to consider results", detail=None, period=None,
+                                attachment_url=r.get("URL"), source="BSE",
+                                source_ref=ref_hash(isin, d, "results"))
+    for r in nse_rows:
+        if "result" not in (r.get("purpose") or "").lower():
+            continue                              # the same calendar also lists dividends, AGMs, fund raising...
+        d = parse_date(r.get("date"))
+        isin = by_symbol.get((r.get("symbol") or "").strip().upper())
+        if not d:
+            continue
+        if not isin:
+            unmatched_nse += 1
+            continue
+        found.setdefault((isin, d), dict(isin=isin, kind="result", event_date=d,
+                                         headline="Board meeting to consider results",
+                                         detail=(r.get("bm_desc") or None), period=None,
+                                         attachment_url=None, source="NSE",
+                                         source_ref=ref_hash(isin, d, "results")))
+    return list(found.values()), unmatched_bse, unmatched_nse
+
+
+RESULT_UPSERT = """
+INSERT INTO stock_event
+    (isin, kind, event_date, headline, detail, period, attachment_url, source, source_ref, updated_at)
+VALUES
+    (%(isin)s, %(kind)s, %(event_date)s, %(headline)s, %(detail)s, %(period)s, %(attachment_url)s,
+     %(source)s, %(source_ref)s, now())
+ON CONFLICT (isin, kind, event_date, source_ref) DO UPDATE SET
+    headline = EXCLUDED.headline, attachment_url = COALESCE(EXCLUDED.attachment_url, stock_event.attachment_url),
+    updated_at = now()
+RETURNING (xmax = 0) AS inserted
+"""
+
+
+def sync_results_calendar(cur, stocks, today=None, dry_run=False):
+    """Bring the 'results due' rows in stock_event up to date with both exchanges' calendars.
+    Returns {'meetings', 'new', 'rescheduled_removed', 'unmatched_bse', 'unmatched_nse', 'ok'}.
+
+    A meeting that has been MOVED leaves its old row behind (rows were only ever added), so the
+    company would show 'results due' on the old date as well as the new one. For every company that
+    is on today's calendar, any future calendar-sourced result row on a DIFFERENT date is removed.
+    Only done when BSE's list came back at a believable size; a failed or empty download never
+    deletes anything."""
+    today = today or date.today()
+    bse_rows, nse_rows = fetch_bse_forthcoming_results(), fetch_nse_results_calendar()
+    if not bse_rows and not nse_rows:
+        return dict(meetings=0, new=0, rescheduled_removed=0, unmatched_bse=0, unmatched_nse=0, ok=False)
+    rows, un_bse, un_nse = results_calendar_rows(bse_rows, nse_rows, stocks)
+    # The cursor must return dict rows (both callers use psycopg's dict_row).
+    new = 0
+    if not dry_run:
+        for row in rows:
+            cur.execute(RESULT_UPSERT, row)
+            new += 1 if cur.fetchone()["inserted"] else 0
+    else:
+        keys = {(r["isin"], r["event_date"]) for r in rows}
+        cur.execute("SELECT isin, event_date FROM stock_event WHERE kind='result' AND isin = ANY(%s)", ([r["isin"] for r in rows],))
+        new = len(keys - {(r["isin"], r["event_date"]) for r in cur.fetchall()})
+
+    removed = 0
+    if len(bse_rows) >= MIN_CALENDAR_ROWS_FOR_CLEANUP and rows:
+        fresh = {}
+        for r in rows:
+            fresh.setdefault(r["isin"], set()).add(r["event_date"])
+        cur.execute("""SELECT isin, event_date FROM stock_event
+                       WHERE kind = 'result' AND event_date >= %s AND source IN ('BSE', 'NSE') AND isin = ANY(%s)""",
+                    (today, list(fresh)))
+        stale = [(r["isin"], r["event_date"]) for r in cur.fetchall() if r["event_date"] not in fresh[r["isin"]]]
+        if not dry_run:
+            for i, d in stale:
+                cur.execute("DELETE FROM stock_event WHERE isin = %s AND kind = 'result' AND event_date = %s "
+                            "AND source IN ('BSE', 'NSE')", (i, d))
+        removed = len(stale)
+    return dict(meetings=len(rows), new=new, rescheduled_removed=removed,
+                unmatched_bse=un_bse, unmatched_nse=un_nse, ok=True)
 
 
 def announcement_rows_for_stock(isin, scrip_code, since):
@@ -255,6 +390,13 @@ def main():
     ap.add_argument("--symbols", help="comma-separated NSE symbols, for a spot check")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--actions-history-from", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date(),
+                    help="also load every dividend, split, bonus and demerger from this date on (a one-off, about a "
+                         "minute per year of history), e.g. 2024-08-01. Needed for the price chart's split "
+                         "adjustment and for dividend yield.")
+    ap.add_argument("--bulk-only", action="store_true",
+                    help="only the market-wide calendars (results dates, dividends, splits, bonus, rights): "
+                         "a few requests, about a minute. Skips the per-stock announcement history.")
     args = ap.parse_args()
 
     with psycopg.connect(DB, row_factory=dict_row) as conn, conn.cursor() as cur:
@@ -275,15 +417,32 @@ def main():
         print(f"{len(stocks)} stocks in scope.")
 
         action_rows = action_rows_from_nse(fetch_nse_corporate_actions(), known_isins)
-        result_rows = result_rows_from_bse(fetch_bse_forthcoming_results(), isin_by_symbol)
         print(f"NSE corporate actions (bulk, dividends/bonus/split/rights/buyback): "
               f"{len(action_rows)} rows in scope.")
-        print(f"BSE forthcoming results (bulk): {len(result_rows)} rows in scope.")
-
         if not args.dry_run:
-            for row in action_rows + result_rows:
+            for row in action_rows:
                 cur.execute(UPSERT, row)
+        if args.actions_history_from:
+            found, wrote = ingest_action_history(cur, known_isins, args.actions_history_from, dry_run=args.dry_run)
+            print(f"Corporate action history since {args.actions_history_from}: {found} rows for our stocks, {wrote} written.")
+            if not args.dry_run:
+                conn.commit()
+
+        cal = sync_results_calendar(cur, stocks, dry_run=args.dry_run)
+        if cal["ok"]:
+            print(f"Results calendar (BSE + NSE): {cal['meetings']} meetings in scope, {cal['new']} new, "
+                  f"{cal['rescheduled_removed']} old dates removed because the meeting moved; "
+                  f"{cal['unmatched_bse']} BSE and {cal['unmatched_nse']} NSE rows are for companies not in our list.")
+        else:
+            print("Results calendar: neither exchange answered; left as it was.")
+        if not args.dry_run:
             conn.commit()
+
+        if args.bulk_only:
+            print("\n--bulk-only: per-stock announcements skipped.")
+            if args.dry_run:
+                print("--dry-run: nothing written.")
+            return
 
         with_scrip = [s for s in stocks if s["bse_scrip_code"]]
         since = date.today() - timedelta(days=WINDOW_DAYS)
@@ -313,7 +472,7 @@ def main():
             conn.commit()
 
         print(f"\nDone. {len(action_rows)} corporate actions (NSE, bulk) + "
-              f"{len(result_rows)} forthcoming results (BSE, bulk) + "
+              f"{cal['meetings']} results dates (BSE + NSE calendars) + "
               f"{total_ann} announcements across {ok} stocks "
               f"({empty} returned no announcements).")
         if args.dry_run:

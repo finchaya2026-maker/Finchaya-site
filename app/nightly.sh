@@ -5,7 +5,8 @@
 # WHAT RUNS HERE
 #   1. AMFI schemes + NAV       (published ~11pm IST on business days)
 #   2. NAV split detection      (before anything reads NAV as a series)
-#   3. Stock candles + technicals   (market days only)
+#   3. Stock list (NSE's equity list), candles (NSE's daily price file), then
+#      technicals from them (market days only)
 #   4. Stock scores                 (market days only)
 #   5. Fund health scores       (recomputed off the latest stock scores)
 #   6. Trailing returns         (needs NAV and benchmarks)
@@ -31,6 +32,21 @@
 #   fetches only missing days, so this step costs about twelve minutes
 #   rather than the hour it used to.
 #
+# UPDATE 5 OCT 2026 -- ZERODHA IS OUT OF THIS RUN
+#   The Zerodha candle fetch stopped working in mid-September: it stored one
+#   stock a night and then died without closing its log row, 16 times. This
+#   script carried on regardless, so stock scores and fund scores were built
+#   from 11 September data while every later step reported OK.
+#
+#   Candles now come from NSE's own daily price file (fetch_bhavcopy.py), and
+#   fetch_technicals.py --from-store computes indicators from what is stored.
+#   NSE's file matched 2,286 of 2,286 stored Zerodha candles exactly (open,
+#   high, low, close, volume) and covers ~230 stocks Zerodha never delivered.
+#   No broker login, no 2FA secret on the server, one small download a day.
+#
+#   The Zerodha code is still in fetch_technicals.py without --from-store, and
+#   zerodha_login_with_auto.py is untouched. Nothing here calls them.
+#
 # WHY --fresh IS ALWAYS PASSED
 #   fetch_technicals.py writes a checkpoint of completed symbols so an
 #   interrupted run can resume. Without --fresh, the NEXT night reads
@@ -43,11 +59,10 @@
 #   re-run is twelve minutes, losing it is cheap and the footgun is not.
 #
 # WHY THE STOCK STEPS ARE SKIPPED AT WEEKENDS
-#   Kite has no market calendar to consult, so asking for Saturday's
-#   candles means 2,150 requests that each correctly return nothing.
-#   Weekday holidays still cost that, because those we cannot know
-#   without carrying an exchange calendar -- one wasted run a few times
-#   a year is a fair price for not maintaining one.
+#   There is no file to fetch on a day the market was shut. NSE answers 404
+#   for those, which fetch_bhavcopy.py treats as "holiday" and skips quietly,
+#   so a weekday holiday costs one cheap request and no calendar is needed.
+#   Weekends are skipped here only to keep the log short.
 #
 # WHY set -u BUT NOT set -e
 #   If AMFI is down, we still want fund scores to run off yesterday's
@@ -102,6 +117,24 @@ DOW=$(date +%u)
 run_step "AMFI schemes and NAV" $PY load_mf_schemes.py
 run_step "NAV split detection"  $PY detect_nav_splits.py
 
+# Dividends, splits, bonuses, rights and results dates. Every night, seven days a
+# week: companies announce these at any time, and the "coming up" lists on the stock
+# page and in the stock screener read this table. --bulk-only is a handful of
+# requests (about a minute); the slow per-stock announcement history is not part
+# of it. This used to be run by hand and had not run since 28 Sep, so six of the
+# seven companies reporting on 9 Oct were missing. result_watcher.py refreshes the
+# results dates again every 30 minutes by day.
+run_step "Upcoming events (dividends, splits, bonus, rights, results dates)" $PY fetch_stock_events.py --bulk-only
+
+# Shareholding patterns: who owns each company, from the quarterly filing every company makes with NSE.
+# ONE list request covers the last 180 days, which catches new filings AND revisions (a revision keeps its
+# original submission date, so a short window would never see it), then up to 400 filings' XBRL files are
+# read for the breakdown (mutual funds, foreign institutions, individuals, pledged shares). Needs
+# create_stock_shareholding_table.py run once first; until then this step fails and is counted, which is
+# the reminder. Companies file within 21 days of a quarter end, so most arrive in the 3 weeks after
+# 30 Jun, 30 Sep, 31 Dec and 31 Mar; on other nights this is a single quiet request.
+run_step "Shareholding patterns (NSE filings)" $PY fetch_shareholding.py --days 180 --detail --detail-limit 400
+
 # ---------------------------------------------------------------------
 # THE STOCK SIDE.
 #
@@ -110,29 +143,28 @@ run_step "NAV split detection"  $PY detect_nav_splits.py
 # fund scores, or the fund scores are computed against yesterday's view
 # of the market and still report success.
 # ---------------------------------------------------------------------
-# WHY THE BATCH BRAKE IS RE-SIZED HERE.
-#   The defaults inside fetch_technicals.py (50 stocks, then a 30-second
-#   pause) were set when every stock meant three large multi-year
-#   downloads. That is 45 pauses over the universe -- 22 minutes of
-#   waiting, MORE than the fetching itself now takes.
-#
-#   With candles stored, each stock is one small request for one day.
-#   The rate limiter -- deliberately 2.5/sec against Kite's allowed 3 --
-#   is what actually keeps us inside the limit; the batch pause is a
-#   second, coarser courtesy. Sized for the new shape of the run it is
-#   11 pauses of 10 seconds, under two minutes, and the whole step lands
-#   around 20 minutes instead of 40.
-#
-#   The defaults in the script are left alone on purpose: a first run,
-#   or a --rebuild-ohlc, still downloads full history and still wants
-#   the gentler brake.
+# Three steps in a fixed order, each feeding the next:
+#   1. load_stock_master.py   the list of stocks. A stock that lists tomorrow
+#                             is added tonight. (It used to run monthly, by
+#                             hand, and had failed since 11 Sep on one symbol
+#                             clash, so nothing new had been added in six
+#                             weeks. It now tolerates a clash and reports it.)
+#   2. fetch_bhavcopy.py      candles for every stock in that list, from NSE's
+#                             daily file, filling any missing day.
+#   3. fetch_technicals.py --from-store
+#                             indicators, from the stored candles.
+# If one fails the next still runs, off what is already stored, and the
+# failure count at the bottom says so -- it does not pass quietly.
 if [ "$DOW" -le 5 ]; then
-    run_step "Stock candles and technicals" \
-             $PY fetch_technicals.py --fresh --batch-size 200 --batch-pause 10
+    run_step "Stock list (NSE equity list)"   $PY load_stock_master.py
+    run_step "Stock candles (NSE daily file)" $PY fetch_bhavcopy.py
+    run_step "Stock technicals"      $PY fetch_technicals.py --from-store --fresh
     run_step "Stock scores"          $PY score_stocks.py
 else
-    skip_step "Stock candles and technicals" "weekend, market was shut"
-    skip_step "Stock scores"                 "weekend, market was shut"
+    skip_step "Stock list (NSE equity list)"   "weekend, market was shut"
+    skip_step "Stock candles (NSE daily file)" "weekend, market was shut"
+    skip_step "Stock technicals"               "weekend, market was shut"
+    skip_step "Stock scores"                   "weekend, market was shut"
 fi
 
 run_step "Fund health scores"   $PY score_funds.py

@@ -43,6 +43,11 @@ COLUMN_PATTERNS = {
 # Section headings that tell us what KIND of instrument follows
 SECTION_TYPES = [
     (r"equity\s*&?\s*equity related|equity shares|^equity$", "EQUITY"),
+    # A heading that is JUST "FUTURES" / "DERIVATIVES" / "(a) Index / Stock Futures" opens the stock-futures
+    # block of an arbitrage or equity-savings fund: the hedge positions (negative weights) are equity
+    # exposure. Without this they kept whatever label came before: CASH in UTI (after Net Current Assets),
+    # REIT in quant (after an empty "(c) REIT" heading). Kotak and Tata already hold them as equity.
+    (r"^\W*(?:\(?\w\)\s*)?(?:index\s*/\s*stock\s+|stock\s+|index\s+)?(?:futures?|derivatives?)\W*$", "EQUITY"),
     (r"debt|bond|debenture|ncd|government securit|g-sec|gilt|treasury|t-bill", "DEBT"),
     (r"money market|certificate of deposit|commercial paper", "DEBT"),
     (r"treps|tri-?party|repo|reverse repo", "TREPS"),
@@ -308,6 +313,8 @@ def parse_sheet(rows, sheet_name, name_hint=None):
                  or sheet_name)
     holdings = []
     current_type = "EQUITY"
+    base_type = None              # set only by an explicit EQUITY / DEBT heading: what a REIT sub-block falls back to
+    rows_since_heading = 0        # holdings read since the last non-blank heading
     net_assets_pct = None
 
     for row in rows[header_idx + 1:]:
@@ -343,8 +350,22 @@ def parse_sheet(rows, sheet_name, name_hint=None):
             kind = classify_section(heading)
             if kind:
                 current_type = kind
+                if kind in ("EQUITY", "DEBT"):
+                    base_type = kind
+            elif (current_type == "REIT" and base_type == "EQUITY" and rows_since_heading > 0
+                  and re.search(r"\blisted\b|awaiting listing", norm(heading))):
+                # ICICI (Sep 2026) prints its REIT block BEFORE the shares and then opens the shares with
+                # "Listed / Awaiting Listing On Stock Exchanges", which names no instrument kind, so every
+                # share stayed labelled REIT (14 funds, e.g. Balanced Advantage, Nifty 500 Index) and the
+                # look-through counted them as REITs. A "Listed" heading that arrives AFTER REIT rows have been
+                # read starts a new block, so it falls back to the section heading above the REIT block. One
+                # that arrives straight after the REIT heading (Invesco, DSP) is only a sub-heading of it.
+                current_type = base_type
+            if heading.strip():
+                rows_since_heading = 0
             continue
 
+        rows_since_heading += 1
         holdings.append({
             "isin": isin.upper(),
             "name": name,

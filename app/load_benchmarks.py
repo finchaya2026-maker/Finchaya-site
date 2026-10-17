@@ -45,6 +45,7 @@ DISPLAY = {
     "NIFTY MIDCAP 150":       "Nifty Midcap 150 TRI",
     "NIFTY SMALLCAP 250":     "Nifty Smallcap 250 TRI",
     "NIFTY LARGEMIDCAP 250":  "Nifty LargeMidcap 250 TRI",
+    "NIFTY IT":               "Nifty IT TRI",       # title-casing would give "Nifty It TRI"
 }
 
 

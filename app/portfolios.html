@@ -516,15 +516,17 @@ function fail(e) {
     // Sign-in lives on the main page -- there is no separate /login route.
     // Linking to one produced a 404 that looked like the feature was broken
     // rather than like the reader simply was not signed in.
+    // The button opens the sign-in window right here (finchaya.js, window.fcSignIn), and the page reloads signed in; it goes to the main page only when that
+    // script is not there.
     app().innerHTML = `<div class="panel"><h2>Sign in first</h2>
       <p class="note">Portfolios are saved against your account, so we need
-         to know whose they are. Sign in on the main page, then come back
-         here &mdash; this page will be waiting.</p>
-      <p><a class="go" href="/" style="text-decoration:none">Go to FinChaya
-         and sign in</a></p>
+         to know whose they are.</p>
+      <p><button type="button" class="go" id="pfSignIn" style="font:inherit;font-weight:650;padding:12px 22px;border-radius:10px;border:0;background:var(--brand,#0f7a56);color:#fff;cursor:pointer">Sign in</button></p>
       <p class="foot">Already signed in and still seeing this? Your session
          may have expired. Signing in again fixes it.</p>
       </div>`;
+    const b = document.getElementById("pfSignIn");
+    if (b) b.addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
     return;
   }
   const box = document.createElement("div");

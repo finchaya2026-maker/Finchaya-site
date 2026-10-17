@@ -49,6 +49,17 @@ BATCHING -- three independent brakes, unchanged from v2:
     2. Batch pause   -- a real pause every N stocks
     3. Backoff       -- on a 429, wait progressively longer and retry
 
+--FROM-STORE (added 5 Oct 2026)
+    The candles now come from NSE's own daily file via fetch_bhavcopy.py, which
+    matched the stored Zerodha candles exactly. With --from-store this script
+    does only the second half of its job: it reads the stored candles and
+    computes the indicators. No Zerodha login, no downloads, no rate limit, no
+    batch pauses. The Zerodha path is left in place and is still what runs
+    without the flag, but nothing needs it any more.
+
+        python fetch_bhavcopy.py                       # candles from NSE
+        python fetch_technicals.py --from-store --fresh   # indicators
+
 USAGE
   python fetch_technicals.py --symbols RELIANCE,TCS,INFY     # spot check
   python fetch_technicals.py --limit 100                     # scale test
@@ -71,7 +82,9 @@ import psycopg
 from dotenv import load_dotenv
 
 import indicators as ind
-from zerodha_login_with_auto import get_session
+# zerodha_login_with_auto (a headless browser and a 2FA secret) is imported
+# inside main(), only when a download is actually wanted. --from-store never
+# touches it, so a missing or broken Zerodha setup cannot stop the indicators.
 
 # Anchored to this file rather than the current directory: cron does not
 # start where you think it does, and a checkpoint written to the wrong
@@ -121,9 +134,34 @@ SMA_PERIOD = 50
 # report in backfill_ema.py says which are empty and why.
 EMA_PERIODS = (5, 10, 20, 26, 50, 100, 200)
 
+# stock_technical.param_set is VARCHAR(50). THIS LIMIT BROKE THE NIGHTLY RUN.
+#
+# When the EMA periods were added, the label grew a suffix listing every one
+# of them ("_E5-10-20-26-50-100-200"), taking it to 57 characters. Postgres
+# refuses a value longer than the column, so the FIRST indicator write of the
+# first run after that failed -- "value too long for type character varying
+# (50)" -- and, because the failure was not rolled back, every stock after it
+# failed too and the run died without closing its log row. That is the
+# "one stock a night, then stuck at RUNNING" stall from mid-September 2026.
+#
+# The label now names the EMA RANGE rather than listing it, which fits with
+# room to spare, and the check below stops the job at import with a plain
+# message if a future edit makes it too long again.
+PARAM_SET_MAX = 50
 PARAM_SET = (f"M12-26-9_R{RSI_PERIOD}_A{ADX_PERIOD}"
              f"_BB{BB_PERIOD}-{BB_STDDEV:g}_ST{ST_PERIOD}-{ST_MULT:g}_S{SMA_PERIOD}"
-             f"_E{'-'.join(str(p) for p in EMA_PERIODS)}")
+             f"_EMA{min(EMA_PERIODS)}-{max(EMA_PERIODS)}")
+if len(PARAM_SET) > PARAM_SET_MAX:
+    raise SystemExit(
+        f"PARAM_SET is {len(PARAM_SET)} characters but stock_technical.param_set "
+        f"holds {PARAM_SET_MAX}. Every indicator write would fail. Shorten it:\n"
+        f"  {PARAM_SET}")
+
+# After this many stocks in a row fail to WRITE, stop: the cause is shared
+# (a column limit, a missing grant, the database being down) and the next
+# 2,400 stocks would only repeat it. One bad stock is skipped; twenty in a
+# row is a broken job and is reported as one.
+MAX_CONSECUTIVE_FAILURES = 20
 
 
 # =====================================================================
@@ -384,7 +422,7 @@ def safe(value):
     return float(value)
 
 
-def build_rows(isin, daily, history_bars):
+def build_rows(isin, daily, history_bars, source="KITE"):
     rows = []
     timeframes = {
         "DAILY": daily,
@@ -415,7 +453,7 @@ def build_rows(isin, daily, history_bars):
                 "UP" if bool(r.get("st_bullish")) else "DOWN",
                 safe(r.get("close")),
                 *[safe(r.get(f"ema_{p}")) for p in EMA_PERIODS],
-                PARAM_SET, "KITE",
+                PARAM_SET, source,
             ))
     return rows
 
@@ -534,7 +572,16 @@ def main():
                     help="ignore the checkpoint and revisit every stock")
     ap.add_argument("--rebuild-ohlc", action="store_true",
                     help="re-download full history and overwrite stored candles")
+    ap.add_argument("--from-store", action="store_true",
+                    help="compute indicators from the candles already stored "
+                         "(filled by fetch_bhavcopy.py); no Zerodha login, "
+                         "no downloads")
     args = ap.parse_args()
+
+    if args.from_store and args.rebuild_ohlc:
+        print("--rebuild-ohlc downloads from Zerodha; --from-store never does. "
+              "Pick one.")
+        sys.exit(2)
 
     symbols = ([s.strip().upper() for s in args.symbols.split(",")]
                if args.symbols else None)
@@ -542,12 +589,19 @@ def main():
     today = date.today()
     want_start = today - timedelta(days=int(args.years * 365.25))
 
-    kite = get_session(auto_login=True)
-    if not kite:
-        print("Could not authenticate with Kite.")
-        sys.exit(1)
-
-    instrument_map = load_instrument_map(kite)
+    if args.from_store:
+        # Nothing is downloaded, so there is nothing to rate-limit.
+        kite, instrument_map = None, None
+        args.batch_pause = 0
+        candle_source = "STORE"
+    else:
+        from zerodha_login_with_auto import get_session
+        kite = get_session(auto_login=True)
+        if not kite:
+            print("Could not authenticate with Kite.")
+            sys.exit(1)
+        instrument_map = load_instrument_map(kite)
+        candle_source = "KITE"
 
     with psycopg.connect(DB) as conn:
 
@@ -577,7 +631,7 @@ def main():
         floor = load_floor()
 
         have = sum(1 for i, _ in todo if i in bounds_map)
-        first_run = have == 0 or args.rebuild_ohlc
+        first_run = (have == 0 or args.rebuild_ohlc) and not args.from_store
 
         n_batches = (len(todo) + args.batch_size - 1) // max(args.batch_size, 1)
         if first_run:
@@ -590,15 +644,27 @@ def main():
         print(f"\n{len(targets)} selected | {len(done)} done | {len(todo)} to fetch")
         print(f"{have} of them already have stored candles")
         print(f"window: {want_start} to {today} ({args.years:g} years)")
-        if first_run:
-            print("\nFIRST RUN -- nothing stored yet, so this one downloads full")
-            print("history and will take about as long as the old version did.")
-            print("Every run after this fetches only the missing days.\n")
-        print(f"~{reqs} request(s)/stock, batches of {args.batch_size}, "
-              f"{args.batch_pause:.0f}s pause between")
-        print(f"Estimated: ~{est_sec / 60:.1f} minutes\n")
+        if args.from_store:
+            print("\nFROM STORE -- computing from stored candles. No downloads.\n")
+        else:
+            if first_run:
+                print("\nFIRST RUN -- nothing stored yet, so this one downloads full")
+                print("history and will take about as long as the old version did.")
+                print("Every run after this fetches only the missing days.\n")
+            print(f"~{reqs} request(s)/stock, batches of {args.batch_size}, "
+                  f"{args.batch_pause:.0f}s pause between")
+            print(f"Estimated: ~{est_sec / 60:.1f} minutes\n")
 
         with conn.cursor() as cur:
+            # Rows left at RUNNING by a run that died, so a reader of
+            # batch_run_log is not told a job is still going three weeks on.
+            cur.execute("""
+                UPDATE batch_run_log
+                   SET status='FAILED', finished_at=now(),
+                       error_message='never finished (the process died)'
+                 WHERE run_type='FETCH_TECHNICALS' AND status='RUNNING'
+                   AND started_at < now() - interval '6 hours'
+            """)
             cur.execute("""
                 INSERT INTO batch_run_log (run_type, business_date, status)
                 VALUES ('FETCH_TECHNICALS', CURRENT_DATE, 'RUNNING')
@@ -611,10 +677,12 @@ def main():
         no_fetch_needed = 0
         data_date = None
         started = time.monotonic()
+        consecutive_failures = 0
+        aborted = None
 
         for i, (isin, symbol) in enumerate(todo, 1):
-            token = instrument_map.get(symbol)
-            if not token:
+            token = None if args.from_store else instrument_map.get(symbol)
+            if not args.from_store and not token:
                 skipped.append((symbol, "no instrument token"))
                 continue
 
@@ -623,9 +691,12 @@ def main():
                 floor_date = (date.fromisoformat(floor_raw)
                               if floor_raw else None)
 
-                ranges, asked_head = gaps_to_fetch(
-                    bounds_map.get(isin), floor_date,
-                    want_start, today, args.rebuild_ohlc)
+                if args.from_store:
+                    ranges, asked_head = [], False      # nothing to download
+                else:
+                    ranges, asked_head = gaps_to_fetch(
+                        bounds_map.get(isin), floor_date,
+                        want_start, today, args.rebuild_ohlc)
 
                 if not ranges:
                     no_fetch_needed += 1
@@ -639,7 +710,8 @@ def main():
 
                 # Record how far back we have now ASKED, so a stock that
                 # simply has no older history is not re-asked nightly.
-                if asked_head or args.rebuild_ohlc or not bounds_map.get(isin):
+                if not args.from_store and (asked_head or args.rebuild_ohlc
+                                            or not bounds_map.get(isin)):
                     floor[isin] = want_start.isoformat()
 
                 # ---- compute from the STORE, not from the download ----
@@ -652,7 +724,7 @@ def main():
                     skipped.append((symbol, f"only {n} candles"))
                     continue
 
-                rows = build_rows(isin, daily, args.history)
+                rows = build_rows(isin, daily, args.history, candle_source)
                 if not rows:
                     skipped.append((symbol, "insufficient history for any timeframe"))
                     continue
@@ -673,10 +745,29 @@ def main():
                         else f"+{new_rows} new candle{'s' if new_rows != 1 else ''}")
                 print(f"[{i}/{len(todo)}] {symbol:<14} {len(daily):>5} stored  "
                       f"{note:<20} -> {len(rows)} rows / {tfs} timeframes")
+                consecutive_failures = 0
 
             except Exception as e:
+                # ROLL BACK FIRST. A failed statement leaves the connection
+                # in an aborted transaction in which every later statement
+                # is refused ("current transaction is aborted, commands
+                # ignored until end of transaction block"). Without this
+                # line one bad stock took every stock after it down with it,
+                # and the first real error scrolled out of sight under
+                # thousands of copies of that one.
+                conn.rollback()
+                consecutive_failures += 1
                 skipped.append((symbol, str(e)[:90]))
-                print(f"[{i}/{len(todo)}] {symbol:<14} FAILED: {str(e)[:70]}")
+                print(f"[{i}/{len(todo)}] {symbol:<14} FAILED: "
+                      f"{type(e).__name__}: {str(e).splitlines()[0][:90]}")
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    aborted = (f"{consecutive_failures} stocks in a row failed; "
+                               f"last: {type(e).__name__}: "
+                               f"{str(e).splitlines()[0][:150]}")
+                    print(f"\nSTOPPING: {aborted}")
+                    print("The cause is shared, so the rest would fail the "
+                          "same way. Fix it and re-run.")
+                    break
 
             # ---- batch boundary: checkpoint, then genuinely pause ----
             if i % args.batch_size == 0 and i < len(todo):
@@ -696,6 +787,7 @@ def main():
         # finishes after midnight was still working on Friday's market,
         # and a log that says Saturday makes every later investigation
         # start from a wrong fact.
+        conn.rollback()      # never close the log row from inside a failed one
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE batch_run_log
@@ -703,17 +795,21 @@ def main():
                        business_date=COALESCE(%s, business_date),
                        rows_read=%s, rows_written=%s, error_message=%s
                  WHERE run_id=%s
-            """, ('PARTIAL' if skipped else 'SUCCESS', data_date,
-                  len(todo), written,
-                  f"{len(skipped)} skipped" if skipped else None, run_id))
+            """, ('FAILED' if aborted else 'PARTIAL' if skipped else 'SUCCESS',
+                  data_date, len(todo), written,
+                  aborted or (f"{len(skipped)} skipped" if skipped else None),
+                  run_id))
             conn.commit()
 
         mins = (time.monotonic() - started) / 60
         print(f"\n{'=' * 66}")
         print(f"Wrote {written} indicator rows. run_id = {run_id} ({mins:.1f} min)")
-        print(f"Stored {candles_stored:,} new daily candles.")
-        print(f"Kite requests: {REQUESTS['n']:,}"
-              f"   |  {no_fetch_needed} stock(s) needed no download at all")
+        if args.from_store:
+            print("Computed from stored candles; nothing was downloaded.")
+        else:
+            print(f"Stored {candles_stored:,} new daily candles.")
+            print(f"Kite requests: {REQUESTS['n']:,}"
+                  f"   |  {no_fetch_needed} stock(s) needed no download at all")
         if data_date:
             print(f"Data date: {data_date}")
 
@@ -757,6 +853,9 @@ def main():
             for r in cur.fetchall():
                 print("  ", r)
 
+    # A run that stopped itself is a failed run: say so to nightly.sh.
+    return 1 if aborted else 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

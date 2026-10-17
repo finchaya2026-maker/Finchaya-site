@@ -1168,7 +1168,7 @@
           portfolio it values what you have put in from NAV history, and
           shows how far the mix has drifted from the plan and how the funds
           are doing against their benchmarks and peers.</li>
-        <li><b>Nothing reaches out to you yet.</b> There are no emails or
+        <li id="lockDelivery"><b>Nothing reaches out to you yet.</b> There are no emails or
           notifications &mdash; you have to come and look. Worth knowing
           before you rely on it.</li>
       </ul>
@@ -2591,6 +2591,25 @@ function setAmount(id, rupeesValue) {
     if (e.key === "Escape" && !modal.hidden) close();
   });
 
+  // The sentence about email is only true once sending is switched on, so ask the server
+  // (saved_portfolio_api._delivery_state) rather than hard-code either answer. Until it says yes,
+  // the page keeps telling the truth it told before.
+  let deliveryChecked = false;
+  async function refreshLockDelivery() {
+    if (deliveryChecked) return;
+    try {
+      const r = await fetch("/api/portfolio/saved/delivery/state");
+      if (!r.ok) return;
+      const d = await r.json();
+      deliveryChecked = true;
+      const li = document.getElementById("lockDelivery");
+      if (d.live && li) li.innerHTML = "<b>FinChaya writes to you.</b> Once a month, between the 11th and 15th, it emails how " +
+        "the funds are doing against their benchmarks and categories, and whether the plan is still diversified. It sends an alert " +
+        "if a fund trails its benchmark or falls down its category three month ends in a row, or if two funds overlap by more than 50%. " +
+        "You can change or turn this off any time.";
+    } catch (e) { /* the default sentence stands */ }
+  }
+
   document.addEventListener("click", e => {
     if (!e.target.closest("#lockopen")) return;
     const plan = planInputs();
@@ -2602,6 +2621,7 @@ function setAmount(id, rupeesValue) {
                  : p === "income" ? "Regular income" : "My plan";
     }
     modal.hidden = false;
+    refreshLockDelivery();
   });
 
   go.addEventListener("click", async () => {
@@ -4117,22 +4137,31 @@ function evenSplit() {
    onto an explanation makes it look like what it is. */
 function planGate() {
   if (!window.fcAuthState || !window.fcAuthState.ready) return;
-  // `subscribed`, not `score_access`: scores can be switched off for
-  // everyone, and that must not lock paying users out of the plan.
-  if (window.fcAuthState.subscribed) return;
+  // `mf` (the mutual-fund tier), not `score_access`: scores can be switched
+  // off for everyone, and that must not lock paying users out of the plan.
+  // An older server that sends no tier falls back to `subscribed`.
+  const st = window.fcAuthState;
+  if (st.mf === undefined ? st.subscribed : st.mf) return;
 
   const grid = document.querySelector(".fundsgrid");
   if (!grid || grid.dataset.locked) return;
   grid.dataset.locked = "1";
   grid.innerHTML = `<div class="panel"><h2>Which funds?</h2>
     <div id="planlock"></div></div>`;
+  // .fundsgrid is three columns (filters 264px, funds, basket 310px), so a
+  // lone panel dropped in lands in the 264px filter column and leaves the
+  // wide area, where the funds list normally is, empty. Span every column
+  // instead, so what the subscription includes is read where the funds
+  // would have been. `1 / -1` follows whatever the column count is at the
+  // current screen width.
+  grid.firstElementChild.style.gridColumn = "1 / -1";
   if (window.fcLocked)
     window.fcLocked(document.getElementById("planlock"), "Choosing funds",
       "The goal and what it needs are open to everyone \u2014 that is "
       + "arithmetic, and it is yours. From here the page reads through to "
       + "the shares each fund actually owns, checks them against their own "
       + "benchmarks and against each other, and measures the mix you end "
-      + "up with. That is the part that is paid for.");
+      + "up with. That is the part that is paid for.", "mf");
 
   // Results tabs cannot be reached without the funds tab, so they are
   // left disabled rather than given a second notice.

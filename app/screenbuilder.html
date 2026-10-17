@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build your own screener &mdash; FinChaya</title>
+<meta name="description" content="Make your own stock screen: combine chart patterns and indicators, mutual-fund buying, who owns the company and the company's ratios, with AND and OR, and see the stocks that match.">
+<link rel="stylesheet" href="/finchaya.css">
+<script src="/finchaya.js" defer></script>
+<!--
+  screenbuilder.html -- "Build your own screener".
+  ======================================================================
+  A SCREEN is a universe (market-cap classes, sectors, industries) and a tree of conditions joined by ALL / ANY, nested up to three levels. A condition is one
+  field (RSI, a chart pattern, funds that newly bought it, foreign institutions' holding, P/E ...) with its settings and a test. The catalogue of fields comes
+  from the server (/api/screenbuilder/catalog), so the page needs no code of its own for a new field.
+
+  WHAT IT SAYS ABOUT THE DATA, ALWAYS: how many stocks it looked at, how many it could not test (a reading was missing), how many pass each condition on its
+  own, where each reading comes from and its date, and any provider that could not be read (shown as a problem, never as "nothing matched").
+
+  THE FIRST RUN OF A TRADING DAY reads ten years of prices; the page says so while it waits.
+
+  DATA: /api/screenbuilder/{access,catalog,status,describe,run,saved,requests} (screenbuilder_api.py). Stocks plan members and administrators only; the
+  server checks every call. A condition's wording is built on the server (screenbuilder_engine.describe), so the page and a saved screen cannot disagree.
+-->
+<style>
+  /* Every class is prefixed sb-: finchaya.css owns .panel, .chip, .tabs, .note and more and loads after this block. */
+  [hidden]{display:none !important}
+  .sb-box{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:18px 20px;margin:16px 0 0}
+  .sb-box h2{margin:0 0 4px;font-size:1.05rem}
+  .sb-sub{color:var(--muted);font-size:14px;margin:0}
+  .sb-btn{appearance:none;cursor:pointer;font-weight:700;font-size:14.5px;padding:8px 16px;border-radius:var(--r);border:1.5px solid var(--brand);background:var(--card);color:var(--brand-dark)}
+  .sb-btn:hover{background:var(--brand-wash)}
+  .sb-btn:disabled{opacity:.5;cursor:default}
+  .sb-go{background:var(--brand);color:#fff}
+  .sb-go:hover{background:var(--brand-dark)}
+  .sb-link{appearance:none;background:none;border:0;cursor:pointer;color:var(--brand-dark);font-weight:650;font-size:14px;padding:4px 2px}
+  .sb-link:hover{text-decoration:underline}
+  .sb-neg{color:var(--neg)}
+
+  .sb-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid var(--line-firm);margin:18px 0 6px}
+  .sb-tab{appearance:none;border:0;background:none;cursor:pointer;padding:10px 14px;font-size:15.5px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1.5px}
+  .sb-tab:hover{color:var(--ink)}
+  .sb-tab[aria-selected=true]{color:var(--brand-dark);border-bottom-color:var(--brand)}
+  .sb-n{display:inline-block;min-width:22px;padding:0 7px;margin-left:6px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12.5px;font-weight:700;text-align:center}
+
+  .sb-ex{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 4px}
+  .sb-ex b{font-size:13px;color:var(--muted);font-weight:650;letter-spacing:.03em;text-transform:uppercase}
+  .sb-chip{appearance:none;cursor:pointer;background:var(--card);border:1px solid var(--line-firm);border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:600;color:var(--ink)}
+  .sb-chip:hover{border-color:var(--brand)}
+
+  .sb-uni summary{cursor:pointer;font-weight:650;font-size:15px;color:var(--ink)}
+  .sb-uni .sb-body{display:flex;gap:22px;flex-wrap:wrap;margin-top:12px}
+  .sb-uni label.sb-cap{display:inline-flex;gap:6px;align-items:center;margin-right:14px;font-size:14.5px}
+  .sb-uni h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:650}
+  .sb-dates{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .sb-dates label{display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--ink-2)}
+  .sb-dates input{font:inherit;padding:6px 8px;border:1px solid var(--line, #d9d4c7);border-radius:8px;background:var(--card, #fff);color:var(--ink)}
+  .sb-dates[hidden]{display:none}
+  .sb-pick select{padding:7px 10px;font-size:14px;border:1px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink);max-width:260px}
+  .sb-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .sb-tag{display:inline-flex;gap:4px;align-items:center;background:var(--surface-2);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px}
+  .sb-tag button{appearance:none;border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:2px 6px}
+
+  .sb-group{border:1.5px solid var(--line-firm);border-radius:var(--r-card);padding:12px 14px;margin:10px 0 0;background:var(--surface)}
+  .sb-group .sb-group{background:var(--card)}
+  .sb-ghead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:15px;font-weight:650}
+  .sb-ghead select{width:auto;flex:0 0 auto;padding:5px 8px;font-size:14.5px;font-weight:700;border:1.5px solid var(--brand);border-radius:var(--r);background:var(--card);color:var(--brand-dark)}
+  .sb-items{margin:8px 0 0}
+  .sb-cond{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin:8px 0 0;position:relative}
+  .sb-group .sb-group .sb-cond{background:var(--surface)}
+  .sb-line{display:flex;gap:10px 12px;flex-wrap:wrap;align-items:flex-end;padding-right:30px}
+  .sb-p{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted);font-weight:650;letter-spacing:.04em;text-transform:uppercase}
+  .sb-line select,.sb-line input{padding:7px 10px;font-size:14.5px;border:1px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink);font-weight:500;letter-spacing:0;text-transform:none}
+  .sb-line input[type=number]{width:96px}
+  .sb-line .sb-field{min-width:210px;max-width:100%;font-weight:650}
+  .sb-unit{align-self:flex-end;padding-bottom:8px;color:var(--ink-2);font-size:14px}
+  .sb-and{align-self:flex-end;padding-bottom:8px;color:var(--muted);font-size:14px}
+  .sb-x{position:absolute;top:6px;right:6px;appearance:none;border:0;background:none;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:var(--r)}
+  .sb-x:hover{color:var(--neg);background:var(--neg-wash)}
+  .sb-help{margin:6px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .sb-warn{margin:6px 0 0;font-size:13.5px;border-radius:var(--r);padding:7px 11px;background:var(--note-wash);border:1px solid var(--note)}
+  .sb-add{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+
+  .sb-words{margin-top:14px}
+  .sb-words ul{margin:4px 0 0;padding-left:20px}
+  .sb-words li{margin:3px 0;font-size:14.5px}
+  .sb-words .sb-op{font-weight:700;color:var(--brand-dark)}
+  .sb-problem{border-radius:var(--r);padding:10px 14px;font-size:14.5px;background:var(--note-wash);border:1px solid var(--note);margin-top:12px}
+  .sb-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+  .sb-save{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .sb-save input{padding:8px 11px;font-size:15px;border:1.5px solid var(--line-firm);border-radius:var(--r);min-width:240px;background:var(--card);color:var(--ink)}
+
+  .sb-sum{display:flex;gap:10px 22px;flex-wrap:wrap;align-items:baseline}
+  .sb-big{font-size:28px;font-weight:700;letter-spacing:-.02em}
+  .sb-meta{font-size:13px;color:var(--muted);margin:6px 0 0;line-height:1.55}
+  .sb-cw{overflow-x:auto;margin-top:10px}
+  .sb-count{width:100%;border-collapse:collapse;font-size:14px}
+  .sb-count td:first-child{min-width:190px}
+  .sb-count th{font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);text-align:left;padding:4px 8px;border-bottom:1px solid var(--line-firm)}
+  .sb-count td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .sb-count td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sb-wait{padding:18px 4px;color:var(--ink-2)}
+  .sb-wait .sb-spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line-firm);border-top-color:var(--brand);border-radius:50%;animation:sbspin .8s linear infinite;vertical-align:-2px;margin-right:8px}
+  @keyframes sbspin{to{transform:rotate(360deg)}}
+
+  .sb-tw{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:var(--r)}
+  table.sb-res{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+  .sb-res th{position:sticky;top:0;background:var(--surface);text-align:left;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:9px 10px;border-bottom:1.5px solid var(--line-firm);cursor:pointer;white-space:nowrap;user-select:none}
+  .sb-res th[aria-sort=ascending]::after{content:" \25B2"}
+  .sb-res th[aria-sort=descending]::after{content:" \25BC"}
+  .sb-res td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .sb-res tr:hover td{background:var(--brand-wash)}
+  .sb-res td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sb-res a{color:inherit;text-decoration:none;font-weight:650}
+  .sb-res a:hover{text-decoration:underline}
+  .sb-res small{display:block;color:var(--muted);font-size:12px;font-weight:400}
+  .sb-cap{display:inline-block;font-size:11px;font-weight:650;padding:1px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted);margin-left:6px}
+  .sb-up{color:var(--brand)}
+  .sb-dn{color:var(--neg)}
+
+  .sb-card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:14px 18px;margin:12px 0 0}
+  .sb-card h3{margin:0;font-size:16.5px}
+  .sb-card .sb-ol{margin:8px 0 0;font-size:14px;color:var(--ink-2);white-space:pre-wrap}
+  .sb-card .sb-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;align-items:center}
+  .sb-ask{display:grid;gap:10px;margin-top:10px;max-width:640px}
+  .sb-ask select,.sb-ask input,.sb-ask textarea{padding:9px 11px;font-size:15px;border:1.5px solid var(--line-firm);border-radius:var(--r);background:var(--card);color:var(--ink);font-family:inherit;width:100%;box-sizing:border-box}
+  .sb-ask label{font-size:12px;font-weight:650;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;display:grid;gap:4px}
+  .sb-done{border-radius:var(--r);padding:10px 14px;font-size:14.5px;background:var(--brand-wash);border:1px solid var(--line-firm);margin-top:10px}
+  .sb-empty{color:var(--muted);padding:22px 4px}
+  .sb-err{color:var(--neg);padding:12px 4px}
+  .sb-lock .fc-lock{margin-top:8px}
+  @media (max-width:640px){
+    .sb-line .sb-field{min-width:0;width:100%}
+    .sb-line{padding-right:26px}
+    .sb-uni .sb-body{gap:14px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Stock screener</p>
+  <h1>Build your own screener</h1>
+  <p class="note">Combine what you care about &mdash; chart patterns and indicators, what mutual funds did, who owns the company, and its ratios &mdash; with
+    <b>and</b> / <b>or</b>, and see the stocks that match. If a measure you need is missing, tell us and we will look at adding it.</p>
+
+  <div id="sbLock" class="sb-lock"></div>
+
+  <div id="sbApp" hidden>
+    <div class="sb-tabs" role="tablist" id="sbTabs">
+      <button type="button" class="sb-tab" role="tab" data-tab="build" aria-controls="paneBuild" aria-selected="true">Build a screen</button>
+      <button type="button" class="sb-tab" role="tab" data-tab="saved" aria-controls="paneSaved" aria-selected="false">My saved screens<span class="sb-n" id="sbN1">0</span></button>
+      <button type="button" class="sb-tab" role="tab" data-tab="req" aria-controls="paneReq" aria-selected="false">Ask for something new<span class="sb-n" id="sbN2">0</span></button>
+    </div>
+
+    <!-- ============================================================ BUILD -->
+    <section id="paneBuild">
+      <div class="sb-ex" id="sbExamples"></div>
+
+      <div class="sb-box sb-uni">
+        <details id="sbUni">
+          <summary id="sbUniSum">Look at: all stocks</summary>
+          <div class="sb-body">
+            <div><h3>Company size</h3><div id="sbCaps"></div></div>
+            <div class="sb-pick"><h3>Sector</h3><select id="sbSector" aria-label="Add a sector"></select><div class="sb-tags" id="sbSectorTags"></div></div>
+            <div class="sb-pick"><h3>Industry</h3><select id="sbIndustry" aria-label="Add an industry"></select><div class="sb-tags" id="sbIndustryTags"></div></div>
+            <div class="sb-pick"><h3>New listings (IPOs)</h3><select id="sbIpo" aria-label="Only stocks that listed as an IPO"></select>
+              <div class="sb-dates" id="sbIpoDates" hidden>
+                <label>From <input type="date" id="sbIpoFrom" aria-label="Listed on or after"></label>
+                <label>To <input type="date" id="sbIpoTo" aria-label="Listed on or before"></label>
+              </div></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="sb-box">
+        <h2>Find stocks where&hellip;</h2>
+        <p class="sb-sub">Add conditions. Use &ldquo;all of these&rdquo; when every one must be true and &ldquo;any of these&rdquo; when one is enough; a group can hold another group.</p>
+        <div id="sbRules"></div>
+        <div class="sb-words" id="sbWords"></div>
+        <div class="sb-actions">
+          <button type="button" class="sb-btn sb-go" id="sbRun">Show matching stocks</button>
+          <button type="button" class="sb-btn" id="sbSaveBtn">Save this screen</button>
+          <button type="button" class="sb-link" id="sbClear">Start again</button>
+        </div>
+        <div class="sb-save" id="sbSaveForm" hidden>
+          <input id="sbName" type="text" maxlength="80" placeholder="Name this screen" aria-label="Name for this screen">
+          <button type="button" class="sb-btn" id="sbSaveGo">Save</button>
+          <button type="button" class="sb-btn" id="sbSaveNew" hidden>Save as a new screen</button>
+          <button type="button" class="sb-link" id="sbSaveCancel">Cancel</button>
+        </div>
+        <div id="sbSaveMsg" role="status"></div>
+      </div>
+
+      <div id="sbResults"></div>
+    </section>
+
+    <!-- ============================================================ SAVED -->
+    <section id="paneSaved" hidden>
+      <div id="sbSaved"><p class="sb-empty">Loading&hellip;</p></div>
+    </section>
+
+    <!-- ============================================================ REQUESTS -->
+    <section id="paneReq" hidden>
+      <div class="sb-box">
+        <h2>Ask for something new</h2>
+        <p class="sb-sub">Tell us a measure you would like to filter on that is not in the list &mdash; an indicator (Ichimoku cloud, ADX), a fundamental (ROCE, dividend yield, free cash flow), mutual-fund or shareholding data, or anything else. The more people ask for the same thing, the sooner it moves up.</p>
+        <div class="sb-ask">
+          <label>What kind of information is it?<select id="rqKind"></select></label>
+          <label>What do you need?<input id="rqName" type="text" maxlength="80" placeholder="For example: Ichimoku cloud, ROCE, promoter holding trend"></label>
+          <label>Anything that helps us get it right (optional)<textarea id="rqDetails" rows="3" maxlength="500" placeholder="How you would use it, the exact definition you have in mind, a link"></textarea></label>
+          <div><button type="button" class="sb-btn sb-go" id="rqSend">Send the request</button></div>
+        </div>
+        <div id="rqMsg" role="status"></div>
+      </div>
+      <div class="sb-box"><h2>What you have asked for</h2><div id="rqList"><p class="sb-empty">Loading&hellip;</p></div></div>
+      <div class="sb-box" id="rqAdmin" hidden><h2>Everyone's requests (administrators)</h2><div id="rqAll"></div></div>
+    </section>
+  </div>
+
+  <p class="foot">A screen lists the stocks that match what you asked for; it is not a recommendation to buy, sell or hold anything, and FinChaya is not a SEBI-registered
+    Research Analyst or Investment Adviser. Technical readings use end-of-day prices (a week or month still in progress counts as it stands); chart patterns,
+    fund activity and shareholding are the same readings as on the Screener page; ratios are worked out from the company's filed results at the latest price. A
+    reading that cannot be made for a stock leaves that stock out and is counted, so a screen never looks cleaner than the data behind it. &ldquo;Industry
+    average&rdquo; is the median of the companies in the same industry that have the ratio, when at least five do.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dmy = v => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() : ""; };
+  const rupees = v => v == null ? "" : "₹" + Number(v).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const state = {cat: null, fields: {}, spec: null, result: null, resultSpec: null, saved: [], loadedId: null, loadedName: "", sort: {col: null, dir: 1}, describeSeq: 0, runSeq: 0,
+                 valid: false, admin: false};
+
+  // ------------------------------------------------------------ the gate (the same as the other Stocks pages)
+  const INTRO = "Make your own stock screen from chart patterns, indicators, fund activity, ownership and ratios.";
+  function authReady() {
+    return new Promise(res => {
+      if (window.fcAuthState && window.fcAuthState.ready) return res();
+      document.addEventListener("fc-auth", () => res(), {once: true});
+      setTimeout(res, 4000);
+    });
+  }
+  async function lock(a) {
+    a = a || {};
+    $("sbApp").hidden = true;
+    const host = $("sbLock");
+    const box = (t, m, extra) => '<div class="sb-box"><h2>' + esc(t) + '</h2><p class="sb-sub">' + esc(m) + "</p>" + (extra || "") + "</div>";
+    if (a.enabled === false) host.innerHTML = box("The screener builder is switched off", "It is not available at the moment.");
+    else if (a.signed_in === false) {
+      host.innerHTML = box("The screener builder is part of the Stocks plan", INTRO + " Sign in with an account on that plan to use it.",
+        '<p><button type="button" class="sb-btn" id="sbSign" style="margin-top:10px">Sign in</button></p>');
+      $("sbSign").addEventListener("click", () => window.fcSignIn ? window.fcSignIn() : location.assign("/"));
+    } else if (a.audience === "premium" && window.fcLocked) {
+      await authReady();
+      window.fcLocked(host, "The screener builder", INTRO, "stocks");
+    } else host.innerHTML = box("The screener builder is not open to your account", "It is available to " + (a.who || "subscribers") + ". " + INTRO);
+  }
+  async function relock() { try { await lock(await (await fetch("/api/screenbuilder/access")).json()); } catch (e) { await lock({}); } }
+
+  async function api(path, opts) {
+    const r = await fetch("/api/screenbuilder" + path, opts);
+    let body = null; try { body = await r.json(); } catch (e) { /* not json */ }
+    if (r.status === 401 || r.status === 403) { if (!(opts && opts.quiet403)) relock(); const e = new Error((body && body.detail) || "access"); e.access = true; throw e; }
+    if (!r.ok) { const e = new Error((body && body.detail) || "Something went wrong (" + r.status + "). Try again in a moment."); e.status = r.status; throw e; }
+    return body;
+  }
+  const post = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+
+  // ------------------------------------------------------------ the screen, in the form the server wants it
+  const blank = () => ({universe: {caps: [], sectors: [], industries: [], ipo: null}, rules: {op: "all", items: []}});
+  // "only IPOs": the exchange's listing date, as a number of days back or between two dates
+  const IPO_WINDOWS = [[30, "30 days"], [60, "60 days"], [90, "90 days"], [180, "180 days"], [365, "1 year"], [730, "2 years"]];
+  function ipoToApi(i) {
+    if (!i) return null;
+    const o = {};
+    if (i.within) o.within = Number(i.within);
+    if (i.from) o.from = i.from;
+    if (i.to) o.to = i.to;
+    return Object.keys(o).length ? o : null;
+  }
+  const ipoCopy = i => i ? {within: i.within || null, from: i.from || "", to: i.to || ""} : null;
+  const ipoPhrase = i => {
+    const bits = [];
+    if (i && i.within) bits.push("in the last " + i.within + " days");
+    if (i && i.from && i.to) bits.push("between " + i.from + " and " + i.to);
+    else if (i && i.from) bits.push("on or after " + i.from);
+    else if (i && i.to) bits.push("on or before " + i.to);
+    return "IPOs listed " + (bits.length ? bits.join(" and ") : "(choose dates)");
+  };
+  const defaultParams = f => { const p = {}; (f.params || []).forEach(ps => { p[ps.param] = ps.default; }); return p; };
+  function newCond(key) {
+    const f = state.fields[key];
+    const c = {field: key, params: defaultParams(f)};
+    if (f.kind === "flag") c.flag = true;
+    else { c.op = "gt"; c.value = f.default == null ? 0 : f.default; }
+    return c;
+  }
+  function firstField() {
+    const f = state.cat.fields.find(x => x.key === "rsi" && !x.unavailable) || state.cat.fields.find(x => !x.unavailable) || state.cat.fields[0];
+    return f.key;
+  }
+  const isGroup = n => n && Array.isArray(n.items);
+  function nodeAt(path) {                       // "0.2.1" -> the node; "" -> the root group
+    let n = state.spec.rules;
+    if (path === "") return n;
+    for (const i of path.split(".")) n = n.items[Number(i)];
+    return n;
+  }
+  function parentOf(path) {
+    const parts = path.split(".");
+    const idx = Number(parts.pop());
+    return [nodeAt(parts.join(".")), idx];
+  }
+  const num = v => (v === "" || v == null || isNaN(Number(v))) ? null : Number(v);
+  function condToApi(c) {
+    const f = state.fields[c.field];
+    const o = {field: c.field, params: c.params};
+    if (!f) return o;
+    if (f.kind === "flag") { o.value = c.flag !== false; return o; }
+    o.op = c.op;
+    if (c.ref === "industry") { o.ref = "industry"; o.mult = Number(c.mult || 1); return o; }
+    if (c.op === "between") o.value = [num((c.value || [])[0]), num((c.value || [])[1])];
+    else o.value = num(c.value);
+    return o;
+  }
+  const nodeToApi = n => isGroup(n) ? {op: n.op, items: n.items.map(nodeToApi)} : condToApi(n);
+  function toApi() {
+    const u = state.spec.universe;
+    return {universe: {caps: u.caps.slice(), sectors: u.sectors.slice(), industries: u.industries.slice(), ipo: ipoToApi(u.ipo)}, rules: nodeToApi(state.spec.rules)};
+  }
+  function fromApiNode(n) {
+    if (n.items) return {op: n.op, items: n.items.map(fromApiNode)};
+    const f = state.fields[n.field];
+    const c = {field: n.field, params: Object.assign(f ? defaultParams(f) : {}, n.params || {})};
+    if (f && f.kind === "flag") c.flag = n.value !== false;
+    else {
+      c.op = n.op;
+      if (n.ref === "industry") { c.ref = "industry"; c.mult = n.mult; c.value = f && f.default != null ? f.default : 0; }
+      else c.value = n.op === "between" ? n.value.slice() : n.value;
+    }
+    return c;
+  }
+  function fromApi(spec) {
+    const u = spec.universe || {};
+    state.spec = {universe: {caps: (u.caps || []).slice(), sectors: (u.sectors || []).slice(), industries: (u.industries || []).slice(), ipo: ipoCopy(u.ipo)},
+                  rules: spec.rules && spec.rules.items ? fromApiNode(spec.rules) : {op: "all", items: []}};
+  }
+
+  // ------------------------------------------------------------ drawing the rules
+  function optionList(list, cur) {
+    return list.map(o => '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(cur) ? " selected" : "") + ">" + esc(o[1]) + "</option>").join("");
+  }
+  function fieldSelect(c) {
+    const groups = state.cat.groups.map(g => {
+      const fs = state.cat.fields.filter(f => f.group === g.key);
+      if (!fs.length) return "";
+      return '<optgroup label="' + esc(g.name) + '">' + fs.map(f => '<option value="' + esc(f.key) + '"' + (f.key === c.field ? " selected" : "") + ">" +
+        esc(f.label) + (f.unavailable ? " (not available yet)" : "") + "</option>").join("") + "</optgroup>";
+    }).join("");
+    return '<label class="sb-p"><span>Measure</span><select class="sb-field" data-act="field" aria-label="Measure">' + groups + "</select></label>";
+  }
+  function paramControl(ps, c) {
+    if (ps.when && String(c.params[ps.when.param]) !== String(ps.when.value)) return "";
+    const v = c.params[ps.param];
+    if (ps.kind === "choice")
+      return '<label class="sb-p"><span>' + esc(ps.label) + '</span><select data-act="param" data-p="' + esc(ps.param) + '">' + optionList(ps.options, v) + "</select></label>";
+    return '<label class="sb-p"><span>' + esc(ps.label) + '</span><input type="number" data-act="param" data-p="' + esc(ps.param) + '" value="' + esc(v) +
+      '" min="' + ps.min + '" max="' + ps.max + '" step="' + ps.step + '"></label>';
+  }
+  const unitText = f => ({"%": "%", "x": "times", "₹": "", "₹ Cr": "₹ crore", "pts": "points", "days": "days", "funds": "funds"}[f.unit] || "");
+  function testControls(f, c) {
+    if (f.kind === "flag")
+      return '<label class="sb-p"><span>Test</span><select data-act="flag"><option value="1"' + (c.flag !== false ? " selected" : "") + ">has happened</option><option value=\"0\"" +
+        (c.flag === false ? " selected" : "") + ">has NOT happened</option></select></label>";
+    let h = '<label class="sb-p"><span>Is</span><select data-act="op">' + optionList(f.ops, c.op) + "</select></label>";
+    if (f.industry && c.op !== "between")
+      h += '<label class="sb-p"><span>Compared with</span><select data-act="against"><option value="number"' + (c.ref === "industry" ? "" : " selected") + '>a number</option>' +
+        '<option value="industry"' + (c.ref === "industry" ? " selected" : "") + ">the industry average</option></select></label>";
+    if (c.ref === "industry" && c.op !== "between") {
+      h += '<label class="sb-p"><span>Times the average</span><select data-act="mult">' + state.cat.industry_multipliers.map(m => '<option value="' + m + '"' +
+        (Number(c.mult) === m ? " selected" : "") + ">" + m + "</option>").join("") + "</select></label>";
+    } else if (c.op === "between") {
+      const v = c.value || [];
+      h += '<label class="sb-p"><span>From</span><input type="number" data-act="value" data-i="0" step="any" value="' + esc(Array.isArray(v) ? v[0] : "") + '"></label>' +
+        '<span class="sb-and">and</span><label class="sb-p"><span>To</span><input type="number" data-act="value" data-i="1" step="any" value="' + esc(Array.isArray(v) ? v[1] : "") + '"></label>';
+    } else {
+      h += '<label class="sb-p"><span>Number</span><input type="number" data-act="value" step="any" value="' + esc(Array.isArray(c.value) ? c.value[0] : c.value) + '"></label>';
+    }
+    const u = unitText(f);
+    return h + (u ? '<span class="sb-unit">' + esc(u) + "</span>" : "");
+  }
+  function condHtml(c, path) {
+    const f = state.fields[c.field];
+    if (!f) return '<div class="sb-cond" data-path="' + path + '"><div class="sb-line"><span class="sb-neg">This measure is not available on this server.</span></div><button type="button" class="sb-x" data-act="remove" aria-label="Remove this condition">&times;</button></div>';
+    const params = (f.params || []).map(ps => paramControl(ps, c)).join("");
+    return '<div class="sb-cond" data-path="' + path + '"><div class="sb-line">' + fieldSelect(c) + params + testControls(f, c) + "</div>" +
+      '<button type="button" class="sb-x" data-act="remove" aria-label="Remove this condition" title="Remove">&times;</button>' +
+      (f.unavailable ? '<p class="sb-warn"><b>Not available here yet.</b> ' + esc(f.unavailable) + " Stocks cannot be tested on it until it is.</p>" : "") +
+      '<p class="sb-help">' + esc(f.help) + (f.source ? " <i>Source: " + esc(f.source) + "</i>" : "") + "</p></div>";
+  }
+  function groupHtml(g, path, depth) {
+    const head = '<div class="sb-ghead"><span>' + (depth === 0 ? "Stocks where" : "") + '</span><select data-act="gop" aria-label="All or any">' +
+      '<option value="all"' + (g.op === "all" ? " selected" : "") + ">ALL</option><option value=\"any\"" + (g.op === "any" ? " selected" : "") + ">ANY</option></select>" +
+      "<span>of these " + (g.op === "all" ? "are" : "is") + " true</span>" +
+      (depth > 0 ? ' <button type="button" class="sb-link sb-neg" data-act="remove">Remove this group</button>' : "") + "</div>";
+    const items = g.items.map((n, i) => isGroup(n) ? groupHtml(n, path === "" ? String(i) : path + "." + i, depth + 1) : condHtml(n, path === "" ? String(i) : path + "." + i)).join("");
+    const addGroup = depth < state.cat.limits.max_depth - 1 ? '<button type="button" class="sb-link" data-act="addgroup">+ Add a group (and / or)</button>' : "";
+    const ask = depth === 0 ? '<button type="button" class="sb-link" data-act="askmore">Can&rsquo;t find a measure? Ask us to add it</button>' : "";
+    return '<div class="sb-group" data-path="' + path + '" data-gpath="' + path + '">' + head + '<div class="sb-items">' + items +
+      '</div><div class="sb-add"><button type="button" class="sb-link" data-act="addcond">+ Add a condition</button>' + addGroup + ask + "</div></div>";
+  }
+  function drawRules() {
+    $("sbRules").innerHTML = groupHtml(state.spec.rules, "", 0);
+    drawUniverse();
+    scheduleDescribe();
+  }
+
+  // ------------------------------------------------------------ the universe
+  function drawUniverse() {
+    const u = state.spec.universe;
+    $("sbCaps").innerHTML = ["Large", "Mid", "Small"].map(c => '<label class="sb-cap"><input type="checkbox" data-cap="' + c + '"' + (u.caps.includes(c) ? " checked" : "") + "> " + c + " caps</label>").join("");
+    const fill = (sel, list, chosen, what) => {
+      sel.innerHTML = '<option value="">Add ' + what + "&hellip;</option>" + list.filter(x => !chosen.includes(x.name)).map(x => '<option value="' + esc(x.name) + '">' + esc(x.name) + " (" + x.count + ")</option>").join("");
+    };
+    fill($("sbSector"), state.cat.sectors || [], u.sectors, "a sector");
+    fill($("sbIndustry"), state.cat.industries || [], u.industries, "an industry");
+    const tags = (host, kind) => { $(host).innerHTML = u[kind].map((n, i) => '<span class="sb-tag">' + esc(n) + '<button type="button" data-untag="' + kind + '" data-i="' + i + '" aria-label="Remove ' + esc(n) + '">&times;</button></span>').join(""); };
+    tags("sbSectorTags", "sectors"); tags("sbIndustryTags", "industries");
+    // new listings: a number of days back, or between two dates
+    const ipoMode = !u.ipo ? "" : (u.ipo.from || u.ipo.to || !u.ipo.within) ? "dates" : String(u.ipo.within);
+    const wins = IPO_WINDOWS.slice();
+    if (ipoMode && ipoMode !== "dates" && !wins.some(w => String(w[0]) === ipoMode)) wins.push([Number(ipoMode), ipoMode + " days"]);
+    $("sbIpo").innerHTML = '<option value="">All stocks, old and new</option>' + wins.map(w => '<option value="' + w[0] + '">Only IPOs listed in the last ' + w[1] + "</option>").join("") +
+      '<option value="dates">Only IPOs listed between two dates&hellip;</option>';
+    $("sbIpo").value = ipoMode;
+    $("sbIpoDates").hidden = ipoMode !== "dates";
+    if (ipoMode === "dates") { $("sbIpoFrom").value = u.ipo.from || ""; $("sbIpoTo").value = u.ipo.to || ""; }
+    const bits = [];
+    if (u.ipo) bits.push(ipoPhrase(u.ipo));
+    if (u.caps.length) bits.push(u.caps.map(c => c.toLowerCase()).join(" and ") + " caps");
+    if (u.sectors.length) bits.push("in " + u.sectors.join(" or "));
+    if (u.industries.length) bits.push("in " + u.industries.join(" or "));
+    $("sbUniSum").textContent = "Look at: " + (bits.length ? bits.join(", ") : "all stocks") + (state.cat.stocks ? "  (" + state.cat.stocks.toLocaleString("en-IN") + " stocks in all)" : "");
+  }
+
+  // ------------------------------------------------------------ the sentence
+  function outlineHtml(o) {
+    if (o.items) return '<span class="sb-op">' + (o.op === "all" ? "ALL of these:" : "ANY of these:") + "</span><ul>" + o.items.map(i => "<li>" + outlineHtml(i) + "</li>").join("") + "</ul>";
+    return esc(o.text);
+  }
+  let describeTimer = null;
+  function scheduleDescribe() {
+    clearTimeout(describeTimer);
+    describeTimer = setTimeout(describeNow, 350);
+  }
+  async function describeNow() {
+    const mine = ++state.describeSeq;
+    const spec = toApi();
+    if (!spec.rules.items.length) {
+      state.valid = false;
+      $("sbWords").innerHTML = '<p class="sb-sub">No conditions yet. Press <b>+ Add a condition</b>, or start from an example above.</p>';
+      $("sbRun").disabled = true; $("sbSaveBtn").disabled = true;
+      return;
+    }
+    try {
+      const d = await post("/describe", {spec});
+      if (mine !== state.describeSeq) return;
+      state.valid = d.ok;
+      if (d.ok) $("sbWords").innerHTML = '<p class="sb-sub">In words, looking at <b>' + esc(d.universe) + "</b>:</p>" + outlineHtml(d.outline);
+      else $("sbWords").innerHTML = '<div class="sb-problem" role="alert"><b>Not ready yet.</b> ' + esc(d.problem) + "</div>";
+      $("sbRun").disabled = !d.ok; $("sbSaveBtn").disabled = !d.ok;
+    } catch (e) { if (!e.access && mine === state.describeSeq) $("sbWords").innerHTML = '<p class="sb-err" role="alert">' + esc(e.message) + "</p>"; }
+  }
+
+  // ------------------------------------------------------------ editing (one delegated handler for the whole tree)
+  function pathOf(el) { const c = el.closest("[data-path]"); return c ? c.dataset.path : null; }
+  function onRulesClick(e) {
+    const b = e.target.closest("[data-act]");
+    if (!b || b.tagName === "SELECT" || b.tagName === "INPUT") return;
+    const act = b.dataset.act;
+    if (act === "askmore") { tab("req"); $("rqName").focus(); return; }
+    if (act === "addcond" || act === "addgroup") {
+      const g = nodeAt(b.closest("[data-gpath]").dataset.gpath);
+      if (act === "addcond") g.items.push(newCond(firstField()));
+      else g.items.push({op: "any", items: [newCond(firstField())]});
+      drawRules();
+    } else if (act === "remove") {
+      const path = pathOf(b);
+      if (path === null || path === "") return;
+      const [parent, idx] = parentOf(path);
+      parent.items.splice(idx, 1);
+      drawRules();
+    }
+  }
+  // The tree is drawn again from the state after a structural change; the control that was being used gets the keyboard focus back, so that
+  // changing a choice with the keyboard does not throw the person to the top of the page.
+  function redraw(el) {
+    const gp = el && el.closest("[data-gpath]") && el.dataset.act === "gop" ? el.closest("[data-gpath]").dataset.gpath : null;
+    const path = el && gp === null ? pathOf(el) : null;
+    const act = el && el.dataset.act, p = el && el.dataset.p, i = el && el.dataset.i;
+    drawRules();
+    if (!act) return;
+    const scope = gp !== null ? '[data-gpath="' + gp + '"] > .sb-ghead ' : (path !== null ? '[data-path="' + path + '"] ' : "");
+    const target = $("sbRules").querySelector(scope + '[data-act="' + act + '"]' + (p ? '[data-p="' + p + '"]' : "") + (i != null ? '[data-i="' + i + '"]' : ""));
+    if (target) target.focus();
+  }
+  function onRulesChange(e) {
+    const el = e.target, act = el.dataset.act;
+    if (!act) return;
+    if (act === "gop") { nodeAt(el.closest("[data-gpath]").dataset.gpath).op = el.value; redraw(el); return; }
+    const path = pathOf(el);
+    if (path === null) return;
+    const c = nodeAt(path), f = state.fields[c.field];
+    if (act === "field") { Object.keys(c).forEach(k => delete c[k]); Object.assign(c, newCond(el.value)); redraw(el); return; }
+    if (act === "param") {
+      const ps = f.params.find(p => p.param === el.dataset.p);
+      if (ps.kind === "choice") { const o = ps.options.find(o => String(o[0]) === el.value); c.params[ps.param] = o ? o[0] : el.value; }
+      else c.params[ps.param] = el.value === "" ? "" : Number(el.value);
+      if (f.params.some(p => p.when && p.when.param === ps.param)) redraw(el); else scheduleDescribe();
+    } else if (act === "op") {
+      const was = c.op;
+      c.op = el.value;
+      if (c.op === "between") { c.value = [Array.isArray(c.value) ? c.value[0] : c.value, ""]; c.ref = undefined; }
+      else if (was === "between") c.value = Array.isArray(c.value) ? c.value[0] : c.value;
+      redraw(el);
+    } else if (act === "against") {
+      if (el.value === "industry") { c.ref = "industry"; c.mult = 1; if (c.op === "between") c.op = "lt"; } else { c.ref = undefined; }
+      redraw(el);
+    } else if (act === "mult") { c.mult = Number(el.value); scheduleDescribe(); }
+    else if (act === "flag") { c.flag = el.value === "1"; scheduleDescribe(); }
+    else if (act === "value") { onValueInput(el, c); }
+  }
+  function onValueInput(el, c) {
+    if (el.dataset.i != null) { c.value = Array.isArray(c.value) ? c.value : ["", ""]; c.value[Number(el.dataset.i)] = el.value; }
+    else c.value = el.value;
+    scheduleDescribe();
+  }
+  function onRulesInput(e) {
+    const el = e.target;
+    if (el.dataset.act === "value") { const path = pathOf(el); if (path !== null) onValueInput(el, nodeAt(path)); }
+    else if (el.dataset.act === "param" && el.type === "number") { const path = pathOf(el); if (path !== null) { nodeAt(path).params[el.dataset.p] = el.value === "" ? "" : Number(el.value); scheduleDescribe(); } }
+  }
+
+  // ------------------------------------------------------------ running it
+  let waitTimer = null;
+  function waitHtml(started) {
+    return '<div class="sb-box sb-wait" role="status"><span class="sb-spin"></span><b>Working&hellip;</b> <span id="sbWaitText"></span><p class="sb-sub" style="margin-top:6px">' +
+      "The first screen of each trading day reads the prices for every stock (it can take a couple of minutes); after that it is quick.</p></div>";
+  }
+  async function run() {
+    if (!state.valid) return;
+    const mine = ++state.runSeq;                       // only the newest run may draw: a slow answer to an older screen must never replace a newer one
+    const spec = toApi();                              // the screen AS RUN: the table's headings come from this, not from whatever is on the form by then
+    const started = Date.now();
+    $("sbResults").innerHTML = waitHtml();
+    clearInterval(waitTimer);
+    waitTimer = setInterval(async () => {
+      const t = $("sbWaitText"); if (!t) return;
+      let extra = "";
+      try { const s = await api("/status", {quiet403: true}); extra = s.warming ? " Preparing: " + Object.keys(s.ready).join(", ") + " ready." : ""; } catch (e) { /* ignore */ }
+      t.textContent = Math.round((Date.now() - started) / 1000) + " s." + extra;
+    }, 3000);
+    try {
+      const r = await post("/run", {spec, limit: 500, sort: "size"});
+      if (mine !== state.runSeq) return;
+      state.result = r; state.resultSpec = spec; state.sort = {col: null, dir: 1};
+      drawResults();
+    } catch (e) {
+      if (!e.access && mine === state.runSeq) $("sbResults").innerHTML = '<div class="sb-box"><p class="sb-err" role="alert">' + esc(e.message) + "</p></div>";
+    } finally { if (mine === state.runSeq) clearInterval(waitTimer); }
+  }
+  const fmtDelta = v => v == null ? "" : '<span class="' + (v >= 0 ? "sb-up" : "sb-dn") + '">' + (v > 0 ? "+" : "") + Number(v).toFixed(2) + "%</span>";
+  function colLabel(c) {
+    const cond = state.condIndex[c.n];
+    const f = (cond && state.fields[cond.field]) || {label: "?"};
+    return f.label + (cond && cond.params && cond.params.tf ? " · " + String(cond.params.tf).toLowerCase() : "");
+  }
+  function drawResults() {
+    const r = state.result;
+    if (!r) { $("sbResults").innerHTML = ""; return; }
+    const conds = [];
+    (function walk(n) { if (n.items) n.items.forEach(walk); else conds.push(n); })((state.resultSpec || toApi()).rules);
+    state.condIndex = conds;
+    const srcs = Object.entries(r.sources || {}).map(([k, v]) => k + ": " + (Array.isArray(v) ? v.join("; ") : v)).join(" · ");
+    let h = '<div class="sb-box"><div class="sb-sum"><span class="sb-big">' + r.total.toLocaleString("en-IN") + '</span><span>' + (r.total === 1 ? "stock matches" : "stocks match") +
+      "</span></div><p class=\"sb-meta\">Out of " + r.tested.toLocaleString("en-IN") + " stocks looked at" + (r.unknown ? "; <b>" + r.unknown.toLocaleString("en-IN") + "</b> could not be fully tested (a reading was missing for at least one condition)" : "") +
+      ". Prices as of " + esc(dmy(r.as_of)) + (srcs ? ". " + esc(srcs) : "") + ". Computed in " + r.elapsed + " s.</p>";
+    if (r.problems && r.problems.length)
+      h += '<div class="sb-problem" role="alert"><b>Some conditions could not be checked, so no stock can pass them:</b><ul>' + r.problems.map(p => "<li>" + esc(p.text) + " &mdash; " + esc(p.reason) + "</li>").join("") + "</ul></div>";
+    (r.notes || []).forEach(n => { h += '<p class="sb-meta">' + esc(n) + "</p>"; });
+    h += '<div class="sb-cw"><table class="sb-count"><tr><th>Each condition on its own</th><th class="n">Pass</th><th class="n">Fail</th><th class="n">No reading</th></tr>' +
+      r.counts.map(c => "<tr><td>" + (c.n + 1) + ". " + esc(c.text) + '</td><td class="n">' + c.true.toLocaleString("en-IN") + '</td><td class="n">' + c.false.toLocaleString("en-IN") +
+        '</td><td class="n">' + c.unknown.toLocaleString("en-IN") + "</td></tr>").join("") + "</table></div></div>";
+    if (!r.rows.length) {
+      h += '<div class="sb-box"><p class="sb-empty"><b>Nothing matched.</b> ' + (r.total === 0 && r.problems && r.problems.length ? "At least one condition could not be checked (above)." :
+        "Loosen a condition, switch an &ldquo;all of these&rdquo; to &ldquo;any of these&rdquo;, or widen what you look at. The table above shows how many stocks pass each condition on its own.") + "</p></div>";
+      $("sbResults").innerHTML = h; return;
+    }
+    const heads = ['<th data-col="name" tabindex="0" role="button">Company</th>', '<th data-col="price" class="num" tabindex="0" role="button">Price</th>']
+      .concat(r.counts.map(c => '<th data-col="c' + c.n + '" tabindex="0" role="button" title="' + esc(c.text) + '">' + (c.n + 1) + ". " + esc(colLabel(c)) + "</th>"));
+    const rows = sortedRows().map(row => '<tr><td><a href="/#/stock/' + encodeURIComponent(row.isin) + '" target="_blank" rel="noopener">' + esc(row.name) + "</a>" +
+      (row.cap ? '<span class="sb-cap">' + esc(row.cap) + "</span>" : "") + "<small>" + esc(row.symbol || "") + (row.industry ? " · " + esc(row.industry) : "") + "</small></td>" +
+      '<td class="num">' + rupees(row.close) + "<small>" + fmtDelta(row.change_pct) + "</small></td>" + row.cells.map(c => "<td>" + esc(c.text) + "</td>").join("") + "</tr>").join("");
+    h += '<div class="sb-box"><div class="sb-actions" style="margin-top:0"><b>' + (r.rows.length < r.total ? "Showing the largest " + r.rows.length.toLocaleString("en-IN") + " of " + r.total.toLocaleString("en-IN") : "All " + r.total.toLocaleString("en-IN")) +
+      '</b><button type="button" class="sb-btn" id="sbCsv">Download as a spreadsheet (CSV)</button><span class="sb-sub">Click a heading to sort. Largest companies first.</span></div>' +
+      '<div class="sb-tw"><table class="sb-res"><thead><tr>' + heads.join("") + "</tr></thead><tbody>" + rows + "</tbody></table></div></div>";
+    $("sbResults").innerHTML = h;
+    const th = $("sbResults").querySelector('th[data-col="' + state.sort.col + '"]');
+    if (th) th.setAttribute("aria-sort", state.sort.dir > 0 ? "ascending" : "descending");
+  }
+  function sortKey(row, col) {
+    if (col === "name") return (row.name || "").toLowerCase();
+    if (col === "price") return row.close;
+    const cell = row.cells[Number(col.slice(1))];
+    return cell.value == null ? null : (typeof cell.value === "boolean" ? (cell.value ? 1 : 0) : cell.value);
+  }
+  function sortedRows() {
+    const r = state.result.rows.slice();
+    const col = state.sort.col;
+    if (!col) return r;
+    return r.sort((a, b) => {
+      const x = sortKey(a, col), y = sortKey(b, col);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * state.sort.dir;
+    });
+  }
+  function csv() {
+    const r = state.result;
+    // A spreadsheet runs a cell that starts with = + @ (or a minus that is not a number) as a formula; a leading apostrophe makes it plain text.
+    const safe = s => /^[=+@\t\r]/.test(s) || /^-(?![0-9.])/.test(s) ? "'" + s : s;
+    const q = v => '"' + safe(String(v == null ? "" : v)).replace(/"/g, '""') + '"';
+    const lines = [["Company", "Symbol", "Cap", "Sector", "Industry", "Price", "Change %"].concat(r.counts.map(c => (c.n + 1) + ". " + c.text)).map(q).join(",")];
+    sortedRows().forEach(row => lines.push([row.name, row.symbol, row.cap, row.sector, row.industry, row.close, row.change_pct].concat(row.cells.map(c => c.text)).map(q).join(",")));
+    const blob = new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "finchaya-screen-" + (r.as_of || "") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // ------------------------------------------------------------ saving
+  function showSaveForm() {
+    $("sbSaveForm").hidden = false;
+    $("sbName").value = state.loadedName || "";
+    $("sbSaveGo").textContent = state.loadedId ? "Update “" + state.loadedName + "”" : "Save";
+    $("sbSaveNew").hidden = !state.loadedId;
+    $("sbName").focus();
+    $("sbSaveMsg").innerHTML = "";
+  }
+  async function save(asNew) {
+    const name = $("sbName").value.trim();
+    if (!name) { $("sbSaveMsg").innerHTML = '<div class="sb-problem" role="alert">Give the screen a name.</div>'; return; }
+    try {
+      const d = (state.loadedId && !asNew) ? await post("/saved/" + state.loadedId, {name, spec: toApi()}) : await post("/saved", {name, spec: toApi()});
+      state.loadedId = d.screen.screen_id; state.loadedName = d.screen.name;
+      $("sbSaveForm").hidden = true;
+      $("sbSaveMsg").innerHTML = '<div class="sb-done" role="status">Saved as “' + esc(d.screen.name) + '”. It is under <b>My saved screens</b>.</div>';
+      loadSaved();
+    } catch (e) { if (!e.access) $("sbSaveMsg").innerHTML = '<div class="sb-problem" role="alert">' + esc(e.message) + "</div>"; }
+  }
+  async function loadSaved() {
+    try {
+      const d = await api("/saved");
+      state.saved = d.screens; $("sbN1").textContent = d.screens.length; drawSaved(d.max);
+    } catch (e) {
+      if (e.access) return;
+      $("sbSaved").innerHTML = '<div class="sb-box"><p class="sb-err" role="alert">' + esc(e.message) + "</p></div>";
+    }
+  }
+  function drawSaved(max) {
+    if (!state.saved.length) { $("sbSaved").innerHTML = '<div class="sb-box"><p class="sb-empty">You have not saved a screen yet. Build one, press <b>Save this screen</b>, and it will be here (up to ' + max + ").</p></div>"; return; }
+    $("sbSaved").innerHTML = state.saved.map(s => '<div class="sb-card" data-id="' + s.screen_id + '"><h3>' + esc(s.name) + '</h3><p class="sb-meta">' + esc(s.universe) + " &middot; updated " + esc(dmy(s.updated_at)) + "</p>" +
+      '<div class="sb-ol">' + esc(outlineLines(s.outline, 0).join("\n")) + '</div><div class="sb-row"><button type="button" class="sb-btn sb-go" data-sact="open">' + (s.broken ? "Open to fix it" : "Open and run") + "</button>" +
+      '<button type="button" class="sb-link" data-sact="rename">Rename</button><button type="button" class="sb-link sb-neg" data-sact="delete">Delete</button></div></div>').join("");
+  }
+  function outlineLines(o, d) {
+    const pad = "  ".repeat(d);
+    if (o.items) return [pad + (o.op === "all" ? "ALL of these:" : "ANY of these:")].concat(...o.items.map(i => outlineLines(i, d + 1)));
+    return [pad + (o.n + 1) + ". " + o.text];
+  }
+  async function onSavedClick(e) {
+    const b = e.target.closest("[data-sact]");
+    if (!b) return;
+    const card = b.closest("[data-id]"), id = Number(card.dataset.id), s = state.saved.find(x => x.screen_id === id);
+    if (b.dataset.sact === "open") {
+      fromApi(s.spec); state.loadedId = s.screen_id; state.loadedName = s.name;
+      tab("build"); drawRules(); $("sbSaveMsg").innerHTML = '<div class="sb-done">Opened “' + esc(s.name) + "”. Change it and press Save to update it.</div>";
+      await describeNow(); if (!s.broken) run();
+    } else if (b.dataset.sact === "delete") {
+      if (!confirm("Delete “" + s.name + "”?")) return;
+      try { await post("/saved/" + id + "/delete", {}); if (state.loadedId === id) { state.loadedId = null; state.loadedName = ""; } loadSaved(); } catch (er) { if (!er.access) alert(er.message); }
+    } else if (b.dataset.sact === "rename") {
+      const name = prompt("New name for this screen:", s.name);
+      if (!name || name.trim() === s.name) return;
+      try { await post("/saved/" + id, {name}); if (state.loadedId === id) state.loadedName = name.trim().replace(/\s+/g, " "); loadSaved(); } catch (er) { if (!er.access) alert(er.message); }
+    }
+  }
+
+  // ------------------------------------------------------------ requests
+  async function loadRequests() {
+    try {
+      const d = await api("/requests");
+      $("sbN2").textContent = d.requests.length;
+      $("rqList").innerHTML = d.requests.length ? d.requests.map(r => '<div class="sb-card"><h3>' + esc(r.name) + '</h3><p class="sb-meta">' + esc(r.details || "") + " &middot; asked " + esc(dmy(r.created_at)) + " &middot; status: " + esc(r.status) + "</p></div>").join("")
+        : '<p class="sb-empty">You have not asked for anything yet.</p>';
+    } catch (e) { if (!e.access) $("rqList").innerHTML = '<p class="sb-err" role="alert">' + esc(e.message) + "</p>"; }
+    if (state.admin) {
+      try {
+        const a = await api("/requests/all");
+        $("rqAdmin").hidden = false;
+        $("rqAll").innerHTML = a.requests.length ? a.requests.map(r => '<div class="sb-card"><h3>' + esc(r.name) + ' <span class="sb-n">' + r.people + (r.people === 1 ? " person" : " people") + '</span></h3><p class="sb-meta">' + esc(r.kind) + " &middot; latest " + esc(dmy(r.latest)) + " &middot; " + esc(r.status) + "</p>" +
+          (r.details && r.details.length ? '<div class="sb-ol">' + esc(r.details.join("\n")) + "</div>" : "") + "</div>").join("") : '<p class="sb-empty">Nothing yet.</p>';
+      } catch (e) { /* not an admin or not available: the section stays hidden */ }
+    }
+  }
+  async function sendRequest() {
+    $("rqMsg").innerHTML = "";
+    try {
+      const d = await post("/requests", {kind: $("rqKind").value, name: $("rqName").value, details: $("rqDetails").value});
+      $("rqMsg").innerHTML = '<div class="sb-done" role="status">' + esc(d.message) + "</div>";
+      if (!d.exists) { $("rqName").value = ""; $("rqDetails").value = ""; }
+      loadRequests();
+    } catch (e) { if (!e.access) $("rqMsg").innerHTML = '<div class="sb-problem" role="alert">' + esc(e.message) + "</div>"; }
+  }
+
+  // ------------------------------------------------------------ tabs and start-up
+  function tab(name) {
+    document.querySelectorAll(".sb-tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name ? "true" : "false"));
+    $("paneBuild").hidden = name !== "build"; $("paneSaved").hidden = name !== "saved"; $("paneReq").hidden = name !== "req";
+    if (name === "saved") loadSaved();
+    if (name === "req") loadRequests();
+  }
+  function startAgain() {
+    state.spec = blank(); state.spec.rules.items.push(newCond(firstField()));
+    state.loadedId = null; state.loadedName = ""; state.result = null;
+    $("sbResults").innerHTML = ""; $("sbSaveMsg").innerHTML = ""; $("sbSaveForm").hidden = true;
+    drawRules();
+  }
+  function wire() {
+    $("sbTabs").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) tab(b.dataset.tab); });
+    const rules = $("sbRules");
+    rules.addEventListener("click", onRulesClick);
+    rules.addEventListener("change", onRulesChange);
+    rules.addEventListener("input", onRulesInput);
+    $("sbRun").addEventListener("click", run);
+    $("sbClear").addEventListener("click", startAgain);
+    $("sbSaveBtn").addEventListener("click", showSaveForm);
+    $("sbSaveCancel").addEventListener("click", () => { $("sbSaveForm").hidden = true; });
+    $("sbSaveGo").addEventListener("click", () => save(false));
+    $("sbSaveNew").addEventListener("click", () => save(true));
+    $("sbName").addEventListener("keydown", e => { if (e.key === "Enter") save(false); });
+    $("sbSaved").addEventListener("click", onSavedClick);
+    $("rqSend").addEventListener("click", sendRequest);
+    const sortBy = th => { const c = th.dataset.col; state.sort = state.sort.col === c ? {col: c, dir: -state.sort.dir} : {col: c, dir: 1}; drawResults();
+      const again = $("sbResults").querySelector('th[data-col="' + c + '"]'); if (again) again.focus(); };
+    $("sbResults").addEventListener("click", e => {
+      if (e.target.id === "sbCsv") { csv(); return; }
+      const th = e.target.closest("th[data-col]");
+      if (th) sortBy(th);
+    });
+    $("sbResults").addEventListener("keydown", e => {
+      const th = e.target.closest && e.target.closest("th[data-col]");
+      if (th && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); sortBy(th); }
+    });
+    // the universe
+    $("sbCaps").addEventListener("change", e => {
+      const c = e.target.dataset.cap; if (!c) return;
+      const u = state.spec.universe; u.caps = u.caps.filter(x => x !== c); if (e.target.checked) u.caps.push(c);
+      drawUniverse(); scheduleDescribe();
+    });
+    const addTo = (id, kind) => $(id).addEventListener("change", e => { if (e.target.value) { state.spec.universe[kind].push(e.target.value); drawUniverse(); scheduleDescribe(); } });
+    addTo("sbSector", "sectors"); addTo("sbIndustry", "industries");
+    $("sbIpo").addEventListener("change", e => {
+      const u = state.spec.universe, v = e.target.value;
+      u.ipo = v === "" ? null : v === "dates" ? {within: null, from: "", to: ""} : {within: Number(v), from: "", to: ""};
+      drawUniverse(); scheduleDescribe();
+    });
+    const ipoDate = (id, k) => $(id).addEventListener("change", e => { const u = state.spec.universe; if (u.ipo) { u.ipo[k] = e.target.value; drawUniverse(); scheduleDescribe(); } });
+    ipoDate("sbIpoFrom", "from"); ipoDate("sbIpoTo", "to");
+    $("sbUni").addEventListener("click", e => {
+      const b = e.target.closest("[data-untag]"); if (!b) return;
+      state.spec.universe[b.dataset.untag].splice(Number(b.dataset.i), 1); drawUniverse(); scheduleDescribe();
+    });
+  }
+  function drawExamples() {
+    const t = state.cat.templates || [];
+    $("sbExamples").innerHTML = t.length ? "<b>Try an example</b>" + t.map((x, i) => '<button type="button" class="sb-chip" data-ex="' + i + '" title="' + esc(x.what) + '">' + esc(x.name) + "</button>").join("") : "";
+    $("sbExamples").onclick = e => {
+      const b = e.target.closest("[data-ex]"); if (!b) return;
+      const x = t[Number(b.dataset.ex)];
+      fromApi(x.spec); state.loadedId = null; state.loadedName = ""; $("sbSaveMsg").innerHTML = '<div class="sb-done"><b>' + esc(x.name) + ".</b> " + esc(x.what) + " Change anything, then press Show matching stocks.</div>";
+      $("sbResults").innerHTML = ""; drawRules();
+    };
+  }
+  async function start() {
+    try { state.cat = await api("/catalog"); } catch (e) { if (!e.access) $("sbLock").innerHTML = '<div class="sb-box"><p class="sb-err" role="alert">' + esc(e.message) + "</p></div>"; return; }
+    state.cat.fields.forEach(f => { state.fields[f.key] = f; });
+    $("rqKind").innerHTML = state.cat.request_kinds.map(k => '<option value="' + esc(k.key) + '">' + esc(k.label) + "</option>").join("");
+    try { state.admin = !!(await (await fetch("/api/screenbuilder/access")).json()).admin; } catch (e) { /* not an admin */ }
+    wire(); drawExamples(); startAgain();
+    $("sbApp").hidden = false;
+    const want = new URLSearchParams(location.search).get("tab");
+    if (want === "saved" || want === "req") tab(want);
+    else loadSaved();
+  }
+  async function init() {
+    let a = {};
+    try { a = await (await fetch("/api/screenbuilder/access")).json(); } catch (e) { /* treated as locked */ }
+    if (!a.allowed) { await lock(a); document.addEventListener("fc-auth", async () => { try { const b = await (await fetch("/api/screenbuilder/access")).json(); if (b.allowed) { $("sbLock").innerHTML = ""; start(); } else lock(b); } catch (e) { /* stay locked */ } }); return; }
+    $("sbLock").innerHTML = "";
+    start();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
